@@ -1,0 +1,46 @@
+{
+  "name": "cursor-ai-bridge",
+  "version": "0.1.0",
+  "description": "OpenAI-compatible Cursor AI bridge with safe read-only dashboard",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "clean": "node -e \"import(\\\"node:fs\\\").then(fs=>fs.rmSync(\\\"dist\\\",{recursive:true,force:true}))\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json && node -e \"import(\\\"node:fs\\\").then(fs=>fs.chmodSync(\\\"dist/index.js\\\",0o755))\"",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run build"
+  },
+  "keywords": [],
+  "author": "Yorha Workspace",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "bin": {
+    "cursor-ai-bridge": "dist/index.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/helmet": "^13.0.2",
+    "@fastify/rate-limit": "^10.3.0",
+    "dotenv": "^17.4.2",
+    "fastify": "^5.8.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.9.1",
+    "eslint": "^10.4.0",
+    "prettier": "^3.8.3",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.60.0",
+    "vitest": "^4.1.7"
+  }
+}
