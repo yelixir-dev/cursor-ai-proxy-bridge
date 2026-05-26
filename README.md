@@ -33,7 +33,7 @@ Cursor AI Bridge is a trusted-environment HTTP bridge that exposes a small OpenA
 | Core value      | OpenAI-compatible clients can call a Cursor-backed local bridge instead of managing Cursor process invocation themselves. |
 | Dashboard       | Mobile-friendly, read-only status page with backend, model, workspace, auth, and endpoint information.                    |
 | Safety boundary | `/v1/*` fails closed without a configured client API key; real workspace access is explicit opt-in.                       |
-| Current scope   | MVP: deterministic mock backend plus Cursor CLI backend adapter; non-streaming chat completions first.                    |
+| Current scope   | MVP: deterministic mock backend plus Cursor CLI backend adapter; non-streaming and SSE streaming chat completions.        |
 
 One-shot local preview:
 
@@ -152,19 +152,32 @@ Authenticated model list:
 export CURSOR_BRIDGE_API_KEY="$YOUR_CURSOR_BRIDGE_API_KEY"
 
 curl -fsS http://127.0.0.1:9994/v1/models \
-  -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY"
+  -H "Authorization: Bearer [BRIDGE_CLIENT_TOKEN]"
 ```
 
 Non-streaming chat completion:
 
 ```bash
 curl -sS http://127.0.0.1:9994/v1/chat/completions \
-  -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
+  -H "Authorization: Bearer [BRIDGE_CLIENT_TOKEN]" \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "cursor-fast",
     "messages": [{"role": "user", "content": "Reply exactly: OK"}],
     "temperature": 0
+  }'
+```
+
+SSE streaming chat completion:
+
+```bash
+curl -N -sS http://127.0.0.1:9994/v1/chat/completions \
+  -H "Authorization: Bearer [BRIDGE_CLIENT_TOKEN]" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "cursor-fast",
+    "stream": true,
+    "messages": [{"role": "user", "content": "Reply in chunks"}]
   }'
 ```
 
@@ -274,13 +287,6 @@ npm audit --omit=dev
 - If binding to `0.0.0.0`, place it behind a trusted VPN/tailnet/private proxy and keep a strong `CURSOR_BRIDGE_API_KEY`.
 - Do not log or commit `.env`, Cursor auth files, tokens, or API keys.
 - Keep real workspace mode off unless the caller is trusted.
-
-## Current limitations
-
-- Streaming responses are not part of the MVP endpoint contract yet.
-- The `cursor-cli` adapter is intentionally minimal and should be expanded with provider-specific integration tests before production use.
-- No installer/service packaging is included yet.
-- The dashboard is read-only; configuration changes are environment-driven.
 
 ## License
 

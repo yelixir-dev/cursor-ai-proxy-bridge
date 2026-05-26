@@ -92,6 +92,39 @@ describe('cursor-ai-bridge server', () => {
     expect(body.choices[0].message.content).toContain('mock cursor response');
   });
 
+  it('streams OpenAI-compatible chat completion chunks when stream=true', async () => {
+    const server = await app();
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { 'x-api-key': 'sk-test-client' },
+      payload: {
+        model: 'cursor-fast',
+        stream: true,
+        messages: [{ role: 'user', content: 'hello stream' }],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(String(res.headers['content-type'])).toContain('text/event-stream');
+    expect(res.body).toContain('data: ');
+    expect(res.body).toContain('"object":"chat.completion.chunk"');
+    expect(res.body).toContain('"delta":{"role":"assistant"}');
+    expect(res.body.trim().endsWith('data: [DONE]')).toBe(true);
+
+    const chunks = res.body
+      .split('\n\n')
+      .filter((line) => line.startsWith('data: {'))
+      .map(
+        (line) =>
+          JSON.parse(line.slice('data: '.length)) as {
+            choices: Array<{ delta: { content?: string } }>;
+          },
+      );
+    const streamedText = chunks.map((chunk) => chunk.choices[0]?.delta.content ?? '').join('');
+    expect(streamedText).toContain('mock cursor response');
+  });
+
   it('serves a mobile-friendly read-only dashboard without key input UI or secrets', async () => {
     const server = await app();
     const res = await server.inject({ method: 'GET', url: '/dashboard' });

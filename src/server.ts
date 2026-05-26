@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import type { BridgeConfig } from './config.js';
 import { redactedConfig } from './config.js';
-import type { CursorBackend } from './backend/types.js';
+import type { CompletionResult, CursorBackend } from './backend/types.js';
 import { renderDashboard } from './dashboard.js';
 
 const chatMessageSchema = z.object({
@@ -65,6 +65,72 @@ async function requireClientAuth(
 
 function openAiError(message: string, type = 'invalid_request_error') {
   return { error: { message, type } };
+}
+
+function chatCompletionPayload(result: CompletionResult, id: string, created: number) {
+  return {
+    id,
+    object: 'chat.completion',
+    created,
+    model: result.model,
+    choices: [
+      {
+        index: 0,
+        message: { role: 'assistant', content: result.content },
+        finish_reason: 'stop',
+      },
+    ],
+    usage: result.usage ?? {
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+    },
+  };
+}
+
+function splitSseContent(content: string): string[] {
+  const chunks = content.match(/\S+\s*/g);
+  return chunks && chunks.length > 0 ? chunks : [''];
+}
+
+function sseData(payload: unknown): string {
+  return `data: ${JSON.stringify(payload)}\n\n`;
+}
+
+function chatCompletionSse(result: CompletionResult, id: string, created: number): string {
+  const frames: string[] = [
+    sseData({
+      id,
+      object: 'chat.completion.chunk',
+      created,
+      model: result.model,
+      choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+    }),
+  ];
+
+  for (const content of splitSseContent(result.content)) {
+    frames.push(
+      sseData({
+        id,
+        object: 'chat.completion.chunk',
+        created,
+        model: result.model,
+        choices: [{ index: 0, delta: { content }, finish_reason: null }],
+      }),
+    );
+  }
+
+  frames.push(
+    sseData({
+      id,
+      object: 'chat.completion.chunk',
+      created,
+      model: result.model,
+      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    }),
+    'data: [DONE]\n\n',
+  );
+  return frames.join('');
 }
 
 export async function buildServer(options: BuildServerOptions): Promise<FastifyInstance> {
@@ -139,32 +205,19 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     if (!parsed.success) {
       return reply.code(400).send(openAiError(z.prettifyError(parsed.error)));
     }
-    if (parsed.data.stream) {
-      return reply.code(400).send(openAiError('stream=true is not implemented in this MVP'));
-    }
-
     stats.count += 1;
     try {
       const result = await backend.complete(parsed.data);
       const now = Math.floor(Date.now() / 1000);
-      return {
-        id: `chatcmpl-${randomUUID()}`,
-        object: 'chat.completion',
-        created: now,
-        model: result.model,
-        choices: [
-          {
-            index: 0,
-            message: { role: 'assistant', content: result.content },
-            finish_reason: 'stop',
-          },
-        ],
-        usage: result.usage ?? {
-          prompt_tokens: 0,
-          completion_tokens: 0,
-          total_tokens: 0,
-        },
-      };
+      const id = `chatcmpl-${randomUUID()}`;
+      if (parsed.data.stream) {
+        reply
+          .type('text/event-stream; charset=utf-8')
+          .header('Connection', 'keep-alive')
+          .header('X-Accel-Buffering', 'no');
+        return chatCompletionSse(result, id, now);
+      }
+      return chatCompletionPayload(result, id, now);
     } catch (error) {
       request.log.error({ error }, 'cursor backend completion failed');
       return reply.code(502).send(openAiError('Cursor backend completion failed', 'backend_error'));

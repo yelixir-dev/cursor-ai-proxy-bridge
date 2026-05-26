@@ -33,7 +33,7 @@ Cursor AI Bridge는 Cursor의 로컬 CLI/agent backend 앞에 작은 OpenAI-comp
 | 핵심 가치 | OpenAI-compatible client가 Cursor process invocation을 직접 관리하지 않고 Cursor-backed local bridge를 호출합니다. |
 | 대시보드  | backend, model, workspace, auth, endpoint 상태를 보여주는 모바일 친화 read-only 상태 페이지.                       |
 | 안전 경계 | client API key가 없으면 `/v1/*`는 fail-closed; 실제 workspace 접근은 명시적 opt-in.                                |
-| 현재 범위 | MVP: deterministic mock backend와 Cursor CLI backend adapter, non-streaming chat completion 우선.                  |
+| 현재 범위 | MVP: deterministic mock backend와 Cursor CLI backend adapter, non-streaming 및 SSE streaming chat completion.      |
 
 로컬 preview one-shot:
 
@@ -152,19 +152,32 @@ curl -fsS http://127.0.0.1:9994/health
 export CURSOR_BRIDGE_API_KEY="$YOUR_CURSOR_BRIDGE_API_KEY"
 
 curl -fsS http://127.0.0.1:9994/v1/models \
-  -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY"
+  -H "Authorization: Bearer [BRIDGE_CLIENT_TOKEN]"
 ```
 
 Non-streaming chat completion:
 
 ```bash
 curl -sS http://127.0.0.1:9994/v1/chat/completions \
-  -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
+  -H "Authorization: Bearer [BRIDGE_CLIENT_TOKEN]" \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "cursor-fast",
     "messages": [{"role": "user", "content": "Reply exactly: OK"}],
     "temperature": 0
+  }'
+```
+
+SSE streaming chat completion:
+
+```bash
+curl -N -sS http://127.0.0.1:9994/v1/chat/completions \
+  -H "Authorization: Bearer [BRIDGE_CLIENT_TOKEN]" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "cursor-fast",
+    "stream": true,
+    "messages": [{"role": "user", "content": "Reply in chunks"}]
   }'
 ```
 
@@ -274,13 +287,6 @@ npm audit --omit=dev
 - `0.0.0.0`에 bind한다면 신뢰하는 VPN/tailnet/private proxy 뒤에 두고 강한 `CURSOR_BRIDGE_API_KEY`를 유지하십시오.
 - `.env`, Cursor auth file, token, API key를 log/commit하지 마십시오.
 - caller를 신뢰할 수 없으면 real workspace mode를 켜지 마십시오.
-
-## 현재 제한 사항
-
-- Streaming response는 아직 MVP endpoint contract에 포함하지 않았습니다.
-- `cursor-cli` adapter는 의도적으로 minimal하며, production use 전 provider-specific integration test를 확장해야 합니다.
-- installer/service packaging은 아직 없습니다.
-- dashboard는 read-only이며 설정 변경은 environment-driven입니다.
 
 ## License
 
