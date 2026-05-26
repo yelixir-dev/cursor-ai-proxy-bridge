@@ -202,7 +202,7 @@ curl -sS http://127.0.0.1:9994/v1/chat/completions \
   }'
 ```
 
-이미지 block은 현재 bridge가 multimodal Cursor automation이 아니라 text chat completion semantics를 대상으로 하므로 `[image omitted: cursor composer bridge is text-only]`로 표시합니다.
+이미지 block은 현재 bridge가 multimodal Cursor automation이 아니라 text chat completion semantics를 대상으로 하므로 `[image omitted: cursor composer bridge is text-only]`로 표시합니다. 지원하지 않는 typed block은 `[unsupported content type omitted: <type>]`로 표시하며, message 하나당 content part는 최대 1,000개까지 허용합니다.
 
 LiteLLM model entry 예시:
 

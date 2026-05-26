@@ -202,7 +202,7 @@ curl -sS http://127.0.0.1:9994/v1/chat/completions \
   }'
 ```
 
-Image blocks are represented as `[image omitted: cursor composer bridge is text-only]` because this bridge currently targets text chat completion semantics, not multimodal Cursor automation.
+Image blocks are represented as `[image omitted: cursor composer bridge is text-only]` because this bridge currently targets text chat completion semantics, not multimodal Cursor automation. Unsupported typed blocks are represented as `[unsupported content type omitted: <type>]`, and each message may include up to 1,000 content parts.
 
 LiteLLM model entry example:
 

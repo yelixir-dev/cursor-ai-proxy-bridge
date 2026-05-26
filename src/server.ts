@@ -10,6 +10,13 @@ import type { CompletionResult, CursorBackend } from './backend/types.js';
 import { renderDashboard } from './dashboard.js';
 
 const IMAGE_OMITTED_PLACEHOLDER = '[image omitted: cursor composer bridge is text-only]';
+const MAX_CONTENT_PARTS = 1_000;
+
+function unsupportedContentPlaceholder(type: unknown): string {
+  return typeof type === 'string' && type.length > 0
+    ? `[unsupported content type omitted: ${type}]`
+    : '[unsupported content block omitted]';
+}
 
 function flattenMessageContent(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -34,13 +41,17 @@ function flattenMessageContent(content: unknown): string {
     }
     if (candidate.type === 'image_url' || candidate.type === 'input_image') {
       parts.push(IMAGE_OMITTED_PLACEHOLDER);
+      continue;
+    }
+    if (typeof candidate.type === 'string') {
+      parts.push(unsupportedContentPlaceholder(candidate.type));
     }
   }
   return parts.join('\n');
 }
 
 const chatContentSchema = z
-  .union([z.string(), z.array(z.unknown())])
+  .union([z.string(), z.array(z.unknown()).max(MAX_CONTENT_PARTS)])
   .transform((content) => flattenMessageContent(content))
   .pipe(z.string().min(1).max(200_000));
 

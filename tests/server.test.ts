@@ -133,6 +133,7 @@ describe('cursor-ai-bridge server', () => {
               { text: 'text field' },
               { content: 'content field' },
               { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } },
+              { type: 'file', file_id: 'file_123' },
             ],
           },
         ],
@@ -142,8 +143,29 @@ describe('cursor-ai-bridge server', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.choices[0].message.content).toContain(
-      'plain block\ntext field\ncontent field\n[image omitted: cursor composer bridge is text-only]',
+      'plain block\ntext field\ncontent field\n[image omitted: cursor composer bridge is text-only]\n[unsupported content type omitted: file]',
     );
+  });
+
+  it('rejects excessively large content-part arrays before normalization', async () => {
+    const server = await app({ apiKey: 'test-bridge-key' });
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-bridge-key' },
+      payload: {
+        model: 'cursor-fast',
+        messages: [
+          {
+            role: 'user',
+            content: Array.from({ length: 1001 }, () => ({ type: 'text', text: 'x' })),
+          },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.type).toBe('invalid_request_error');
   });
 
   it('streams normalized OpenAI content-part arrays when stream=true', async () => {
