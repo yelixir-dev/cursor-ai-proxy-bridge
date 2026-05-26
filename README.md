@@ -20,7 +20,7 @@
   <img src="https://img.shields.io/badge/License-MIT-2ea44f?style=flat-square" alt="MIT License">
 </p>
 
-Cursor AI Bridge is a trusted-environment HTTP bridge that exposes a small OpenAI-compatible API in front of Cursor's local CLI/agent backend. It is designed as a sibling to Yorha's CommandCode Bridge: same Fastify security boundary and operator dashboard philosophy, but without upstream key-management UI.
+Cursor AI Bridge is a trusted-environment HTTP bridge that exposes a small OpenAI-compatible API in front of Cursor's local CLI/agent backend. It keeps local automation behind a Fastify security boundary, client API-key auth, and a read-only operations dashboard.
 
 > [!IMPORTANT]
 > Cursor AI Bridge does **not** bundle Cursor credentials, tokens, or a hardware-ID reset feature. Use it only with your own Cursor CLI/account environment and expose it only on localhost or a trusted VPN/tailnet.
@@ -69,7 +69,7 @@ A healthy preview shows a read-only dashboard and returns OpenAI-compatible mode
 - Supports explicit `real-workspace` mode only when a real workspace path is configured and valid.
 - Uses Fastify with Helmet/CSP, body limits, rate limiting, and Zod request validation.
 - Normalizes OpenAI content-part arrays such as `[{"type":"text","text":"..."}]` into plain text before calling Cursor CLI.
-- Avoids key input forms, token display, upstream credential persistence UI, and `reset-hwid` behavior.
+- Avoids credential input forms, token display, credential persistence UI, and `reset-hwid` behavior.
 
 ## Architecture
 

@@ -20,7 +20,7 @@
   <img src="https://img.shields.io/badge/License-MIT-2ea44f?style=flat-square" alt="MIT License">
 </p>
 
-Cursor AI Bridge는 Cursor의 로컬 CLI/agent backend 앞에 작은 OpenAI-compatible HTTP API를 세우는 신뢰 환경용 브리지입니다. Yorha의 CommandCode Bridge와 같은 방향의 형제 프로젝트로, Fastify 기반 보안 경계와 운영 대시보드 철학은 가져오되 upstream key 관리 UI는 넣지 않았습니다.
+Cursor AI Bridge는 Cursor의 로컬 CLI/agent backend 앞에 작은 OpenAI-compatible HTTP API를 세우는 신뢰 환경용 브리지입니다. Fastify 기반 보안 경계, client API-key 인증, read-only 운영 대시보드 뒤에서 로컬 자동화를 안전하게 다룹니다.
 
 > [!IMPORTANT]
 > Cursor AI Bridge는 Cursor credential, token, hardware-ID reset 기능을 번들하지 않습니다. 본인의 Cursor CLI/account 환경에서만 사용하고, localhost 또는 신뢰하는 VPN/tailnet 안에서만 노출하십시오.
@@ -69,7 +69,7 @@ http://127.0.0.1:9994/dashboard
 - `real-workspace`는 명시적으로 켜고, 실제 경로가 유효할 때만 사용.
 - Fastify, Helmet/CSP, body limit, rate limit, Zod request validation 적용.
 - `[{"type":"text","text":"..."}]` 같은 OpenAI content-part array를 Cursor CLI 호출 전에 plain text로 normalize.
-- key 입력 form, token 표시, upstream credential 저장 UI, `reset-hwid` 동작 제외.
+- credential 입력 form, token 표시, credential 저장 UI, `reset-hwid` 동작 제외.
 
 ## 구조
 
