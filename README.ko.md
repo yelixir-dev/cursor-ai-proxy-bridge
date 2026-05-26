@@ -25,9 +25,6 @@ Cursor AI Bridge는 Cursor의 로컬 CLI/agent backend 앞에 작은 OpenAI-comp
 > [!IMPORTANT]
 > Cursor AI Bridge는 Cursor credential, token, hardware-ID reset 기능을 번들하지 않습니다. 본인의 Cursor CLI/account 환경에서만 사용하고, localhost 또는 신뢰하는 VPN/tailnet 안에서만 노출하십시오.
 
-> [!NOTE]
-> 이 저장소는 `anyrobert/cursor-api-proxy`를 직접 fork한 것이 아니라 재구성한 프로젝트입니다. upstream 저장소는 Cursor CLI/agent 호출 아이디어를 참고하기 위해 읽었고, server auth, dashboard, workspace policy, test는 CommandCode Bridge식 안전 모델로 다시 구성했습니다.
-
 ## 한눈에 보기
 
 | 영역      | 요약                                                                                                               |
@@ -269,36 +266,6 @@ npm run lint
 npm run build
 npm audit --omit=dev
 ```
-
-## Upstream reference와 재구성 노트
-
-참고한 프로젝트:
-
-```text
-https://github.com/anyrobert/cursor-api-proxy
-```
-
-아이디어로 재사용한 부분:
-
-- Cursor CLI/agent backend invocation shape;
-- model mapping concept;
-- request-to-agent prompt flow.
-
-이 프로젝트에서 다시 구성한 부분:
-
-- Fastify server shell;
-- `/v1/*` fail-closed client auth;
-- read-only dashboard;
-- local HTTP용 Helmet/CSP policy;
-- workspace safety model;
-- tests, validation, smoke verification.
-
-의도적으로 제외한 부분:
-
-- key-management dashboard UI;
-- raw token/cache display;
-- `reset-hwid` 또는 device identity manipulation;
-- 넓은 admin control plane.
 
 ## 보안 메모
 

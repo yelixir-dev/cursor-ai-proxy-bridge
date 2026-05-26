@@ -25,9 +25,6 @@ Cursor AI Bridge is a trusted-environment HTTP bridge that exposes a small OpenA
 > [!IMPORTANT]
 > Cursor AI Bridge does **not** bundle Cursor credentials, tokens, or a hardware-ID reset feature. Use it only with your own Cursor CLI/account environment and expose it only on localhost or a trusted VPN/tailnet.
 
-> [!NOTE]
-> This repository is a reconstruction, not a direct fork of `anyrobert/cursor-api-proxy`. The upstream project was read and used as a reference for Cursor CLI/agent invocation ideas; server auth, dashboard, workspace policy, and tests were rebuilt around the CommandCode Bridge safety model.
-
 ## At a glance
 
 | Area            | Summary                                                                                                                   |
@@ -269,36 +266,6 @@ npm run lint
 npm run build
 npm audit --omit=dev
 ```
-
-## Upstream reference and reconstruction notes
-
-Reference project inspected:
-
-```text
-https://github.com/anyrobert/cursor-api-proxy
-```
-
-Reused as ideas:
-
-- Cursor CLI/agent backend invocation shape;
-- model mapping concepts;
-- request-to-agent prompt flow.
-
-Rebuilt for this project:
-
-- Fastify server shell;
-- `/v1/*` fail-closed client auth;
-- read-only dashboard;
-- Helmet/CSP policy for local HTTP;
-- workspace safety model;
-- tests, validation, and smoke verification.
-
-Intentionally excluded:
-
-- key-management dashboard UI;
-- raw token/cache display;
-- `reset-hwid` or device identity manipulation;
-- broad admin control plane.
 
 ## Security notes
 
