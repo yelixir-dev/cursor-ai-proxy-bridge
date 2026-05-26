@@ -9,9 +9,44 @@ import { redactedConfig } from './config.js';
 import type { CompletionResult, CursorBackend } from './backend/types.js';
 import { renderDashboard } from './dashboard.js';
 
+const IMAGE_OMITTED_PLACEHOLDER = '[image omitted: cursor composer bridge is text-only]';
+
+function flattenMessageContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+
+  const parts: string[] = [];
+  for (const block of content) {
+    if (typeof block === 'string') {
+      parts.push(block);
+      continue;
+    }
+    if (!block || typeof block !== 'object') continue;
+
+    const candidate = block as { type?: unknown; text?: unknown; content?: unknown };
+    if (typeof candidate.text === 'string') {
+      parts.push(candidate.text);
+      continue;
+    }
+    if (typeof candidate.content === 'string') {
+      parts.push(candidate.content);
+      continue;
+    }
+    if (candidate.type === 'image_url' || candidate.type === 'input_image') {
+      parts.push(IMAGE_OMITTED_PLACEHOLDER);
+    }
+  }
+  return parts.join('\n');
+}
+
+const chatContentSchema = z
+  .union([z.string(), z.array(z.unknown())])
+  .transform((content) => flattenMessageContent(content))
+  .pipe(z.string().min(1).max(200_000));
+
 const chatMessageSchema = z.object({
   role: z.enum(['system', 'user', 'assistant', 'tool']),
-  content: z.string().min(1).max(200_000),
+  content: chatContentSchema,
 });
 
 const chatCompletionSchema = z.object({

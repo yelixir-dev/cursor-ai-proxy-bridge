@@ -68,6 +68,7 @@ A healthy preview shows a read-only dashboard and returns OpenAI-compatible mode
 - Defaults to `chat-only` temporary workspace mode so real project files are not mounted by default.
 - Supports explicit `real-workspace` mode only when a real workspace path is configured and valid.
 - Uses Fastify with Helmet/CSP, body limits, rate limiting, and Zod request validation.
+- Normalizes OpenAI content-part arrays such as `[{"type":"text","text":"..."}]` into plain text before calling Cursor CLI.
 - Avoids key input forms, token display, upstream credential persistence UI, and `reset-hwid` behavior.
 
 ## Architecture
@@ -175,7 +176,7 @@ SSE streaming chat completion:
 
 ```bash
 curl -N -sS http://127.0.0.1:9994/v1/chat/completions \
-  -H "Authorization: Bearer [BRIDGE_CLIENT_TOKEN]" \
+  -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "cursor-fast",
@@ -183,6 +184,25 @@ curl -N -sS http://127.0.0.1:9994/v1/chat/completions \
     "messages": [{"role": "user", "content": "Reply in chunks"}]
   }'
 ```
+
+OpenAI content-part array requests are also accepted and normalized to plain text for the text-only Cursor CLI backend:
+
+```bash
+curl -sS http://127.0.0.1:9994/v1/chat/completions \
+  -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "composer-2.5",
+    "messages": [
+      {
+        "role": "user",
+        "content": [{"type": "text", "text": "Reply exactly: OK"}]
+      }
+    ]
+  }'
+```
+
+Image blocks are represented as `[image omitted: cursor composer bridge is text-only]` because this bridge currently targets text chat completion semantics, not multimodal Cursor automation.
 
 LiteLLM model entry example:
 

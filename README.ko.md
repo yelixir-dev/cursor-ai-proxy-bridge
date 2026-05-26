@@ -68,6 +68,7 @@ http://127.0.0.1:9994/dashboard
 - 기본값은 실제 프로젝트 파일을 mount하지 않는 `chat-only` 임시 workspace 모드.
 - `real-workspace`는 명시적으로 켜고, 실제 경로가 유효할 때만 사용.
 - Fastify, Helmet/CSP, body limit, rate limit, Zod request validation 적용.
+- `[{"type":"text","text":"..."}]` 같은 OpenAI content-part array를 Cursor CLI 호출 전에 plain text로 normalize.
 - key 입력 form, token 표시, upstream credential 저장 UI, `reset-hwid` 동작 제외.
 
 ## 구조
@@ -175,7 +176,7 @@ SSE streaming chat completion:
 
 ```bash
 curl -N -sS http://127.0.0.1:9994/v1/chat/completions \
-  -H "Authorization: Bearer [BRIDGE_CLIENT_TOKEN]" \
+  -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "cursor-fast",
@@ -183,6 +184,25 @@ curl -N -sS http://127.0.0.1:9994/v1/chat/completions \
     "messages": [{"role": "user", "content": "Reply in chunks"}]
   }'
 ```
+
+OpenAI content-part array 요청도 받을 수 있으며, text-only Cursor CLI backend로 넘기기 전에 plain text로 normalize합니다.
+
+```bash
+curl -sS http://127.0.0.1:9994/v1/chat/completions \
+  -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "composer-2.5",
+    "messages": [
+      {
+        "role": "user",
+        "content": [{"type": "text", "text": "Reply exactly: OK"}]
+      }
+    ]
+  }'
+```
+
+이미지 block은 현재 bridge가 multimodal Cursor automation이 아니라 text chat completion semantics를 대상으로 하므로 `[image omitted: cursor composer bridge is text-only]`로 표시합니다.
 
 LiteLLM model entry 예시:
 

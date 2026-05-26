@@ -92,6 +92,88 @@ describe('cursor-ai-bridge server', () => {
     expect(body.choices[0].message.content).toContain('mock cursor response');
   });
 
+  it('normalizes OpenAI text content-part arrays before backend completion', async () => {
+    const server = await app({ apiKey: 'test-bridge-key' });
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-bridge-key' },
+      payload: {
+        model: 'cursor-fast',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'hello' },
+              { type: 'text', text: 'world' },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.choices[0].message.content).toContain('hello\nworld');
+  });
+
+  it('normalizes defensive content block shapes and image placeholders', async () => {
+    const server = await app({ apiKey: 'test-bridge-key' });
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-bridge-key' },
+      payload: {
+        model: 'cursor-fast',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              'plain block',
+              { text: 'text field' },
+              { content: 'content field' },
+              { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.choices[0].message.content).toContain(
+      'plain block\ntext field\ncontent field\n[image omitted: cursor composer bridge is text-only]',
+    );
+  });
+
+  it('streams normalized OpenAI content-part arrays when stream=true', async () => {
+    const server = await app({ apiKey: 'test-bridge-key' });
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { 'x-api-key': 'test-bridge-key' },
+      payload: {
+        model: 'cursor-fast',
+        stream: true,
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'hello stream array' }] }],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const chunks = res.body
+      .split('\n\n')
+      .filter((line) => line.startsWith('data: {'))
+      .map(
+        (line) =>
+          JSON.parse(line.slice('data: '.length)) as {
+            choices: Array<{ delta: { content?: string } }>;
+          },
+      );
+    const streamedText = chunks.map((chunk) => chunk.choices[0]?.delta.content ?? '').join('');
+    expect(streamedText).toContain('hello stream array');
+    expect(res.body.trim().endsWith('data: [DONE]')).toBe(true);
+  });
+
   it('streams OpenAI-compatible chat completion chunks when stream=true', async () => {
     const server = await app();
     const res = await server.inject({
