@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { statSync } from 'node:fs';
 import type {
   BackendHealth,
@@ -81,6 +81,30 @@ function assertWorkspace(path: string): string {
   return resolved;
 }
 
+function estimateTokens(text: string): number {
+  return Math.max(1, Math.ceil(text.length / 4));
+}
+
+function cursorCliArgs(
+  cursorBin: string,
+  request: ChatCompletionRequest,
+  workspacePath: string,
+): string[] {
+  const baseArgs = [
+    '--print',
+    '--trust',
+    '--mode',
+    'ask',
+    '--workspace',
+    workspacePath,
+    '--model',
+    request.model,
+    '--output-format',
+    'text',
+  ];
+  return basename(cursorBin) === 'agent' ? baseArgs : ['agent', ...baseArgs];
+}
+
 export function createCursorCliBackend(config: BridgeConfig): CursorBackend {
   const cursorBin = process.env.CURSOR_BRIDGE_CURSOR_BIN || 'cursor';
   const timeoutMs = validTimeoutMs(process.env.CURSOR_BRIDGE_CURSOR_TIMEOUT_MS);
@@ -117,24 +141,35 @@ export function createCursorCliBackend(config: BridgeConfig): CursorBackend {
       }
     },
     async listModels(): Promise<BridgeModel[]> {
-      return defaultCursorModels();
+      const models = defaultCursorModels();
+      const existingIds = new Set(models.map((m) => m.id));
+      if (config.defaultModel && !existingIds.has(config.defaultModel)) {
+        models.unshift({
+          id: config.defaultModel,
+          object: 'model',
+          created: 1_700_000_000,
+          owned_by: 'cursor',
+        });
+      }
+      return models;
     },
     async complete(request: ChatCompletionRequest): Promise<CompletionResult> {
       const ws = await workspace();
       try {
         const prompt = promptFromMessages(request);
-        const args = [
-          'agent',
-          '--print',
-          '--workspace',
-          ws.cwd,
-          '--model',
-          request.model,
-          '--output-format',
-          'text',
-        ];
+        const args = cursorCliArgs(cursorBin, request, ws.cwd);
         const output = await runCommand(cursorBin, args, ws.cwd, timeoutMs, prompt);
-        return { content: output, model: request.model };
+        const promptTokens = estimateTokens(prompt);
+        const completionTokens = estimateTokens(output);
+        return {
+          content: output,
+          model: request.model,
+          usage: {
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: promptTokens + completionTokens,
+          },
+        };
       } finally {
         await ws.cleanup();
       }

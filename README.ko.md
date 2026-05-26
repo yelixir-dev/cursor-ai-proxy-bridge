@@ -130,13 +130,16 @@ npm run build
 npm start
 ```
 
-실제 Cursor backend로 바꾸려면:
+실제 Cursor backend로 바꾸려면 아래처럼 설정합니다. 일부 설치에서는 CLI binary가 `cursor`이고, Oracle/systemd 호스트에서는 `agent`일 수 있으므로 해당 환경에서 동작하는 executable 경로를 `CURSOR_BRIDGE_CURSOR_BIN`에 지정하십시오.
 
 ```env
 CURSOR_BRIDGE_BACKEND=cursor-cli
-CURSOR_BRIDGE_CURSOR_BIN=cursor
+CURSOR_BRIDGE_CURSOR_BIN=/home/ubuntu/.local/bin/agent
+CURSOR_BRIDGE_DEFAULT_MODEL=composer-2.5
 CURSOR_BRIDGE_CURSOR_TIMEOUT_MS=120000
 ```
+
+`cursor-cli` backend는 chat completion에 `--trust --mode ask`를 전달합니다. 일반 `cursor` binary에서는 `cursor agent --print ...`로 실행하고, binary 이름이 standalone `agent`인 경우에는 중복 subcommand 없이 `agent --print ...`로 실행합니다. `--trust`는 headless/systemd 환경에서 workspace trust prompt로 막히는 문제를 피하고, `--mode ask`는 기본 agent workflow보다 OpenAI chat completion 역할에 더 안전하게 맞춥니다.
 
 ## 첫 검증
 
@@ -181,6 +184,16 @@ curl -N -sS http://127.0.0.1:9994/v1/chat/completions \
   }'
 ```
 
+LiteLLM model entry 예시:
+
+```yaml
+model_name: composer-2.5
+litellm_params:
+  model: openai/composer-2.5
+  api_base: http://127.0.0.1:9994/v1
+  api_key: os.environ/CURSOR_BRIDGE_API_KEY
+```
+
 ## 웹 대시보드
 
 열기:
@@ -202,17 +215,17 @@ http://127.0.0.1:9994/dashboard
 
 ## 설정
 
-| 변수                              | 기본값        | 설명                                                          |
-| --------------------------------- | ------------- | ------------------------------------------------------------- |
-| `CURSOR_BRIDGE_HOST`              | `127.0.0.1`   | HTTP bind address. 신뢰 네트워크 뒤가 아니면 local-only 유지. |
-| `CURSOR_BRIDGE_PORT`              | `9994`        | HTTP port.                                                    |
-| `CURSOR_BRIDGE_API_KEY`           | unset         | `/v1/*`에 필수. 없으면 `503 configuration_error`.             |
-| `CURSOR_BRIDGE_BACKEND`           | `mock`        | `mock` 또는 `cursor-cli`.                                     |
-| `CURSOR_BRIDGE_DEFAULT_MODEL`     | `cursor-fast` | Dashboard/model 기본 hint.                                    |
-| `CURSOR_BRIDGE_WORKSPACE_MODE`    | `chat-only`   | `chat-only` 또는 `real-workspace`.                            |
-| `CURSOR_BRIDGE_REAL_WORKSPACE`    | unset         | `real-workspace`에서만 필요. 경로가 존재해야 함.              |
-| `CURSOR_BRIDGE_CURSOR_BIN`        | `cursor`      | Cursor CLI executable 이름/경로.                              |
-| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS` | `120000`      | 1초–10분 범위로 clamp.                                        |
+| 변수                              | 기본값        | 설명                                                                                                         |
+| --------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------ |
+| `CURSOR_BRIDGE_HOST`              | `127.0.0.1`   | HTTP bind address. 신뢰 네트워크 뒤가 아니면 local-only 유지.                                                |
+| `CURSOR_BRIDGE_PORT`              | `9994`        | HTTP port.                                                                                                   |
+| `CURSOR_BRIDGE_API_KEY`           | unset         | `/v1/*`에 필수. 없으면 `503 configuration_error`.                                                            |
+| `CURSOR_BRIDGE_BACKEND`           | `mock`        | `mock` 또는 `cursor-cli`.                                                                                    |
+| `CURSOR_BRIDGE_DEFAULT_MODEL`     | `cursor-fast` | 기본 model이며, custom 값이면 `/v1/models` discovery에도 노출됨. 예: `composer-2.5`.                         |
+| `CURSOR_BRIDGE_WORKSPACE_MODE`    | `chat-only`   | `chat-only` 또는 `real-workspace`.                                                                           |
+| `CURSOR_BRIDGE_REAL_WORKSPACE`    | unset         | `real-workspace`에서만 필요. 경로가 존재해야 함.                                                             |
+| `CURSOR_BRIDGE_CURSOR_BIN`        | `cursor`      | Cursor CLI executable 이름/경로. CLI가 `agent`로 설치된 환경에서는 `/home/ubuntu/.local/bin/agent`처럼 지정. |
+| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS` | `120000`      | 1초–10분 범위로 clamp.                                                                                       |
 
 ## Workspace 안전 모델
 
