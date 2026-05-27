@@ -349,6 +349,41 @@ describe('cursor-ai-bridge server', () => {
     expect(body.choices[0].message.tool_calls).toBeUndefined();
   });
 
+  it('accepts empty or null assistant content from OpenAI tool-call history', async () => {
+    const server = await app({ apiKey: 'test-bridge-key' });
+
+    for (const assistantContent of ['', null]) {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/v1/chat/completions',
+        headers: { authorization: 'Bearer test-bridge-key' },
+        payload: {
+          model: 'cursor-fast',
+          messages: [
+            { role: 'user', content: 'read /tmp/test.txt' },
+            {
+              role: 'assistant',
+              content: assistantContent,
+              tool_calls: [
+                {
+                  id: 'call_history_1',
+                  type: 'function',
+                  function: { name: 'read_file', arguments: '{"path":"/tmp/test.txt"}' },
+                },
+              ],
+            },
+            { role: 'tool', tool_call_id: 'call_history_1', content: 'EMPTY_CONTENT_OK' },
+            { role: 'user', content: 'summarize the tool result' },
+          ],
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.choices[0].message.content).toContain('summarize the tool result');
+    }
+  });
+
   it('serves a mobile-friendly read-only dashboard without key input UI or secrets', async () => {
     const server = await app();
     const res = await server.inject({ method: 'GET', url: '/dashboard' });

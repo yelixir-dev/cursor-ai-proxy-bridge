@@ -51,9 +51,9 @@ function flattenMessageContent(content: unknown): string {
 }
 
 const chatContentSchema = z
-  .union([z.string(), z.array(z.unknown()).max(MAX_CONTENT_PARTS)])
-  .transform((content) => flattenMessageContent(content))
-  .pipe(z.string().min(1).max(200_000));
+  .union([z.string(), z.null(), z.array(z.unknown()).max(MAX_CONTENT_PARTS)])
+  .transform((content) => (content === null ? '' : flattenMessageContent(content)))
+  .pipe(z.string().max(200_000));
 
 const chatMessageSchema = z.object({
   role: z.enum(['system', 'user', 'assistant', 'tool']),
