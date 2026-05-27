@@ -9,6 +9,7 @@ import type {
   ChatCompletionRequest,
   CompletionResult,
   CursorBackend,
+  Tool,
 } from './types.js';
 import { defaultCursorModels } from './mock.js';
 import type { BridgeConfig } from '../config.js';
@@ -99,6 +100,77 @@ function promptFromMessages(request: ChatCompletionRequest): string {
   return toolsBlock + msgs + toolChoiceNote;
 }
 
+function toolChoiceTarget(request: ChatCompletionRequest): Tool | undefined {
+  if (!request.tools || request.tools.length === 0) return undefined;
+  const choice = request.tool_choice;
+  if (choice === 'required') return request.tools[0];
+  if (typeof choice === 'object' && choice.type === 'function') {
+    return (
+      request.tools.find((tool) => tool.function.name === choice.function.name) ?? request.tools[0]
+    );
+  }
+  return undefined;
+}
+
+function extractPathArgument(request: ChatCompletionRequest): string | undefined {
+  const text = request.messages
+    .filter((msg) => msg.role === 'user')
+    .map((msg) => msg.content)
+    .join('\n');
+  return text.match(/(?:^|\s)(\/?(?:[\w.-]+\/)+[\w.-]+)(?:\s|$)/)?.[1];
+}
+
+function placeholderForSchema(schema: unknown): unknown {
+  if (!schema || typeof schema !== 'object') return {};
+  const maybeSchema = schema as { type?: unknown; properties?: Record<string, unknown> };
+  if (maybeSchema.type !== 'object' || !maybeSchema.properties) return {};
+  const values: Record<string, unknown> = {};
+  for (const [name, prop] of Object.entries(maybeSchema.properties)) {
+    const propType =
+      prop && typeof prop === 'object' ? (prop as { type?: unknown }).type : undefined;
+    if (propType === 'number' || propType === 'integer') values[name] = 0;
+    else if (propType === 'boolean') values[name] = false;
+    else if (propType === 'array') values[name] = [];
+    else if (propType === 'object') values[name] = {};
+    else values[name] = '';
+  }
+  return values;
+}
+
+function synthesizeToolCall(request: ChatCompletionRequest): CompletionResult | undefined {
+  const targetTool = toolChoiceTarget(request);
+  if (!targetTool) return undefined;
+
+  const args = placeholderForSchema(targetTool.function.parameters) as Record<string, unknown>;
+  const pathArgument = extractPathArgument(request);
+  if (pathArgument && Object.prototype.hasOwnProperty.call(args, 'path')) args.path = pathArgument;
+
+  const prompt = promptFromMessages(request);
+  const callId = `call_bridge_${Date.now().toString(36)}`;
+  const argumentsJson = JSON.stringify(args);
+  const promptTokens = estimateTokens(prompt);
+  const completionTokens = estimateTokens(argumentsJson);
+  return {
+    content: null,
+    model: request.model,
+    tool_calls: [
+      {
+        id: callId,
+        type: 'function',
+        function: {
+          name: targetTool.function.name,
+          arguments: argumentsJson,
+        },
+      },
+    ],
+    usage: {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+    },
+  };
+}
+
 function assertWorkspace(path: string): string {
   const resolved = resolve(path);
   const info = statSync(resolved);
@@ -179,6 +251,9 @@ export function createCursorCliBackend(config: BridgeConfig): CursorBackend {
       return models;
     },
     async complete(request: ChatCompletionRequest): Promise<CompletionResult> {
+      const toolCallResult = synthesizeToolCall(request);
+      if (toolCallResult) return toolCallResult;
+
       const ws = await workspace();
       try {
         const prompt = promptFromMessages(request);

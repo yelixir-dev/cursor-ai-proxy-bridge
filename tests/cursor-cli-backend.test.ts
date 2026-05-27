@@ -100,14 +100,67 @@ process.stdout.write(${JSON.stringify(output)});
           },
         },
       ],
-      tool_choice: 'required',
+      tool_choice: 'auto',
     });
 
     const invocation = JSON.parse(await readFile(logPath, 'utf8')) as { stdin: string };
     expect(invocation.stdin).toContain('AVAILABLE TOOLS');
     expect(invocation.stdin).toContain('read_file');
     expect(invocation.stdin).toContain('Read a file from disk');
-    expect(invocation.stdin).toContain('Tool choice mode: required');
+    expect(invocation.stdin).toContain('Tool choice mode: auto');
+  });
+
+  it('synthesizes OpenAI tool_calls for required tool_choice without invoking Cursor CLI', async () => {
+    const { logPath } = await fakeCursorBin('SHOULD_NOT_RUN');
+    const backend = createCursorCliBackend(baseConfig);
+
+    const result = await backend.complete({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'read /tmp/test.txt' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'read_file',
+            description: 'Read a file from disk',
+            parameters: { type: 'object', properties: { path: { type: 'string' } } },
+          },
+        },
+      ],
+      tool_choice: 'required',
+    });
+
+    expect(result.content).toBeNull();
+    expect(result.tool_calls?.[0]?.type).toBe('function');
+    expect(result.tool_calls?.[0]?.function.name).toBe('read_file');
+    expect(JSON.parse(result.tool_calls?.[0]?.function.arguments ?? '{}')).toEqual({
+      path: '/tmp/test.txt',
+    });
+    await expect(readFile(logPath, 'utf8')).rejects.toThrow();
+  });
+
+  it('synthesizes OpenAI tool_calls for forced function tool_choice', async () => {
+    await fakeCursorBin('SHOULD_NOT_RUN');
+    const backend = createCursorCliBackend(baseConfig);
+
+    const result = await backend.complete({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'read the file' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'read_file',
+            description: 'Read a file from disk',
+            parameters: { type: 'object', properties: { path: { type: 'string' } } },
+          },
+        },
+      ],
+      tool_choice: { type: 'function', function: { name: 'read_file' } },
+    });
+
+    expect(result.content).toBeNull();
+    expect(result.tool_calls?.[0]?.function.name).toBe('read_file');
   });
 
   it('includes tool_call_id in prompt for tool result messages', async () => {
