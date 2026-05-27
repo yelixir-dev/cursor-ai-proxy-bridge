@@ -70,8 +70,33 @@ function runCommand(
   });
 }
 
+function formatToolsBlock(tools: ChatCompletionRequest['tools']): string {
+  if (!tools || tools.length === 0) return '';
+  const defs = tools.map(
+    (t) =>
+      `- ${t.function.name}: ${t.function.description ?? ''}\n  parameters: ${JSON.stringify(t.function.parameters ?? {})}`,
+  );
+  return `\n\n--- AVAILABLE TOOLS ---\n${defs.join('\n')}\n--- END TOOLS ---\n`;
+}
+
 function promptFromMessages(request: ChatCompletionRequest): string {
-  return request.messages.map((msg) => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n\n');
+  const toolsBlock = formatToolsBlock(request.tools);
+  const msgs = request.messages
+    .map((msg) => {
+      if (msg.role === 'tool') {
+        return `TOOL RESULT (call_id=${msg.tool_call_id ?? 'unknown'}): ${msg.content}`;
+      }
+      let line = `${msg.role.toUpperCase()}: ${msg.content}`;
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        line += `\n[TOOL_CALLS: ${JSON.stringify(msg.tool_calls)}]`;
+      }
+      return line;
+    })
+    .join('\n\n');
+  const toolChoiceNote = request.tool_choice
+    ? `\n\nTool choice mode: ${typeof request.tool_choice === 'string' ? request.tool_choice : `force:${request.tool_choice.function.name}`}`
+    : '';
+  return toolsBlock + msgs + toolChoiceNote;
 }
 
 function assertWorkspace(path: string): string {
@@ -94,7 +119,7 @@ function cursorCliArgs(
     '--print',
     '--trust',
     '--mode',
-    'ask',
+    'agent',
     '--workspace',
     workspacePath,
     '--model',
@@ -162,7 +187,7 @@ export function createCursorCliBackend(config: BridgeConfig): CursorBackend {
         const promptTokens = estimateTokens(prompt);
         const completionTokens = estimateTokens(output);
         return {
-          content: output,
+          content: output || null,
           model: request.model,
           usage: {
             prompt_tokens: promptTokens,

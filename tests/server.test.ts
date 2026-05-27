@@ -6,7 +6,7 @@ import type { BridgeConfig } from '../src/config.js';
 const baseConfig: BridgeConfig = {
   host: '127.0.0.1',
   port: 9994,
-  apiKey: 'sk-test-client',
+  apiKey: '***',
   backend: 'mock',
   defaultModel: 'cursor-fast',
   workspaceMode: 'chat-only',
@@ -30,7 +30,7 @@ describe('cursor-ai-bridge server', () => {
     const body = res.json();
     expect(body.status).toBe('ok');
     expect(body.auth.client_api_key_configured).toBe(true);
-    expect(JSON.stringify(body)).not.toContain('sk-test-client');
+    expect(JSON.stringify(body)).not.toContain('***');
     expect(body.workspace.mode).toBe('chat-only');
   });
 
@@ -42,7 +42,7 @@ describe('cursor-ai-bridge server', () => {
     const ok = await server.inject({
       method: 'GET',
       url: '/v1/models',
-      headers: { authorization: 'Bearer sk-test-client' },
+      headers: { authorization: 'Bearer ***' },
     });
     expect(ok.statusCode).toBe(200);
     expect(ok.json().data.map((m: { id: string }) => m.id)).toContain('cursor-fast');
@@ -60,7 +60,7 @@ describe('cursor-ai-bridge server', () => {
     const ok = await server.inject({
       method: 'GET',
       url: '/v1/models',
-      headers: { 'x-api-key': 'sk-test-client' },
+      headers: { 'x-api-key': '***' },
     });
     expect(ok.statusCode).toBe(200);
   });
@@ -70,7 +70,7 @@ describe('cursor-ai-bridge server', () => {
     const invalid = await server.inject({
       method: 'POST',
       url: '/v1/chat/completions',
-      headers: { authorization: 'Bearer sk-test-client' },
+      headers: { authorization: 'Bearer ***' },
       payload: { model: 'cursor-fast', messages: [] },
     });
     expect(invalid.statusCode).toBe(400);
@@ -78,7 +78,7 @@ describe('cursor-ai-bridge server', () => {
     const ok = await server.inject({
       method: 'POST',
       url: '/v1/chat/completions',
-      headers: { authorization: 'Bearer sk-test-client' },
+      headers: { authorization: 'Bearer ***' },
       payload: {
         model: 'cursor-fast',
         stream: false,
@@ -201,7 +201,7 @@ describe('cursor-ai-bridge server', () => {
     const res = await server.inject({
       method: 'POST',
       url: '/v1/chat/completions',
-      headers: { 'x-api-key': 'sk-test-client' },
+      headers: { 'x-api-key': '***' },
       payload: {
         model: 'cursor-fast',
         stream: true,
@@ -229,6 +229,126 @@ describe('cursor-ai-bridge server', () => {
     expect(streamedText).toContain('mock cursor response');
   });
 
+  it('returns tool_calls when tools are provided with tool_choice=required', async () => {
+    const server = await app({ apiKey: 'test-bridge-key' });
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-bridge-key' },
+      payload: {
+        model: 'cursor-fast',
+        messages: [{ role: 'user', content: 'read the file' }],
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'read_file',
+              description: 'Read a file',
+              parameters: { type: 'object', properties: { path: { type: 'string' } } },
+            },
+          },
+        ],
+        tool_choice: 'required',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.choices[0].finish_reason).toBe('tool_calls');
+    expect(body.choices[0].message.content).toBeNull();
+    expect(body.choices[0].message.tool_calls).toBeDefined();
+    expect(body.choices[0].message.tool_calls.length).toBeGreaterThan(0);
+    expect(body.choices[0].message.tool_calls[0].function.name).toBe('read_file');
+  });
+
+  it('returns tool_calls when tool_choice forces a specific function', async () => {
+    const server = await app({ apiKey: 'test-bridge-key' });
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-bridge-key' },
+      payload: {
+        model: 'cursor-fast',
+        messages: [{ role: 'user', content: 'read the file' }],
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'read_file',
+              description: 'Read a file',
+              parameters: { type: 'object', properties: { path: { type: 'string' } } },
+            },
+          },
+        ],
+        tool_choice: { type: 'function', function: { name: 'read_file' } },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.choices[0].finish_reason).toBe('tool_calls');
+    expect(body.choices[0].message.tool_calls[0].function.name).toBe('read_file');
+  });
+
+  it('streams tool_calls in SSE when tools are provided with tool_choice=required', async () => {
+    const server = await app({ apiKey: 'test-bridge-key' });
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-bridge-key' },
+      payload: {
+        model: 'cursor-fast',
+        stream: true,
+        messages: [{ role: 'user', content: 'read the file' }],
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'read_file',
+              description: 'Read a file',
+              parameters: { type: 'object', properties: { path: { type: 'string' } } },
+            },
+          },
+        ],
+        tool_choice: 'required',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(String(res.headers['content-type'])).toContain('text/event-stream');
+    const chunks = res.body
+      .split('\n\n')
+      .filter((line) => line.startsWith('data: {'))
+      .map(
+        (line) =>
+          JSON.parse(line.slice('data: '.length)) as {
+            choices: Array<{ delta: { tool_calls?: unknown; content?: string } }>;
+          },
+      );
+    const toolCallChunks = chunks.filter((c) => c.choices[0]?.delta?.tool_calls);
+    expect(toolCallChunks.length).toBeGreaterThan(0);
+    expect(res.body.trim().endsWith('data: [DONE]')).toBe(true);
+  });
+
+  it('returns normal content when tools are not provided', async () => {
+    const server = await app();
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer ***' },
+      payload: {
+        model: 'cursor-fast',
+        messages: [{ role: 'user', content: 'hello no tools' }],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.choices[0].finish_reason).toBe('stop');
+    expect(body.choices[0].message.content).toContain('mock cursor response');
+    expect(body.choices[0].message.tool_calls).toBeUndefined();
+  });
+
   it('serves a mobile-friendly read-only dashboard without key input UI or secrets', async () => {
     const server = await app();
     const res = await server.inject({ method: 'GET', url: '/dashboard' });
@@ -238,7 +358,7 @@ describe('cursor-ai-bridge server', () => {
     expect(html).toContain('Cursor AI Bridge Console');
     expect(html).toContain('Workspace Safety');
     expect(html).toContain('chat-only');
-    expect(html).not.toContain('sk-test-client');
+    expect(html).not.toContain('***');
     expect(html).not.toMatch(/<input[^>]+(api|key|token)/i);
   });
 

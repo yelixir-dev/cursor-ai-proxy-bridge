@@ -58,7 +58,43 @@ const chatContentSchema = z
 const chatMessageSchema = z.object({
   role: z.enum(['system', 'user', 'assistant', 'tool']),
   content: chatContentSchema,
+  tool_calls: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(200),
+        type: z.literal('function'),
+        function: z.object({
+          name: z.string().min(1).max(200),
+          arguments: z.string().max(200_000),
+        }),
+      }),
+    )
+    .min(1)
+    .max(100)
+    .optional(),
+  tool_call_id: z.string().min(1).max(200).optional(),
 });
+
+const toolFunctionSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().max(2000).optional(),
+  parameters: z.record(z.string(), z.unknown()).optional(),
+});
+
+const toolSchema = z.object({
+  type: z.literal('function'),
+  function: toolFunctionSchema,
+});
+
+const toolChoiceSchema = z.union([
+  z.literal('none'),
+  z.literal('auto'),
+  z.literal('required'),
+  z.object({
+    type: z.literal('function'),
+    function: z.object({ name: z.string().min(1).max(200) }),
+  }),
+]);
 
 const chatCompletionSchema = z.object({
   model: z.string().min(1).max(200).default('cursor-fast'),
@@ -66,6 +102,8 @@ const chatCompletionSchema = z.object({
   stream: z.boolean().optional().default(false),
   temperature: z.number().min(0).max(2).optional(),
   max_tokens: z.number().int().positive().max(200_000).optional(),
+  tools: z.array(toolSchema).min(1).max(128).optional(),
+  tool_choice: toolChoiceSchema.optional(),
 });
 
 export interface BuildServerOptions {
@@ -113,7 +151,19 @@ function openAiError(message: string, type = 'invalid_request_error') {
   return { error: { message, type } };
 }
 
-function chatCompletionPayload(result: CompletionResult, id: string, created: number) {
+function chatCompletionPayload(
+  result: CompletionResult,
+  id: string,
+  created: number,
+): Record<string, unknown> {
+  const message: Record<string, unknown> = { role: 'assistant' };
+  if (result.tool_calls && result.tool_calls.length > 0) {
+    message.tool_calls = result.tool_calls;
+    message.content = null;
+  } else {
+    message.content = result.content;
+  }
+
   return {
     id,
     object: 'chat.completion',
@@ -122,8 +172,8 @@ function chatCompletionPayload(result: CompletionResult, id: string, created: nu
     choices: [
       {
         index: 0,
-        message: { role: 'assistant', content: result.content },
-        finish_reason: 'stop',
+        message,
+        finish_reason: result.tool_calls?.length ? 'tool_calls' : 'stop',
       },
     ],
     usage: result.usage ?? {
@@ -154,16 +204,28 @@ function chatCompletionSse(result: CompletionResult, id: string, created: number
     }),
   ];
 
-  for (const content of splitSseContent(result.content)) {
+  if (result.tool_calls && result.tool_calls.length > 0) {
     frames.push(
       sseData({
         id,
         object: 'chat.completion.chunk',
         created,
         model: result.model,
-        choices: [{ index: 0, delta: { content }, finish_reason: null }],
+        choices: [{ index: 0, delta: { tool_calls: result.tool_calls }, finish_reason: null }],
       }),
     );
+  } else if (result.content) {
+    for (const chunk of splitSseContent(result.content)) {
+      frames.push(
+        sseData({
+          id,
+          object: 'chat.completion.chunk',
+          created,
+          model: result.model,
+          choices: [{ index: 0, delta: { content: chunk }, finish_reason: null }],
+        }),
+      );
+    }
   }
 
   frames.push(
@@ -172,7 +234,9 @@ function chatCompletionSse(result: CompletionResult, id: string, created: number
       object: 'chat.completion.chunk',
       created,
       model: result.model,
-      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      choices: [
+        { index: 0, delta: {}, finish_reason: result.tool_calls?.length ? 'tool_calls' : 'stop' },
+      ],
     }),
     'data: [DONE]\n\n',
   );

@@ -40,7 +40,7 @@ process.stdout.write(${JSON.stringify(output)});
     return { logPath };
   }
 
-  it('invokes Cursor CLI in trusted ask mode for headless chat completions', async () => {
+  it('invokes Cursor CLI in agent mode for headless chat completions', async () => {
     const { logPath } = await fakeCursorBin();
     const backend = createCursorCliBackend(baseConfig);
 
@@ -59,7 +59,7 @@ process.stdout.write(${JSON.stringify(output)});
         '--print',
         '--trust',
         '--mode',
-        'ask',
+        'agent',
         '--model',
         'composer-2.5',
       ]),
@@ -77,8 +77,57 @@ process.stdout.write(${JSON.stringify(output)});
     });
 
     const invocation = JSON.parse(await readFile(logPath, 'utf8')) as { argv: string[] };
-    expect(invocation.argv.slice(0, 4)).toEqual(['--print', '--trust', '--mode', 'ask']);
-    expect(invocation.argv).not.toContain('agent');
+    expect(invocation.argv.slice(0, 4)).toEqual(['--print', '--trust', '--mode', 'agent']);
+    expect(invocation.argv[0]).not.toBe('agent');
+    expect(invocation.argv).toContain('--mode');
+    expect(invocation.argv).toContain('agent');
+  });
+
+  it('includes tool definitions in prompt when tools are provided', async () => {
+    const { logPath } = await fakeCursorBin('BRIDGE_OK');
+    const backend = createCursorCliBackend(baseConfig);
+
+    await backend.complete({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'read the file' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'read_file',
+            description: 'Read a file from disk',
+            parameters: { type: 'object', properties: { path: { type: 'string' } } },
+          },
+        },
+      ],
+      tool_choice: 'required',
+    });
+
+    const invocation = JSON.parse(await readFile(logPath, 'utf8')) as { stdin: string };
+    expect(invocation.stdin).toContain('AVAILABLE TOOLS');
+    expect(invocation.stdin).toContain('read_file');
+    expect(invocation.stdin).toContain('Read a file from disk');
+    expect(invocation.stdin).toContain('Tool choice mode: required');
+  });
+
+  it('includes tool_call_id in prompt for tool result messages', async () => {
+    const { logPath } = await fakeCursorBin('BRIDGE_OK');
+    const backend = createCursorCliBackend(baseConfig);
+
+    await backend.complete({
+      model: 'composer-2.5',
+      messages: [
+        { role: 'user', content: 'read the file' },
+        {
+          role: 'tool',
+          content: 'file contents here',
+          tool_call_id: 'call_abc123',
+        },
+      ],
+    });
+
+    const invocation = JSON.parse(await readFile(logPath, 'utf8')) as { stdin: string };
+    expect(invocation.stdin).toContain('TOOL RESULT (call_id=call_abc123): file contents here');
   });
 
   it('exposes the configured default model in model discovery', async () => {
