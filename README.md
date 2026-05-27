@@ -142,6 +142,15 @@ CURSOR_BRIDGE_CURSOR_TIMEOUT_MS=120000
 
 The `cursor-cli` backend passes `--print --trust` for headless chat completions and deliberately omits `--mode`. With the regular `cursor` binary it runs `cursor agent --print ...`; with a standalone binary named `agent` it runs `agent --print ...` and omits the duplicate subcommand. `--trust` prevents headless workspace-trust prompts from blocking systemd runs, while omitting `--mode` keeps Cursor Agent in its writable default headless mode instead of the read-only `ask` or `plan` modes.
 
+When exposing `composer-2.5` through LiteLLM, set the model metadata explicitly so downstream OpenAI-compatible clients can see the intended context budget:
+
+```yaml
+model_info:
+  max_input_tokens: 200000
+  max_tokens: 200000
+  context_window: 200000
+```
+
 ## First verification
 
 Health check:

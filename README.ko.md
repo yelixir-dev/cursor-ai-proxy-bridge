@@ -142,6 +142,15 @@ CURSOR_BRIDGE_CURSOR_TIMEOUT_MS=120000
 
 `cursor-cli` backend는 headless chat completion에 `--print --trust`를 전달하고, 의도적으로 `--mode`를 생략합니다. 일반 `cursor` binary에서는 `cursor agent --print ...`로 실행하고, binary 이름이 standalone `agent`인 경우에는 중복 subcommand 없이 `agent --print ...`로 실행합니다. `--trust`는 headless/systemd 환경에서 workspace trust prompt로 막히는 문제를 피하고, `--mode`를 생략하면 Cursor Agent가 read-only `ask`/`plan` 모드가 아니라 쓰기 가능한 기본 headless 모드로 동작합니다.
 
+LiteLLM을 통해 `composer-2.5`를 노출할 때는 downstream OpenAI-compatible client가 의도한 context budget을 볼 수 있도록 model metadata를 명시하십시오:
+
+```yaml
+model_info:
+  max_input_tokens: 200000
+  max_tokens: 200000
+  context_window: 200000
+```
+
 ## 첫 검증
 
 Health check:
