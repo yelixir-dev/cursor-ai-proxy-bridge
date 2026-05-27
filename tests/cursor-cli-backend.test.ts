@@ -40,7 +40,7 @@ process.stdout.write(${JSON.stringify(output)});
     return { logPath };
   }
 
-  it('invokes Cursor CLI in agent mode for headless chat completions', async () => {
+  it('invokes Cursor CLI without --mode for writable headless agent completions', async () => {
     const { logPath } = await fakeCursorBin();
     const backend = createCursorCliBackend(baseConfig);
 
@@ -54,20 +54,14 @@ process.stdout.write(${JSON.stringify(output)});
       stdin: string;
     };
     expect(invocation.argv).toEqual(
-      expect.arrayContaining([
-        'agent',
-        '--print',
-        '--trust',
-        '--mode',
-        'agent',
-        '--model',
-        'composer-2.5',
-      ]),
+      expect.arrayContaining(['agent', '--print', '--trust', '--model', 'composer-2.5']),
     );
+    expect(invocation.argv).not.toContain('--mode');
+    expect(invocation.argv).not.toContain('ask');
     expect(invocation.stdin).toContain('USER: hello');
   });
 
-  it('omits the cursor subcommand when the configured binary is the standalone agent executable', async () => {
+  it('omits both --mode and the cursor subcommand when configured binary is standalone agent', async () => {
     const { logPath } = await fakeCursorBin('BRIDGE_OK', 'agent');
     const backend = createCursorCliBackend(baseConfig);
 
@@ -77,10 +71,10 @@ process.stdout.write(${JSON.stringify(output)});
     });
 
     const invocation = JSON.parse(await readFile(logPath, 'utf8')) as { argv: string[] };
-    expect(invocation.argv.slice(0, 4)).toEqual(['--print', '--trust', '--mode', 'agent']);
+    expect(invocation.argv.slice(0, 2)).toEqual(['--print', '--trust']);
     expect(invocation.argv[0]).not.toBe('agent');
-    expect(invocation.argv).toContain('--mode');
-    expect(invocation.argv).toContain('agent');
+    expect(invocation.argv).not.toContain('--mode');
+    expect(invocation.argv).not.toContain('ask');
   });
 
   it('includes tool definitions in prompt when tools are provided', async () => {

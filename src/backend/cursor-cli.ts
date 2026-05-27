@@ -190,8 +190,6 @@ function cursorCliArgs(
   const baseArgs = [
     '--print',
     '--trust',
-    '--mode',
-    'agent',
     '--workspace',
     workspacePath,
     '--model',
