@@ -77,7 +77,7 @@ function formatToolsBlock(tools: ChatCompletionRequest['tools']): string {
     (t) =>
       `- ${t.function.name}: ${t.function.description ?? ''}\n  parameters: ${JSON.stringify(t.function.parameters ?? {})}`,
   );
-  return `\n\n--- AVAILABLE TOOLS ---\n${defs.join('\n')}\n--- END TOOLS ---\n`;
+  return `\n\n--- AVAILABLE TOOLS ---\n${defs.join('\n')}\n--- END TOOLS ---\n\n--- TOOL CALL OUTPUT CONTRACT ---\nWhen a tool is needed, respond with ONLY a JSON object using this shape:\n{"CURSOR_BRIDGE_TOOL_CALL":true,"tool_calls":[{"function":{"name":"tool_name","arguments":{}}}]}\nThe arguments object must match the selected tool schema. Do not wrap the JSON in prose. Do not claim you used a tool in prose; emit the JSON tool call instead.\n--- END TOOL CALL OUTPUT CONTRACT ---\n`;
 }
 
 function promptFromMessages(request: ChatCompletionRequest): string {
@@ -171,6 +171,90 @@ function synthesizeToolCall(request: ChatCompletionRequest): CompletionResult | 
   };
 }
 
+function stripJsonFence(output: string): string {
+  const trimmed = output.trim();
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenceMatch?.[1]?.trim() ?? trimmed;
+}
+
+function normalizeArguments(raw: unknown): string {
+  if (typeof raw === 'string') {
+    JSON.parse(raw);
+    return raw;
+  }
+  return JSON.stringify(raw && typeof raw === 'object' ? raw : {});
+}
+
+function parseCursorToolCallOutput(
+  output: string,
+  request: ChatCompletionRequest,
+  promptTokens: number,
+): CompletionResult | undefined {
+  if (!request.tools || request.tools.length === 0) return undefined;
+  const allowedTools = new Set(request.tools.map((tool) => tool.function.name));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripJsonFence(output));
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== 'object') return undefined;
+  const payload = parsed as { tool_calls?: unknown; function_call?: unknown };
+  const rawCalls = Array.isArray(payload.tool_calls)
+    ? payload.tool_calls
+    : payload.function_call
+      ? [payload.function_call]
+      : [];
+  if (rawCalls.length === 0) return undefined;
+
+  const toolCalls = rawCalls.flatMap((raw, index) => {
+    if (!raw || typeof raw !== 'object') return [];
+    const candidate = raw as {
+      id?: unknown;
+      type?: unknown;
+      name?: unknown;
+      arguments?: unknown;
+      function?: { name?: unknown; arguments?: unknown };
+    };
+    const name =
+      typeof candidate.function?.name === 'string'
+        ? candidate.function.name
+        : typeof candidate.name === 'string'
+          ? candidate.name
+          : '';
+    if (!allowedTools.has(name)) return [];
+    const rawArgs = candidate.function?.arguments ?? candidate.arguments ?? {};
+    let argumentsJson: string;
+    try {
+      argumentsJson = normalizeArguments(rawArgs);
+    } catch {
+      return [];
+    }
+    return [
+      {
+        id:
+          typeof candidate.id === 'string' && candidate.id
+            ? candidate.id
+            : `call_bridge_${Date.now().toString(36)}_${index}`,
+        type: 'function' as const,
+        function: { name, arguments: argumentsJson },
+      },
+    ];
+  });
+  if (toolCalls.length === 0) return undefined;
+  const completionTokens = estimateTokens(JSON.stringify(toolCalls));
+  return {
+    content: null,
+    model: request.model,
+    tool_calls: toolCalls,
+    usage: {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+    },
+  };
+}
+
 function assertWorkspace(path: string): string {
   const resolved = resolve(path);
   const info = statSync(resolved);
@@ -197,7 +281,8 @@ function cursorCliArgs(
     '--output-format',
     'text',
   ];
-  return basename(cursorBin) === 'agent' ? baseArgs : ['agent', ...baseArgs];
+  const binName = basename(cursorBin);
+  return binName === 'agent' || binName === 'cursor-agent' ? baseArgs : ['agent', ...baseArgs];
 }
 
 export function createCursorCliBackend(config: BridgeConfig): CursorBackend {
@@ -258,6 +343,8 @@ export function createCursorCliBackend(config: BridgeConfig): CursorBackend {
         const args = cursorCliArgs(cursorBin, request, ws.cwd);
         const output = await runCommand(cursorBin, args, ws.cwd, timeoutMs, prompt);
         const promptTokens = estimateTokens(prompt);
+        const parsedToolCall = parseCursorToolCallOutput(output, request, promptTokens);
+        if (parsedToolCall) return parsedToolCall;
         const completionTokens = estimateTokens(output);
         return {
           content: output || null,

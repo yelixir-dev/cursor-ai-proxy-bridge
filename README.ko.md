@@ -69,6 +69,7 @@ http://127.0.0.1:9994/dashboard
 - `real-workspace`는 명시적으로 켜고, 실제 경로가 유효할 때만 사용.
 - Fastify, Helmet/CSP, body limit, rate limit, Zod request validation 적용.
 - `[{"type":"text","text":"..."}]` 같은 OpenAI content-part array를 Cursor CLI 호출 전에 plain text로 normalize.
+- 도구가 필요할 때 Cursor CLI가 strict JSON을 내도록 지시하고, 유효한 Cursor 출력을 표준 OpenAI `tool_calls`로 변환.
 - credential 입력 form, token 표시, credential 저장 UI, `reset-hwid` 동작 제외.
 
 ## 구조
@@ -131,7 +132,7 @@ npm run build
 npm start
 ```
 
-실제 Cursor backend로 바꾸려면 아래처럼 설정합니다. 일부 설치에서는 CLI binary가 `cursor`이고, Oracle/systemd 호스트에서는 `agent`일 수 있으므로 해당 환경에서 동작하는 executable 경로를 `CURSOR_BRIDGE_CURSOR_BIN`에 지정하십시오.
+실제 Cursor backend로 바꾸려면 아래처럼 설정합니다. 일부 설치에서는 CLI binary가 `cursor`이고, Oracle/systemd 호스트에서는 `agent`, 로컬 Cursor Agent 설치에서는 `cursor-agent`일 수 있으므로 해당 환경에서 동작하는 executable 경로를 `CURSOR_BRIDGE_CURSOR_BIN`에 지정하십시오.
 
 ```env
 CURSOR_BRIDGE_BACKEND=cursor-cli
@@ -262,17 +263,17 @@ http://127.0.0.1:9994/dashboard
 
 ## 설정
 
-| 변수                              | 기본값        | 설명                                                                                                         |
-| --------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------ |
-| `CURSOR_BRIDGE_HOST`              | `127.0.0.1`   | HTTP bind address. 신뢰 네트워크 뒤가 아니면 local-only 유지.                                                |
-| `CURSOR_BRIDGE_PORT`              | `9994`        | HTTP port.                                                                                                   |
-| `CURSOR_BRIDGE_API_KEY`           | unset         | `/v1/*`에 필수. 없으면 `503 configuration_error`.                                                            |
-| `CURSOR_BRIDGE_BACKEND`           | `mock`        | `mock` 또는 `cursor-cli`.                                                                                    |
-| `CURSOR_BRIDGE_DEFAULT_MODEL`     | `cursor-fast` | 기본 model이며, custom 값이면 `/v1/models` discovery에도 노출됨. 예: `composer-2.5`.                         |
-| `CURSOR_BRIDGE_WORKSPACE_MODE`    | `chat-only`   | `chat-only` 또는 `real-workspace`.                                                                           |
-| `CURSOR_BRIDGE_REAL_WORKSPACE`    | unset         | `real-workspace`에서만 필요. 경로가 존재해야 함.                                                             |
-| `CURSOR_BRIDGE_CURSOR_BIN`        | `cursor`      | Cursor CLI executable 이름/경로. CLI가 `agent`로 설치된 환경에서는 `/home/ubuntu/.local/bin/agent`처럼 지정. |
-| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS` | `120000`      | 1초–10분 범위로 clamp.                                                                                       |
+| 변수                              | 기본값        | 설명                                                                                                                                                  |
+| --------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CURSOR_BRIDGE_HOST`              | `127.0.0.1`   | HTTP bind address. 신뢰 네트워크 뒤가 아니면 local-only 유지.                                                                                         |
+| `CURSOR_BRIDGE_PORT`              | `9994`        | HTTP port.                                                                                                                                            |
+| `CURSOR_BRIDGE_API_KEY`           | unset         | `/v1/*`에 필수. 없으면 `503 configuration_error`.                                                                                                     |
+| `CURSOR_BRIDGE_BACKEND`           | `mock`        | `mock` 또는 `cursor-cli`.                                                                                                                             |
+| `CURSOR_BRIDGE_DEFAULT_MODEL`     | `cursor-fast` | 기본 model이며, custom 값이면 `/v1/models` discovery에도 노출됨. 예: `composer-2.5`.                                                                  |
+| `CURSOR_BRIDGE_WORKSPACE_MODE`    | `chat-only`   | `chat-only` 또는 `real-workspace`.                                                                                                                    |
+| `CURSOR_BRIDGE_REAL_WORKSPACE`    | unset         | `real-workspace`에서만 필요. 경로가 존재해야 함.                                                                                                      |
+| `CURSOR_BRIDGE_CURSOR_BIN`        | `cursor`      | Cursor CLI executable 이름/경로. standalone agent binary를 쓰면 `/home/ubuntu/.local/bin/agent` 또는 `/Users/yorha/.local/bin/cursor-agent`처럼 지정. |
+| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS` | `120000`      | 1초–10분 범위로 clamp.                                                                                                                                |
 
 ## Workspace 안전 모델
 

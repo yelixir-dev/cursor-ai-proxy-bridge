@@ -69,6 +69,7 @@ A healthy preview shows a read-only dashboard and returns OpenAI-compatible mode
 - Supports explicit `real-workspace` mode only when a real workspace path is configured and valid.
 - Uses Fastify with Helmet/CSP, body limits, rate limiting, and Zod request validation.
 - Normalizes OpenAI content-part arrays such as `[{"type":"text","text":"..."}]` into plain text before calling Cursor CLI.
+- Instructs Cursor CLI to emit strict JSON when a tool is needed, then converts valid Cursor output into standard OpenAI `tool_calls`.
 - Avoids credential input forms, token display, credential persistence UI, and `reset-hwid` behavior.
 
 ## Architecture
@@ -131,7 +132,7 @@ npm run build
 npm start
 ```
 
-For a real Cursor-backed run, switch the backend. Some Cursor installations expose the CLI binary as `cursor`; on the Oracle/systemd host it may be installed as `agent`, so point `CURSOR_BRIDGE_CURSOR_BIN` at the executable that works in that environment.
+For a real Cursor-backed run, switch the backend. Some Cursor installations expose the CLI binary as `cursor`; on the Oracle/systemd host it may be installed as `agent`, and local Cursor Agent installs may expose `cursor-agent`, so point `CURSOR_BRIDGE_CURSOR_BIN` at the executable that works in that environment.
 
 ```env
 CURSOR_BRIDGE_BACKEND=cursor-cli
@@ -262,17 +263,17 @@ It does **not** include a key input/save UI. If admin writes are added later, th
 
 ## Configuration
 
-| Variable                          | Default       | Notes                                                                                                            |
-| --------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `CURSOR_BRIDGE_HOST`              | `127.0.0.1`   | HTTP bind address. Keep local-only unless behind trusted network controls.                                       |
-| `CURSOR_BRIDGE_PORT`              | `9994`        | HTTP port.                                                                                                       |
-| `CURSOR_BRIDGE_API_KEY`           | unset         | Required for `/v1/*`; missing key returns `503 configuration_error`.                                             |
-| `CURSOR_BRIDGE_BACKEND`           | `mock`        | `mock` or `cursor-cli`.                                                                                          |
-| `CURSOR_BRIDGE_DEFAULT_MODEL`     | `cursor-fast` | Default model and `/v1/models` discovery entry when custom (for example `composer-2.5`).                         |
-| `CURSOR_BRIDGE_WORKSPACE_MODE`    | `chat-only`   | `chat-only` or `real-workspace`.                                                                                 |
-| `CURSOR_BRIDGE_REAL_WORKSPACE`    | unset         | Required only for `real-workspace`; path must exist.                                                             |
-| `CURSOR_BRIDGE_CURSOR_BIN`        | `cursor`      | Cursor CLI executable name/path; set to `/home/ubuntu/.local/bin/agent` when Cursor installs the CLI as `agent`. |
-| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS` | `120000`      | Clamped to 1 second–10 minutes.                                                                                  |
+| Variable                          | Default       | Notes                                                                                                                                                   |
+| --------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CURSOR_BRIDGE_HOST`              | `127.0.0.1`   | HTTP bind address. Keep local-only unless behind trusted network controls.                                                                              |
+| `CURSOR_BRIDGE_PORT`              | `9994`        | HTTP port.                                                                                                                                              |
+| `CURSOR_BRIDGE_API_KEY`           | unset         | Required for `/v1/*`; missing key returns `503 configuration_error`.                                                                                    |
+| `CURSOR_BRIDGE_BACKEND`           | `mock`        | `mock` or `cursor-cli`.                                                                                                                                 |
+| `CURSOR_BRIDGE_DEFAULT_MODEL`     | `cursor-fast` | Default model and `/v1/models` discovery entry when custom (for example `composer-2.5`).                                                                |
+| `CURSOR_BRIDGE_WORKSPACE_MODE`    | `chat-only`   | `chat-only` or `real-workspace`.                                                                                                                        |
+| `CURSOR_BRIDGE_REAL_WORKSPACE`    | unset         | Required only for `real-workspace`; path must exist.                                                                                                    |
+| `CURSOR_BRIDGE_CURSOR_BIN`        | `cursor`      | Cursor CLI executable name/path; set to `/home/ubuntu/.local/bin/agent` or `/Users/yorha/.local/bin/cursor-agent` when using standalone agent binaries. |
+| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS` | `120000`      | Clamped to 1 second–10 minutes.                                                                                                                         |
 
 ## Workspace safety
 

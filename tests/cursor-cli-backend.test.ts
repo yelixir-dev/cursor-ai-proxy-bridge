@@ -61,23 +61,26 @@ process.stdout.write(${JSON.stringify(output)});
     expect(invocation.stdin).toContain('USER: hello');
   });
 
-  it('omits both --mode and the cursor subcommand when configured binary is standalone agent', async () => {
-    const { logPath } = await fakeCursorBin('BRIDGE_OK', 'agent');
-    const backend = createCursorCliBackend(baseConfig);
+  it.each(['agent', 'cursor-agent'])(
+    'omits both --mode and the cursor subcommand when configured binary is standalone %s',
+    async (filename) => {
+      const { logPath } = await fakeCursorBin('BRIDGE_OK', filename);
+      const backend = createCursorCliBackend(baseConfig);
 
-    await backend.complete({
-      model: 'composer-2.5',
-      messages: [{ role: 'user', content: 'hello agent binary' }],
-    });
+      await backend.complete({
+        model: 'composer-2.5',
+        messages: [{ role: 'user', content: 'hello agent binary' }],
+      });
 
-    const invocation = JSON.parse(await readFile(logPath, 'utf8')) as { argv: string[] };
-    expect(invocation.argv.slice(0, 2)).toEqual(['--print', '--trust']);
-    expect(invocation.argv[0]).not.toBe('agent');
-    expect(invocation.argv).not.toContain('--mode');
-    expect(invocation.argv).not.toContain('ask');
-  });
+      const invocation = JSON.parse(await readFile(logPath, 'utf8')) as { argv: string[] };
+      expect(invocation.argv.slice(0, 2)).toEqual(['--print', '--trust']);
+      expect(invocation.argv[0]).not.toBe('agent');
+      expect(invocation.argv).not.toContain('--mode');
+      expect(invocation.argv).not.toContain('ask');
+    },
+  );
 
-  it('includes tool definitions in prompt when tools are provided', async () => {
+  it('includes tool definitions and strict tool-call output instructions in prompt when tools are provided', async () => {
     const { logPath } = await fakeCursorBin('BRIDGE_OK');
     const backend = createCursorCliBackend(baseConfig);
 
@@ -102,6 +105,52 @@ process.stdout.write(${JSON.stringify(output)});
     expect(invocation.stdin).toContain('read_file');
     expect(invocation.stdin).toContain('Read a file from disk');
     expect(invocation.stdin).toContain('Tool choice mode: auto');
+    expect(invocation.stdin).toContain('CURSOR_BRIDGE_TOOL_CALL');
+    expect(invocation.stdin).toContain('Do not claim you used a tool in prose');
+  });
+
+  it('converts Cursor JSON tool-call output into OpenAI tool_calls for auto tool choice', async () => {
+    await fakeCursorBin(
+      JSON.stringify({
+        tool_calls: [
+          {
+            function: {
+              name: 'write_file',
+              arguments: { path: '/tmp/probe.txt', content: 'ok' },
+            },
+          },
+        ],
+      }),
+    );
+    const backend = createCursorCliBackend(baseConfig);
+
+    const result = await backend.complete({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'write /tmp/probe.txt' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'write_file',
+            description: 'Write a file',
+            parameters: {
+              type: 'object',
+              properties: { path: { type: 'string' }, content: { type: 'string' } },
+            },
+          },
+        },
+      ],
+      tool_choice: 'auto',
+    });
+
+    expect(result.content).toBeNull();
+    expect(result.tool_calls).toHaveLength(1);
+    expect(result.tool_calls?.[0]?.type).toBe('function');
+    expect(result.tool_calls?.[0]?.function.name).toBe('write_file');
+    expect(JSON.parse(result.tool_calls?.[0]?.function.arguments ?? '{}')).toEqual({
+      path: '/tmp/probe.txt',
+      content: 'ok',
+    });
   });
 
   it('synthesizes OpenAI tool_calls for required tool_choice without invoking Cursor CLI', async () => {
