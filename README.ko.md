@@ -140,7 +140,7 @@ CURSOR_BRIDGE_DEFAULT_MODEL=composer-2.5
 CURSOR_BRIDGE_CURSOR_TIMEOUT_MS=120000
 ```
 
-`cursor-cli` backend는 chat completion에 `--trust --mode ask`를 전달합니다. 일반 `cursor` binary에서는 `cursor agent --print ...`로 실행하고, binary 이름이 standalone `agent`인 경우에는 중복 subcommand 없이 `agent --print ...`로 실행합니다. `--trust`는 headless/systemd 환경에서 workspace trust prompt로 막히는 문제를 피하고, `--mode ask`는 기본 agent workflow보다 OpenAI chat completion 역할에 더 안전하게 맞춥니다.
+`cursor-cli` backend는 headless chat completion에 `--print --trust`를 전달하고, 의도적으로 `--mode`를 생략합니다. 일반 `cursor` binary에서는 `cursor agent --print ...`로 실행하고, binary 이름이 standalone `agent`인 경우에는 중복 subcommand 없이 `agent --print ...`로 실행합니다. `--trust`는 headless/systemd 환경에서 workspace trust prompt로 막히는 문제를 피하고, `--mode`를 생략하면 Cursor Agent가 read-only `ask`/`plan` 모드가 아니라 쓰기 가능한 기본 headless 모드로 동작합니다.
 
 ## 첫 검증
 

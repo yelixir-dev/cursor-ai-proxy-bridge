@@ -140,7 +140,7 @@ CURSOR_BRIDGE_DEFAULT_MODEL=composer-2.5
 CURSOR_BRIDGE_CURSOR_TIMEOUT_MS=120000
 ```
 
-The `cursor-cli` backend passes `--trust --mode ask` for chat completions. With the regular `cursor` binary it runs `cursor agent --print ...`; with a standalone binary named `agent` it runs `agent --print ...` and omits the duplicate subcommand. `--trust` prevents headless workspace-trust prompts from blocking systemd runs, and `--mode ask` keeps the bridge aligned with OpenAI chat-completion semantics instead of defaulting to a more autonomous agent workflow.
+The `cursor-cli` backend passes `--print --trust` for headless chat completions and deliberately omits `--mode`. With the regular `cursor` binary it runs `cursor agent --print ...`; with a standalone binary named `agent` it runs `agent --print ...` and omits the duplicate subcommand. `--trust` prevents headless workspace-trust prompts from blocking systemd runs, while omitting `--mode` keeps Cursor Agent in its writable default headless mode instead of the read-only `ask` or `plan` modes.
 
 ## First verification
 
