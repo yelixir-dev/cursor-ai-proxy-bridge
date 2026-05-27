@@ -137,19 +137,37 @@ For a real Cursor-backed run, switch the backend. Some Cursor installations expo
 CURSOR_BRIDGE_BACKEND=cursor-cli
 CURSOR_BRIDGE_CURSOR_BIN=/home/ubuntu/.local/bin/agent
 CURSOR_BRIDGE_DEFAULT_MODEL=composer-2.5
-CURSOR_BRIDGE_CURSOR_TIMEOUT_MS=120000
+CURSOR_BRIDGE_CURSOR_TIMEOUT_MS=600000
 ```
 
 The `cursor-cli` backend passes `--print --trust` for headless chat completions and deliberately omits `--mode`. With the regular `cursor` binary it runs `cursor agent --print ...`; with a standalone binary named `agent` it runs `agent --print ...` and omits the duplicate subcommand. `--trust` prevents headless workspace-trust prompts from blocking systemd runs, while omitting `--mode` keeps Cursor Agent in its writable default headless mode instead of the read-only `ask` or `plan` modes.
 
-When exposing `composer-2.5` through LiteLLM, set the model metadata explicitly so downstream OpenAI-compatible clients can see the intended context budget:
+Cursor Agent backed requests can take longer than ordinary HTTP model calls. In production, use a 600s-class bridge timeout for `composer-2.5`; a shorter upstream timeout can surface as a router failure even when the underlying agent would have completed successfully.
+
+When exposing `composer-2.5` through LiteLLM, set model metadata, request timeouts, and a model-group fallback explicitly so downstream OpenAI-compatible clients see the intended context budget and LiteLLM has a safe route when the agent backend times out:
 
 ```yaml
-model_info:
-  max_input_tokens: 200000
-  max_tokens: 200000
-  context_window: 200000
+model_list:
+  - model_name: composer-2.5
+    litellm_params:
+      model: openai/composer-2.5
+      api_base: http://127.0.0.1:9994/v1
+      api_key: os.environ/CURSOR_BRIDGE_API_KEY
+      request_timeout: 600
+      timeout: 600
+    model_info:
+      max_input_tokens: 200000
+      max_tokens: 200000
+      context_window: 200000
+
+litellm_settings:
+  request_timeout: 600
+  fallbacks:
+    - composer-2.5:
+        - <fallback-model-group>
 ```
+
+Without a `composer-2.5` fallback, LiteLLM may return an error such as `No fallback model group found for original model_group=composer-2.5` when the agent route exceeds its timeout.
 
 ## First verification
 
