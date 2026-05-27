@@ -384,6 +384,54 @@ describe('cursor-ai-bridge server', () => {
     }
   });
 
+  it('accepts and truncates long tool descriptions from Hermes tool schemas', async () => {
+    let observedDescription = '';
+    const backend = {
+      ...createMockBackend(),
+      async complete(request: {
+        tools?: Array<{ function: { description?: string } }>;
+        model: string;
+      }) {
+        observedDescription = request.tools?.[0]?.function.description ?? '';
+        return {
+          content: 'LONG_TOOL_DESC_OK',
+          model: request.model,
+        };
+      },
+    };
+    const server = await buildServer({
+      config: { ...baseConfig, apiKey: 'test-bridge-key' },
+      backend,
+    });
+    const longDescription = 'A'.repeat(2_500);
+
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-bridge-key' },
+      payload: {
+        model: 'cursor-fast',
+        messages: [{ role: 'user', content: 'use long tool desc' }],
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'long_tool',
+              description: longDescription,
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        ],
+        tool_choice: 'none',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().choices[0].message.content).toContain('LONG_TOOL_DESC_OK');
+    expect(observedDescription.length).toBeLessThanOrEqual(2_000);
+    expect(observedDescription).toContain('[description truncated by cursor composer bridge]');
+  });
+
   it('serves a mobile-friendly read-only dashboard without key input UI or secrets', async () => {
     const server = await app();
     const res = await server.inject({ method: 'GET', url: '/dashboard' });

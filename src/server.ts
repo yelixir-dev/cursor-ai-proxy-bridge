@@ -75,9 +75,27 @@ const chatMessageSchema = z.object({
   tool_call_id: z.string().min(1).max(200).optional(),
 });
 
+const TOOL_DESCRIPTION_MAX_INPUT_LENGTH = 200_000;
+const TOOL_DESCRIPTION_BACKEND_LENGTH = 2_000;
+const TOOL_DESCRIPTION_TRUNCATED_MARKER = '\n[description truncated by cursor composer bridge]';
+
+function normalizeToolDescription(description: string | undefined): string | undefined {
+  if (description === undefined || description.length <= TOOL_DESCRIPTION_BACKEND_LENGTH) {
+    return description;
+  }
+  return `${description.slice(
+    0,
+    TOOL_DESCRIPTION_BACKEND_LENGTH - TOOL_DESCRIPTION_TRUNCATED_MARKER.length,
+  )}${TOOL_DESCRIPTION_TRUNCATED_MARKER}`;
+}
+
 const toolFunctionSchema = z.object({
   name: z.string().min(1).max(200),
-  description: z.string().max(2000).optional(),
+  description: z
+    .string()
+    .max(TOOL_DESCRIPTION_MAX_INPUT_LENGTH)
+    .optional()
+    .transform((description) => normalizeToolDescription(description)),
   parameters: z.record(z.string(), z.unknown()).optional(),
 });
 
