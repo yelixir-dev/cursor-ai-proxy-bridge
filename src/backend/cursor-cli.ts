@@ -12,11 +12,22 @@ import type {
   Tool,
 } from './types.js';
 import { defaultCursorModels } from './mock.js';
+import {
+  filterToolCallsToAllowed,
+  parseToolCallsFromCursorStreamJson,
+  parseToolCallsFromText,
+  toolDelegationPromptSuffix,
+} from './tool-call-parse.js';
 import type { BridgeConfig } from '../config.js';
 
 function validTimeoutMs(raw: string | undefined): number {
   const parsed = Number.parseInt(raw || '120000', 10);
   return Number.isFinite(parsed) && parsed >= 1_000 && parsed <= 600_000 ? parsed : 120_000;
+}
+
+function validToolCaptureSettleMs(raw: string | undefined): number {
+  const parsed = Number.parseInt(raw || '350', 10);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 10_000 ? parsed : 350;
 }
 
 function runCommand(
@@ -25,6 +36,7 @@ function runCommand(
   cwd: string,
   timeoutMs: number,
   stdinContent?: string,
+  earlyExit?: { shouldStop: (stdout: string) => boolean; settleMs: number },
 ): Promise<string> {
   return new Promise((resolveOutput, reject) => {
     const child = spawn(command, args, {
@@ -35,6 +47,9 @@ function runCommand(
     let settled = false;
     let stdout = '';
     let stderr = '';
+    let earlyExitArmed = false;
+    let earlyExitSatisfied = false;
+    let earlyExitTimer: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
       if (!settled) {
@@ -42,26 +57,37 @@ function runCommand(
         reject(new Error(`cursor command timed out after ${timeoutMs}ms`));
       }
     }, timeoutMs);
+    const clearTimers = () => {
+      clearTimeout(timer);
+      if (earlyExitTimer) clearTimeout(earlyExitTimer);
+    };
+    const maybeArmEarlyExit = () => {
+      if (!earlyExit || earlyExitArmed || !earlyExit.shouldStop(stdout)) return;
+      earlyExitArmed = true;
+      earlyExitSatisfied = true;
+      earlyExitTimer = setTimeout(() => child.kill('SIGTERM'), earlyExit.settleMs);
+    };
     child.stdout!.setEncoding('utf8');
     child.stderr!.setEncoding('utf8');
     child.stdout!.on('data', (chunk) => {
       stdout += chunk;
+      maybeArmEarlyExit();
     });
     child.stderr!.on('data', (chunk) => {
       stderr += chunk;
     });
     child.on('error', (error) => {
-      clearTimeout(timer);
+      clearTimers();
       if (!settled) {
         settled = true;
         reject(error);
       }
     });
     child.on('close', (code) => {
-      clearTimeout(timer);
+      clearTimers();
       if (settled) return;
       settled = true;
-      if (code === 0) resolveOutput(stdout.trim());
+      if (code === 0 || earlyExitSatisfied) resolveOutput(stdout.trim());
       else reject(new Error(stderr.trim() || `cursor exited with code ${code ?? 'unknown'}`));
     });
     if (stdinContent !== undefined && child.stdin) {
@@ -72,12 +98,7 @@ function runCommand(
 }
 
 function formatToolsBlock(tools: ChatCompletionRequest['tools']): string {
-  if (!tools || tools.length === 0) return '';
-  const defs = tools.map(
-    (t) =>
-      `- ${t.function.name}: ${t.function.description ?? ''}\n  parameters: ${JSON.stringify(t.function.parameters ?? {})}`,
-  );
-  return `\n\n--- AVAILABLE TOOLS ---\n${defs.join('\n')}\n--- END TOOLS ---\n\n--- TOOL CALL OUTPUT CONTRACT ---\nWhen a tool is needed, respond with ONLY a JSON object using this shape:\n{"CURSOR_BRIDGE_TOOL_CALL":true,"tool_calls":[{"function":{"name":"tool_name","arguments":{}}}]}\nThe arguments object must match the selected tool schema. Do not wrap the JSON in prose. Do not claim you used a tool in prose; emit the JSON tool call instead.\n--- END TOOL CALL OUTPUT CONTRACT ---\n`;
+  return toolDelegationPromptSuffix(tools);
 }
 
 function promptFromMessages(request: ChatCompletionRequest): string {
@@ -171,77 +192,34 @@ function synthesizeToolCall(request: ChatCompletionRequest): CompletionResult | 
   };
 }
 
-function stripJsonFence(output: string): string {
-  const trimmed = output.trim();
-  const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return fenceMatch?.[1]?.trim() ?? trimmed;
-}
-
-function normalizeArguments(raw: unknown): string {
-  if (typeof raw === 'string') {
-    JSON.parse(raw);
-    return raw;
-  }
-  return JSON.stringify(raw && typeof raw === 'object' ? raw : {});
-}
-
 function parseCursorToolCallOutput(
   output: string,
   request: ChatCompletionRequest,
   promptTokens: number,
 ): CompletionResult | undefined {
-  if (!request.tools || request.tools.length === 0) return undefined;
-  const allowedTools = new Set(request.tools.map((tool) => tool.function.name));
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stripJsonFence(output));
-  } catch {
-    return undefined;
-  }
-  if (!parsed || typeof parsed !== 'object') return undefined;
-  const payload = parsed as { tool_calls?: unknown; function_call?: unknown };
-  const rawCalls = Array.isArray(payload.tool_calls)
-    ? payload.tool_calls
-    : payload.function_call
-      ? [payload.function_call]
-      : [];
-  if (rawCalls.length === 0) return undefined;
-
-  const toolCalls = rawCalls.flatMap((raw, index) => {
-    if (!raw || typeof raw !== 'object') return [];
-    const candidate = raw as {
-      id?: unknown;
-      type?: unknown;
-      name?: unknown;
-      arguments?: unknown;
-      function?: { name?: unknown; arguments?: unknown };
-    };
-    const name =
-      typeof candidate.function?.name === 'string'
-        ? candidate.function.name
-        : typeof candidate.name === 'string'
-          ? candidate.name
-          : '';
-    if (!allowedTools.has(name)) return [];
-    const rawArgs = candidate.function?.arguments ?? candidate.arguments ?? {};
-    let argumentsJson: string;
-    try {
-      argumentsJson = normalizeArguments(rawArgs);
-    } catch {
-      return [];
-    }
-    return [
-      {
-        id:
-          typeof candidate.id === 'string' && candidate.id
-            ? candidate.id
-            : `call_bridge_${Date.now().toString(36)}_${index}`,
-        type: 'function' as const,
-        function: { name, arguments: argumentsJson },
-      },
-    ];
-  });
+  const toolCalls = filterToolCallsToAllowed(parseToolCallsFromText(output), request.tools);
   if (toolCalls.length === 0) return undefined;
+  return completionFromCapturedTools(request, toolCalls, promptTokens);
+}
+
+function parseCursorStreamToolCallOutput(
+  output: string,
+  request: ChatCompletionRequest,
+  promptTokens: number,
+): CompletionResult | undefined {
+  const toolCalls = filterToolCallsToAllowed(
+    parseToolCallsFromCursorStreamJson(output),
+    request.tools,
+  );
+  if (toolCalls.length === 0) return undefined;
+  return completionFromCapturedTools(request, toolCalls, promptTokens);
+}
+
+function completionFromCapturedTools(
+  request: ChatCompletionRequest,
+  toolCalls: NonNullable<CompletionResult['tool_calls']>,
+  promptTokens: number,
+): CompletionResult {
   const completionTokens = estimateTokens(JSON.stringify(toolCalls));
   return {
     content: null,
@@ -266,10 +244,19 @@ function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4));
 }
 
+function shouldDelegateToolsToClient(request: ChatCompletionRequest): boolean {
+  if (!request.tools || request.tools.length === 0) return false;
+  if (request.tool_choice && request.tool_choice !== 'auto') return false;
+  return !request.messages.some(
+    (message) => message.role === 'tool' || (message.tool_calls && message.tool_calls.length > 0),
+  );
+}
+
 function cursorCliArgs(
   cursorBin: string,
   request: ChatCompletionRequest,
   workspacePath: string,
+  outputFormat: 'text' | 'stream-json' = 'text',
 ): string[] {
   const baseArgs = [
     '--print',
@@ -279,7 +266,7 @@ function cursorCliArgs(
     '--model',
     request.model,
     '--output-format',
-    'text',
+    outputFormat,
   ];
   const binName = basename(cursorBin);
   return binName === 'agent' || binName === 'cursor-agent' ? baseArgs : ['agent', ...baseArgs];
@@ -288,6 +275,9 @@ function cursorCliArgs(
 export function createCursorCliBackend(config: BridgeConfig): CursorBackend {
   const cursorBin = process.env.CURSOR_BRIDGE_CURSOR_BIN || 'cursor';
   const timeoutMs = validTimeoutMs(process.env.CURSOR_BRIDGE_CURSOR_TIMEOUT_MS);
+  const toolCaptureSettleMs = validToolCaptureSettleMs(
+    process.env.CURSOR_BRIDGE_TOOL_CAPTURE_SETTLE_MS,
+  );
 
   async function workspace(): Promise<{ cwd: string; cleanup: () => Promise<void> }> {
     if (config.workspaceMode === 'real-workspace') {
@@ -340,9 +330,25 @@ export function createCursorCliBackend(config: BridgeConfig): CursorBackend {
       const ws = await workspace();
       try {
         const prompt = promptFromMessages(request);
-        const args = cursorCliArgs(cursorBin, request, ws.cwd);
-        const output = await runCommand(cursorBin, args, ws.cwd, timeoutMs, prompt);
         const promptTokens = estimateTokens(prompt);
+        if (shouldDelegateToolsToClient(request)) {
+          const streamArgs = cursorCliArgs(cursorBin, request, ws.cwd, 'stream-json');
+          const streamOutput = await runCommand(cursorBin, streamArgs, ws.cwd, timeoutMs, prompt, {
+            shouldStop: (stdout) =>
+              filterToolCallsToAllowed(parseToolCallsFromCursorStreamJson(stdout), request.tools)
+                .length > 0,
+            settleMs: toolCaptureSettleMs,
+          });
+          const streamToolCall = parseCursorStreamToolCallOutput(
+            streamOutput,
+            request,
+            promptTokens,
+          );
+          if (streamToolCall) return streamToolCall;
+        }
+
+        const args = cursorCliArgs(cursorBin, request, ws.cwd, 'text');
+        const output = await runCommand(cursorBin, args, ws.cwd, timeoutMs, prompt);
         const parsedToolCall = parseCursorToolCallOutput(output, request, promptTokens);
         if (parsedToolCall) return parsedToolCall;
         const completionTokens = estimateTokens(output);
