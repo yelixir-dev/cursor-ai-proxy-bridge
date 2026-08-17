@@ -53,16 +53,20 @@ export function mapCursorApiToolRequest(
           },
         }
       : request.tool_choice;
-  const aliases = Object.fromEntries(toWire);
-  const aliasInstruction = {
-    role: 'developer' as const,
-    content: `External OpenAI tool aliases: ${JSON.stringify(aliases)}. When a request names an original tool, call its mapped external tool and never a built-in tool with the original name.`,
-  };
+  const aliasInstruction =
+    request.tool_choice === 'none'
+      ? []
+      : [
+          {
+            role: 'developer' as const,
+            content: `External OpenAI tool aliases: ${JSON.stringify(Object.fromEntries(toWire))}. If you choose or are required to call an original tool, call its mapped external tool and never a built-in tool as a substitute.`,
+          },
+        ];
 
   return {
     request: {
       ...request,
-      messages: [aliasInstruction, ...messages],
+      messages: [...aliasInstruction, ...messages],
       tools,
       tool_choice: toolChoice,
     },

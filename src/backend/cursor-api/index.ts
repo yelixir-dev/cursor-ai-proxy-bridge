@@ -433,11 +433,7 @@ export class CursorApiBackend implements CursorBackend {
       }
       if (!candidate.text || !mapped.request.tools?.length) return candidate;
       const parsed = parseToolCallsFromText(candidate.text);
-      const wireRecovered = enforceNativeToolChoice(parsed, mapped.request);
-      const recovered =
-        wireRecovered.length > 0
-          ? mapped.restoreToolCalls(wireRecovered)
-          : enforceNativeToolChoice(parsed, candidateRequest);
+      const recovered = enforceNativeToolChoice(mapped.restoreToolCalls(parsed), candidateRequest);
       return recovered.length ? { ...candidate, text: '', toolCalls: recovered } : candidate;
     };
 

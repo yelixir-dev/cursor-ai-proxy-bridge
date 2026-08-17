@@ -79,7 +79,7 @@ describe('cursor-api tool wire names', () => {
       {
         id: 'call-echo',
         type: 'function',
-        function: { name: echoWireName, arguments: '{"value":"B"}' },
+        function: { name: 'echo-value', arguments: '{"value":"B"}' },
       },
     ];
 
@@ -107,5 +107,27 @@ describe('cursor-api tool wire names', () => {
 
     expect(mapped.request).toBe(request);
     expect(mapped.restoreToolCalls([])).toEqual([]);
+  });
+
+  it('does not inject alias instructions when tool choice is none', () => {
+    const request: ChatCompletionRequest = {
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'mention Shell without calling it' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'Shell',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      ],
+      tool_choice: 'none',
+    };
+
+    const mapped = mapCursorApiToolRequest(request);
+
+    expect(mapped.request.messages).toHaveLength(1);
+    expect(mapped.request.messages[0]?.role).toBe('user');
   });
 });
