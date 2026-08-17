@@ -9,7 +9,7 @@ Cursor Agent를 작은 OpenAI-compatible API로 노출하는 로컬 HTTP proxy�
 ## API와 동작
 
 - `GET /health` - 인증이 필요 없는 bridge/backend 상태.
-- `GET /dashboard` - 인증이 필요 없는 read-only 상태 페이지.
+- `GET /dashboard` - 관리 콘솔(상태, 크리덴셜 관리, 모델 토글); 쓰기 작업은 브리지 API key가 필요합니다.
 - `GET|PATCH /admin/config` - 인증된 redacted 설정 조회 및 credential/model override hot update.
 - `GET /v1/models` - active backend에서 검색하고 policy로 선별한 인증 model 목록.
 - `POST /v1/chat/completions` - 인증된 non-streaming 또는 SSE chat completion.

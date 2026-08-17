@@ -9,7 +9,7 @@ A local HTTP proxy that exposes Cursor Agent through a small OpenAI-compatible A
 ## API and behavior
 
 - `GET /health` - unauthenticated bridge/backend status.
-- `GET /dashboard` - unauthenticated read-only status page.
+- `GET /dashboard` - management console (status, credential management, model toggles); admin writes require the bridge API key.
 - `GET|PATCH /admin/config` - authenticated redacted configuration and hot updates for credentials/model overrides.
 - `GET /v1/models` - authenticated, curated model list discovered from the active backend.
 - `POST /v1/chat/completions` - authenticated non-streaming or SSE chat completions.
