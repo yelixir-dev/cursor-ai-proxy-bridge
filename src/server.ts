@@ -41,6 +41,7 @@ import { ModelPolicy } from './model-policy.js';
 
 const IMAGE_OMITTED_PLACEHOLDER = '[image omitted: cursor composer bridge is text-only]';
 const MAX_CONTENT_PARTS = 1_000;
+const REQUEST_BODY_LIMIT_BYTES = 32 * 1024 * 1024;
 
 function unsupportedContentPlaceholder(type: unknown): string {
   return typeof type === 'string' && type.length > 0
@@ -247,7 +248,7 @@ function chatCompletionPayload(
   const message: Record<string, unknown> = { role: 'assistant' };
   if (result.tool_calls && result.tool_calls.length > 0) {
     message.tool_calls = result.tool_calls;
-    message.content = null;
+    message.content = '';
   } else {
     message.content = result.content;
   }
@@ -597,7 +598,7 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
       },
     },
     logController: new LogController({ disableRequestLogging: true }),
-    bodyLimit: 2 * 1024 * 1024,
+    bodyLimit: REQUEST_BODY_LIMIT_BYTES,
   });
   if (config.clientAuth === 'off') {
     app.log.warn('client auth disabled — bind to localhost or a trusted network only');
@@ -827,6 +828,20 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
       fastifyError.code === 'FST_ERR_CTP_INVALID_JSON_BODY'
     ) {
       return reply.code(400).send(openAiError(fastifyError.message));
+    }
+    if (fastifyError.code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
+      const received = request.headers['content-length'];
+      const receivedNote =
+        typeof received === 'string' && received.length > 0
+          ? `; received Content-Length ${received}`
+          : '';
+      return reply
+        .code(413)
+        .send(
+          openAiError(
+            `Request body is too large. Limit is ${String(REQUEST_BODY_LIMIT_BYTES)} bytes${receivedNote}. Compact the session or drop embedded images.`,
+          ),
+        );
     }
     return reply.send(error);
   });

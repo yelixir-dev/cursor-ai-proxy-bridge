@@ -11,6 +11,7 @@ import {
 } from '../src/backend/cursor-api/connect-frame.js';
 import { CURSOR_API_STARTUP_SEQUENCE, CursorApiBackend } from '../src/backend/cursor-api/index.js';
 import {
+  cursorApiPrompt,
   mapRequestedModels,
   mapUsableModels,
   nativeToolBatchComplete,
@@ -216,7 +217,7 @@ const descriptors: ProtoDescriptorSet = {
 
 const config: BridgeConfig = {
   host: '127.0.0.1',
-  port: 9996,
+  port: 9997,
   apiKey: 'bridge-key',
   backend: 'cursor-api',
   defaultModel: 'composer-2.5',
@@ -549,33 +550,31 @@ describe('Cursor API startup and wire parity', () => {
       model: 'composer-2.5',
       messages: [{ role: 'user' as const, content: 'hello' }],
     };
+    const echoTool = {
+      type: 'function' as const,
+      function: {
+        name: 'echo_value',
+        parameters: { type: 'object' },
+      },
+    };
     const withoutTools = runRequestMessage(baseRequest, 'request-without-tools');
     const withTools = runRequestMessage(
       {
         ...baseRequest,
-        tools: [
-          {
-            type: 'function' as const,
-            function: {
-              name: 'echo_value',
-              parameters: { type: 'object' },
-            },
-          },
-        ],
+        tools: [echoTool],
       },
       'request-with-tools',
     );
+    const suppressed = runRequestMessage(
+      {
+        ...baseRequest,
+        tools: [echoTool],
+        tool_choice: 'none' as const,
+      },
+      'request-tools-none',
+    );
 
     expect(withoutTools).toMatchObject({
-      message: {
-        value: {
-          action: {
-            action: { value: { userMessage: { mode: 1 } } },
-          },
-        },
-      },
-    });
-    expect(withTools).toMatchObject({
       message: {
         value: {
           action: {
@@ -584,6 +583,58 @@ describe('Cursor API startup and wire parity', () => {
         },
       },
     });
+    expect(withTools).toMatchObject({
+      message: {
+        value: {
+          action: {
+            action: { value: { userMessage: { mode: 1 } } },
+          },
+        },
+      },
+    });
+    expect(suppressed).toMatchObject({
+      message: {
+        value: {
+          action: {
+            action: { value: { userMessage: { mode: 2 } } },
+          },
+        },
+      },
+    });
+  });
+
+  it('does not forbid another tool call after a tool result in auto mode', () => {
+    const prompt = cursorApiPrompt({
+      model: 'composer-2.5',
+      messages: [
+        { role: 'user', content: 'start' },
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'call_seed',
+              type: 'function',
+              function: { name: 'get_seed', arguments: '{"label":"alpha"}' },
+            },
+          ],
+        },
+        { role: 'tool', tool_call_id: 'call_seed', content: 'alpha=7' },
+      ],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'multiply',
+            parameters: { type: 'object' },
+          },
+        },
+      ],
+      tool_choice: 'auto',
+    });
+
+    expect(prompt).not.toContain('Do not call a tool again');
+    expect(prompt).toContain('Use an available tool only when it is needed');
   });
 });
 

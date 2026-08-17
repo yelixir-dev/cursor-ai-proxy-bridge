@@ -549,6 +549,41 @@ async function main() {
     );
   });
 
+  await scenario('auto tool-result-only follow-up continues the loop', async () => {
+    const initial = {
+      role: 'user',
+      content:
+        'Call lookup_code exactly once with key AUTO_FOLLOW_KEY. After that tool result is supplied, call lookup_code exactly once with key AUTO_NEXT_KEY. Do not give a final answer until the second result is supplied.',
+    };
+    const first = await chat(baseUrl, {
+      messages: [initial],
+      tools: [lookupTool],
+      tool_choice: 'auto',
+    });
+    assert(first.response.status === 200, `round 1 returned ${first.response.status}`);
+    const firstCalls = callsFrom(first.body);
+    assert(firstCalls.length === 1, `round 1 expected one call, got ${firstCalls.length}`);
+    assert(parseArguments(firstCalls[0]).key === 'AUTO_FOLLOW_KEY', 'round 1 args differ');
+    const second = await chat(baseUrl, {
+      messages: [
+        initial,
+        { role: 'assistant', content: null, tool_calls: firstCalls },
+        {
+          role: 'tool',
+          tool_call_id: firstCalls[0].id,
+          content:
+            'First lookup is done. Now call lookup_code exactly once with key AUTO_NEXT_KEY.',
+        },
+      ],
+      tools: [lookupTool],
+      tool_choice: 'auto',
+    });
+    assert(second.response.status === 200, `round 2 returned ${second.response.status}`);
+    const secondCalls = callsFrom(second.body);
+    assert(secondCalls.length === 1, `round 2 expected one call, got ${secondCalls.length}`);
+    assert(parseArguments(secondCalls[0]).key === 'AUTO_NEXT_KEY', 'round 2 args differ');
+  });
+
   await scenario('forced function uses model args', async () => {
     const { response, body } = await chat(baseUrl, {
       messages: [

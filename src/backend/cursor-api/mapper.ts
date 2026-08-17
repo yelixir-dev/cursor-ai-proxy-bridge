@@ -23,6 +23,12 @@ type RequestedModel = {
 
 export type RequestedModelMap = ReadonlyMap<string, RequestedModel>;
 
+export const AGENT_MODE = {
+  UNSPECIFIED: 0,
+  AGENT: 1,
+  ASK: 2,
+} as const;
+
 const SELECTED_SUBAGENT_MODELS = [
   { modelId: 'default' },
   {
@@ -109,11 +115,13 @@ export function cursorApiPrompt(request: ChatCompletionRequest): string {
     request.tools?.length && request.parallel_tool_calls === false
       ? '\nReturn at most one tool call.'
       : '';
-  const toolResultFollowUp =
-    request.messages.at(-1)?.role === 'tool' && request.tool_choice !== 'required'
-      ? '\nA tool result was just supplied. Do not call a tool again in this turn; answer from that result.'
-      : '';
-  return flattened + nativeToolInstruction(request) + parallel + toolResultFollowUp;
+  return flattened + nativeToolInstruction(request) + parallel;
+}
+
+function agentModeFor(request: ChatCompletionRequest): number {
+  return request.tools?.length && request.tool_choice !== 'none'
+    ? AGENT_MODE.AGENT
+    : AGENT_MODE.ASK;
 }
 
 function fallbackRequestedModel(modelId: string): RequestedModel {
@@ -190,7 +198,7 @@ export function runRequestMessage(
                 text: cursorApiPrompt(request),
                 messageId: randomUUID(),
                 selectedContext: {},
-                mode: request.tools?.length && request.tool_choice !== 'none' ? 2 : 1,
+                mode: agentModeFor(request),
                 conversationStateBlobId: Buffer.alloc(0),
               },
             },

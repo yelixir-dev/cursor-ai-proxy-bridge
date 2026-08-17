@@ -23,7 +23,7 @@ import {
 
 const baseConfig: BridgeConfig = {
   host: '127.0.0.1',
-  port: 9996,
+  port: 9997,
   apiKey: '***',
   clientAuth: 'on',
   backend: 'mock',
@@ -91,6 +91,24 @@ describe('cursor-ai-bridge server', () => {
     expect(body.auth.client_api_key_configured).toBe(true);
     expect(JSON.stringify(body)).not.toContain('***');
     expect(body.workspace.mode).toBe('chat-only');
+  });
+
+  it('accepts chat completions larger than 2 MiB', async () => {
+    const server = await app();
+    const padding = 'x'.repeat(150_000);
+    const messages = Array.from({ length: 15 }, (_, index) => ({
+      role: 'user' as const,
+      content: `${index}:${padding}`,
+    }));
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer ***' },
+      payload: { model: 'composer-2.5', messages },
+    });
+
+    expect(res.statusCode).toBe(200);
+    await server.close();
   });
 
   it('requires client API key for /v1/models', async () => {
@@ -845,7 +863,7 @@ describe('cursor-ai-bridge server', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.choices[0].finish_reason).toBe('tool_calls');
-    expect(body.choices[0].message.content).toBeNull();
+    expect(body.choices[0].message.content).toBe('');
     expect(body.choices[0].message.tool_calls).toBeDefined();
     expect(body.choices[0].message.tool_calls.length).toBeGreaterThan(0);
     expect(body.choices[0].message.tool_calls[0].function.name).toBe('read_file');
@@ -972,6 +990,69 @@ describe('cursor-ai-bridge server', () => {
       const body = res.json();
       expect(body.choices[0].message.content).toContain('summarize the tool result');
     }
+  });
+
+  it('replays emitted tool-call messages with empty content and tool results only', async () => {
+    const server = await app({ apiKey: 'test-bridge-key' });
+    const first = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-bridge-key' },
+      payload: {
+        model: 'composer-2.5',
+        messages: [{ role: 'user', content: 'read /tmp/test.txt' }],
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'read_file',
+              parameters: { type: 'object', properties: { path: { type: 'string' } } },
+            },
+          },
+        ],
+        tool_choice: 'required',
+      },
+    });
+
+    expect(first.statusCode).toBe(200);
+    const firstMessage = first.json().choices[0].message as {
+      role: string;
+      content: string | null;
+      tool_calls: Array<{ id: string }>;
+    };
+    expect(firstMessage.content).toBe('');
+    expect(firstMessage.tool_calls.length).toBeGreaterThan(0);
+
+    const replay = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-bridge-key' },
+      payload: {
+        model: 'composer-2.5',
+        messages: [
+          { role: 'user', content: 'read /tmp/test.txt' },
+          firstMessage,
+          {
+            role: 'tool',
+            tool_call_id: firstMessage.tool_calls[0]?.id,
+            content: 'file contents',
+          },
+        ],
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'read_file',
+              parameters: { type: 'object' },
+            },
+          },
+        ],
+        tool_choice: 'auto',
+      },
+    });
+
+    expect(replay.statusCode).toBe(200);
+    await server.close();
   });
 
   it('accepts and truncates long tool descriptions from Hermes tool schemas', async () => {
