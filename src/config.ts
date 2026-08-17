@@ -14,11 +14,13 @@ import {
 
 export type BackendKind = 'auto' | 'mock' | 'cursor-cli' | 'cursor-api';
 export type WorkspaceMode = 'chat-only' | 'real-workspace';
+export type ClientAuthMode = 'on' | 'off';
 
 export interface BridgeConfig {
   host: string;
   port: number;
   apiKey?: string;
+  clientAuth?: ClientAuthMode;
   backend: BackendKind;
   defaultModel: string;
   workspaceMode: WorkspaceMode;
@@ -61,11 +63,20 @@ export function loadConfig(envFile = '.env'): BridgeConfig {
   if (rawApiKey !== undefined && !apiKey) {
     throw new Error('CURSOR_BRIDGE_API_KEY must not be empty or whitespace');
   }
+  const rawClientAuth = process.env.CURSOR_BRIDGE_AUTH;
+  if (rawClientAuth !== undefined && rawClientAuth !== 'on' && rawClientAuth !== 'off') {
+    throw new Error('CURSOR_BRIDGE_AUTH must be either on or off');
+  }
+  const clientAuth = rawClientAuth ?? (apiKey ? 'on' : 'off');
+  if (clientAuth === 'on' && !apiKey) {
+    throw new Error('CURSOR_BRIDGE_AUTH=on requires CURSOR_BRIDGE_API_KEY');
+  }
 
   return {
     host: process.env.CURSOR_BRIDGE_HOST || dashboardConfig.server?.host || '127.0.0.1',
     port: numberFromEnv('CURSOR_BRIDGE_PORT', dashboardConfig.server?.port ?? 9996),
     apiKey,
+    clientAuth,
     backend:
       process.env.CURSOR_BRIDGE_BACKEND === 'cursor-api' ||
       process.env.CURSOR_BRIDGE_BACKEND === 'cursor-cli' ||
@@ -97,6 +108,7 @@ export function redactedConfig(config: BridgeConfig) {
     workspaceMode: config.workspaceMode,
     realWorkspaceConfigured: Boolean(config.realWorkspacePath),
     clientApiKeyConfigured: Boolean(config.apiKey),
+    clientAuthEnabled: config.clientAuth === 'on',
     version: config.version,
   };
 }

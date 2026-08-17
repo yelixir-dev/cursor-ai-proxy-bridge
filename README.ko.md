@@ -1,49 +1,55 @@
-<p align="right">
-  <a href="README.md">English</a> · 한국어
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="Cursor AI Bridge, OpenAI-compatible Cursor proxy" width="880">
 </p>
 
-# Cursor AI Bridge
+<p align="center">
+  <strong>Headless 경로와 CLI fallback을 함께 제공하는 OpenAI-compatible Cursor access.</strong>
+</p>
 
-Cursor Agent를 작은 OpenAI-compatible API로 노출하는 로컬 HTTP proxy입니다. Public internet이 아니라 localhost 또는 신뢰하는 private network에서 사용하는 도구입니다.
+<p align="center">
+  <img alt="Node.js 22+" src="https://img.shields.io/badge/Node.js-22%2B-b57920">
+  <img alt="TypeScript 6.x" src="https://img.shields.io/badge/TypeScript-6.x-1f6f78">
+  <img alt="OpenAI-compatible API" src="https://img.shields.io/badge/API-OpenAI--compatible-9f4d2e">
+</p>
 
-## API와 동작
+<!-- README-I18N:START -->
 
-- `GET /health` - 인증이 필요 없는 bridge/backend 상태.
-- `GET /dashboard` - 관리 콘솔(상태, 크리덴셜 관리, 모델 토글); 쓰기 작업은 브리지 API key가 필요합니다.
-- `GET|PATCH /admin/config` - 인증된 redacted 설정 조회 및 credential/model override hot update.
-- `GET /v1/models` - active backend에서 검색하고 policy로 선별한 인증 model 목록.
-- `POST /v1/chat/completions` - 인증된 non-streaming 또는 SSE chat completion.
-- OpenAI function tool에서 `auto`, `required`, `none`, forced function choice, parallel-call 제어, tool history 검증, JSON Schema argument 검증을 지원합니다. Client가 선언한 function name은 변경하지 않습니다. Model argument가 invalid하면 한 번의 corrective model retry를 수행합니다.
-- Tool이 없는 streaming은 Cursor `stream-json --stream-partial-output` assistant fragment를 incremental하게 전달합니다. Tool-mode streaming은 완료 시점까지 assistant text를 buffer하고 authoritative `[TOOL_CALLS: ...]` marker를 indexed OpenAI `tool_calls`로 변환하며 marker가 content delta에 유출되지 않게 합니다. `stream_options.include_usage`는 마지막에 `choices: []` usage chunk를 보냅니다.
-- Cursor child는 environment allowlist와 stdout/stderr 합산 output cap 안에서 실행됩니다. Global/key별 concurrency limit, request abort 전달, process-group 종료, timeout escalation, 임시 chat-only workspace, 동일 workspace serialization으로 runtime access를 제한합니다.
+[English](./README.md) | **한국어**
 
-Client API key가 설정되지 않으면 `/v1/*`는 fail-closed입니다. 인증은 `Authorization: Bearer <key>` 또는 `x-api-key: <key>`를 받습니다. Malformed/invalid request는 OpenAI-style error envelope를 반환합니다.
+<!-- README-I18N:END -->
 
-## 요구 사항
+**[Cursor AI Bridge](https://github.com/yelixir-dev/cursor-ai-proxy-bridge)**는 Node.js 22+와 TypeScript로 만든 로컬 proxy입니다. Cursor Agent에 `/v1/chat/completions`와 `/v1/models`의 OpenAI-compatible surface를 제공하며, headless `cursor-api`와 `cursor-cli` 두 backend 사이를 기본 `auto` 모드로 라우팅합니다.
 
-- Node.js 22+ 및 npm
-- 기본 headless-first `auto` mode용 cursor-agent bundle과 Cursor credential
-- 자동 fallback이 필요할 때 login된 Cursor CLI/Agent executable
-- macOS, Linux 또는 WSL
+[기능](#기능) · [설치](#설치) · [사용법](#사용법) · [동작 방식](#동작-방식) · [레포지토리 구조](#레포지토리-구조) · [현재 한계](#현재-한계) · [라이선스](#라이선스)
 
-`mock` backend는 Cursor가 필요 없으며 local development와 unit test용입니다.
+## 기능
 
-## 설치와 실행
+- **OpenAI-compatible 경로.** `GET /v1/models`는 policy로 선별한 model 목록을 노출하고, `POST /v1/chat/completions`는 일반 요청과 streaming 요청을 받습니다.
+- **Headless 우선, CLI 준비.** Headless-direct `cursor-api` backend는 runtime에 CLI가 필요하지 않으며 unofficial reverse-engineered `agent.v1` Connect-RPC protocol을 사용합니다. `cursor-cli`가 fallback으로 남고 `auto`는 failover 후 recovery probe를 수행합니다.
+- **SSE와 실제 usage.** Chat completion은 server-sent event로 stream되며 `prompt_tokens`, `completion_tokens`, `total_tokens`를 response에 담습니다. `cursor-api`는 실제 upstream turn usage를 매핑하고 `cursor-cli`는 Cursor가 usage를 생략할 때 report된 값 또는 문서화된 estimate를 사용합니다.
+- **제어 가능한 tool call.** single, parallel, sequential, forced, required, auto, none 모드를 지원하고, bridge 경계에서 tool history와 JSON Schema argument를 검증합니다.
+- **가중치 기반 credential.** `CURSOR_API_KEY`와 dashboard credential을 weight로 라우팅합니다. 인증 실패가 나면 실패한 credential만 cooldown하고, 사용 가능한 다른 credential로 한 번 retry한 뒤 cooldown이 끝나면 lazy recovery합니다.
+- **선별된 model family.** Composer 2.5, Cursor Grok 4.6, Claude 5 Opus, Sonnet, Fable, GPT-5.6 Sol, Terra, Luna, Kimi K3, GLM 5.2, `default`, `auto`를 policy로 활성화하며, dashboard override로 다른 discovered model을 노출하거나 숨길 수 있습니다.
+- **로컬 관리 console.** `/dashboard`에서 bridge와 backend status를 보고, 관리 credential CRUD를 수행하며, model family toggle을 bulk enable 또는 disable할 수 있습니다.
+
+## 설치
+
+Node.js 22+와 npm이 필요합니다. 레포지토리의 기존 npm workflow로 설치합니다.
 
 ```bash
-git clone <repository-url> cursor-ai-bridge
-cd cursor-ai-bridge
+git clone https://github.com/yelixir-dev/cursor-ai-proxy-bridge.git
+cd cursor-ai-proxy-bridge
 npm install
 cp .env.example .env
 npm run build
 npm start
 ```
 
-기본 주소는 `http://127.0.0.1:9996`입니다. Backend mode 기본값은 `auto`입니다. 시작 시 descriptor, credential, 짧은 timeout의 `GetServerConfig` probe를 확인해 모두 성공하면 headless `cursor-api`를 선택하고, 아니면 executable `cursor-agent`, `agent`, `cursor` CLI로 fallback합니다. 둘 다 사용할 수 없으면 시도한 두 경로의 원인과 함께 시작에 실패합니다. 한 경로를 강제하려면 `CURSOR_BRIDGE_BACKEND=cursor-api` 또는 `cursor-cli`를 설정하십시오.
+기본 주소는 `http://127.0.0.1:9996`입니다. `CURSOR_BRIDGE_API_KEY`를 설정한 뒤 `CURSOR_BRIDGE_AUTH=on`을 사용하세요. client key가 없으면 auth 기본값은 `off`이고 startup warning이 기록됩니다. `CURSOR_BRIDGE_BACKEND=auto`가 기본값이며, `cursor-api` 또는 `cursor-cli`로 설정해 backend를 강제할 수 있습니다.
 
-### 완전한 headless `cursor-api` backend
+### Headless 호스트용 descriptor snapshot
 
-`cursor-api`는 Cursor CLI process를 시작하지 않고 Connect-RPC service에 직접 연결합니다. 설치된 cursor-agent bundle에서 local descriptor를 먼저 추출한 뒤 build합니다.
+`cursor-api`는 Cursor service에 직접 연결하며 descriptor snapshot이 필요합니다. `cursor-agent`가 설치된 머신에서 snapshot을 추출하고 build한 뒤 direct backend를 시작합니다.
 
 ```bash
 CURSOR_BRIDGE_CURSOR_BIN="$HOME/.local/bin/cursor-agent" npm run extract-protos
@@ -51,17 +57,53 @@ npm run build
 CURSOR_BRIDGE_BACKEND=cursor-api npm start
 ```
 
-생성된 `src/backend/cursor-api/proto-descriptors.json`은 gitignore되며 build 때 `dist`로 복사됩니다. Runtime은 proprietary bundle을 import하지 않습니다. `CURSOR_API_KEY`는 독립적으로 routing되는 `env` credential이며 mode-0600 dashboard config에 weighted credential을 추가할 수 있습니다. Credential이 없으면 기존 `CURSOR_AUTH_TOKEN`/macOS Keychain 단일 credential 동작을 `system`으로 유지합니다. Auth failure는 해당 credential만 cooldown하고 사용 가능한 다른 credential로 한 번 retry합니다. 이 routing은 `cursor-api`에만 적용되며 `cursor-cli`와 `mock`은 자체 login을 그대로 사용합니다. 두 목적지는 `CURSOR_BRIDGE_CURSOR_API_ENDPOINT`, `CURSOR_BRIDGE_CURSOR_AGENT_ENDPOINT`로 override할 수 있습니다.
+생성된 `src/backend/cursor-api/proto-descriptors.json`은 gitignore되며 build 때 `dist`로 복사됩니다. CLI가 없는 호스트에서는 `npm run extract-protos`를 `cursor-agent`가 있는 머신에서 실행하고 생성된 `proto-descriptors.json`을 복사한 다음 `CURSOR_BRIDGE_CURSOR_API_DESCRIPTORS`를 그 경로로 설정하세요. Headless 인증에는 Cursor Dashboard -> API Keys에서 발급한 `CURSOR_API_KEY`를 설정합니다. `CURSOR_AUTH_TOKEN`도 사용할 수 있으며, env 또는 dashboard credential이 없으면 system credential이 macOS Keychain을 사용할 수 있습니다.
 
-**CLI 없는 호스트에서 실행 (headless-only).** `cursor-agent` binary가 없으면 `auto`는 `cursor-api`만 사용하고, API 경로마저 사용 불가할 때만 시작에 실패합니다. 그런 호스트에서는 두 가지가 CLI를 대체합니다: (1) descriptor 스냅샷 — cursor-agent가 있는 머신에서 `npm run extract-protos`를 한 번 실행해 생성된 `proto-descriptors.json`을 복사하고 `CURSOR_BRIDGE_CURSOR_API_DESCRIPTORS`로 가리키게 합니다. (2) env 자격증명 — macOS Keychain token은 Cursor CLI로 로그인한 머신에만 있으므로 `CURSOR_API_KEY` 또는 `CURSOR_AUTH_TOKEN`을 설정합니다.
+### npm scripts
 
-`auto` mode에서는 auth 거부, outdated-client/protocol 오류 또는 연속 3회 transport 실패 시 warning을 남기고 CLI로 전환합니다. HTTP 429와 일반 bad request/model 오류는 전환하지 않습니다. Cooldown 뒤 다음 요청에서 cursor-api를 probe해 성공하면 복구합니다. `/health`에는 configured mode, active backend, fallback 가능 여부, fatal counter, cooldown과 마지막 전환 원인이 표시됩니다.
+| Command                  | Purpose                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| `npm run dev`            | `src/index.ts`를 `tsx` watch 모드로 실행합니다.                                |
+| `npm run build`          | TypeScript를 compile하고 descriptor snapshot이 있으면 복사합니다.              |
+| `npm start`              | `dist/index.js`를 시작합니다.                                                  |
+| `npm run clean`          | `dist`를 삭제합니다.                                                           |
+| `npm run extract-protos` | 설치된 `cursor-agent` bundle에서 도달 가능한 protocol descriptor를 추출합니다. |
+| `npm run typecheck`      | 파일을 emit하지 않고 TypeScript를 검사합니다.                                  |
+| `npm run lint`           | ESLint를 실행합니다.                                                           |
+| `npm run format`         | Prettier로 레포지토리를 format합니다.                                          |
+| `npm run format:check`   | Prettier로 레포지토리 format을 검사합니다.                                     |
+| `npm run test`           | 한 worker로 Vitest suite를 실행합니다.                                         |
+| `npm run test:e2e`       | build한 뒤 실제 backend를 대상으로 Node smoke test를 실행합니다.               |
+| `npm run verify`         | typecheck, lint, format check, test, build를 실행합니다.                       |
 
-Wire parity를 위해 시작 시 AI 관련 CLI unary sequence와 비어 있는 최소 `TrackEvents`/`SubmitLogs` batch를 보냅니다. Capture에서는 `x-ghost-mode: true`에서도 analytics가 전송되었고 bundle에서도 privacy/ghost mode가 operational buffer를 억제하지 않았으므로, 임의 event/log 내용 없이 method shape만 재현합니다. Fresh Run마다 32-byte random key를 64-hex `x-blob-encryption-key`로 사용합니다.
+### End to end smoke test
 
-**위험 고지:** 이 protocol은 unofficial이며 version 변화에 취약합니다. Direct protocol을 우회하려면 `CURSOR_BRIDGE_BACKEND=cursor-cli`를 강제하십시오.
+사용 가능한 Cursor backend가 있는 상태에서 `npm run test:e2e`를 실행하세요. 실제 Cursor quota를 사용하며 authentication, chat, tools, SSE, malformed request, disconnect cleanup을 검사합니다.
 
-요청 예시:
+## 사용법
+
+기본 base URL은 `http://127.0.0.1:9996`입니다. `/health`는 인증이 필요 없습니다. Client auth가 켜지면 `/v1/*`와 `/admin/*`을 보호하며, `/dashboard`는 console shell을 제공합니다.
+
+### Authentication 및 credential
+
+서로 다른 두 key 계층이 있습니다.
+
+- **Client access.** `CURSOR_BRIDGE_AUTH`는 `on` 또는 `off`를 받습니다. 기본값은 `on`이며 `CURSOR_BRIDGE_API_KEY`가 설정된 경우입니다. key가 없으면 startup warning과 함께 `off`가 됩니다. `CURSOR_BRIDGE_AUTH=on`을 `CURSOR_BRIDGE_API_KEY` 없이 명시하면 startup에 실패합니다. 요청은 `Authorization: Bearer <key>` 또는 `x-api-key: <key>`를 사용할 수 있습니다.
+- **Cursor access.** `CURSOR_API_KEY`는 headless host용 Cursor Dashboard -> API Keys credential입니다. `/dashboard`에서 추가 credential을 만들고 weight를 지정하거나 enable, disable할 수 있으며 mode-0600 dashboard config에 저장됩니다. 인증 실패는 해당 credential만 cooldown에 넣고 사용 가능한 다른 credential로 한 번 retry합니다.
+
+### API surface
+
+| Endpoint                                       | Use                                                                         |
+| ---------------------------------------------- | --------------------------------------------------------------------------- |
+| `GET /health`                                  | Redacted bridge, backend, workspace, credential state를 반환합니다.         |
+| `GET /dashboard`                               | Browser management console입니다.                                           |
+| `GET /v1/models`                               | Active backend의 curated model을 반환합니다.                                |
+| `POST /v1/chat/completions`                    | SSE streaming과 tool을 포함한 OpenAI-compatible completion입니다.           |
+| `GET /admin/config` 또는 `PATCH /admin/config` | Redacted setting, credential, model override를 조회하거나 hot-update합니다. |
+
+### Request examples
+
+Non-streaming:
 
 ```bash
 curl -sS http://127.0.0.1:9996/v1/chat/completions \
@@ -73,7 +115,7 @@ curl -sS http://127.0.0.1:9996/v1/chat/completions \
   }'
 ```
 
-Streaming 요청:
+Streaming with usage:
 
 ```bash
 curl -N -sS http://127.0.0.1:9996/v1/chat/completions \
@@ -87,80 +129,68 @@ curl -N -sS http://127.0.0.1:9996/v1/chat/completions \
   }'
 ```
 
-OpenAI text content-part array는 text-only CLI backend에 맞게 flatten합니다. Image와 지원하지 않는 typed block은 명시적인 omission placeholder로 바뀝니다.
+관찰되는 response field는 다음과 같습니다.
 
-Model curation은 모든 backend에 적용됩니다. 기본적으로 Composer 2.5, Cursor Grok 4.6 variant, Claude 5 Opus/Sonnet/Fable variant, GPT-5.6 Sol/Terra/Luna variant, Kimi K3 variant, GLM 5.2 variant, `default`, `auto`만 활성화됩니다. 나머지 검색 model은 dashboard `modelOverrides`에서 활성화하지 않으면 숨겨지고 요청도 거부됩니다.
-
-## 설정
-
-| 변수                                    | 기본값          | 용도                                                                                                         |
-| --------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------ |
-| `CURSOR_BRIDGE_HOST`                    | `127.0.0.1`     | HTTP bind address. 신뢰하는 network control이 없으면 local로 유지.                                           |
-| `CURSOR_BRIDGE_PORT`                    | `9996`          | HTTP port.                                                                                                   |
-| `CURSOR_BRIDGE_API_KEY`                 | unset           | `/v1/*`에 필요한 client-facing key. Unset이면 `503 configuration_error`.                                     |
-| `CURSOR_BRIDGE_BACKEND`                 | `auto`          | Headless-first `auto`, 강제 `cursor-cli`/`cursor-api`, 또는 test용 `mock`.                                   |
-| `CURSOR_BRIDGE_DEFAULT_MODEL`           | `composer-2.5`  | Request default. 검색된 목록에 없으면 목록 앞에도 추가.                                                      |
-| `CURSOR_BRIDGE_WORKSPACE_MODE`          | `chat-only`     | `chat-only`는 disposable workspace와 `--mode ask` 사용. `real-workspace`는 설정한 project를 명시적으로 노출. |
-| `CURSOR_BRIDGE_REAL_WORKSPACE`          | unset           | `real-workspace` mode에서 필요한 기존 directory.                                                             |
-| `CURSOR_BRIDGE_CURSOR_BIN`              | `cursor`        | Cursor executable 이름 또는 absolute path.                                                                   |
-| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS`       | `120000`        | Command별 timeout. 1,000-600,000 ms 범위.                                                                    |
-| `CURSOR_BRIDGE_TERMINATION_GRACE_MS`    | `750`           | Process-group `SIGTERM`과 `SIGKILL` 사이 delay. 1-30,000 ms 범위.                                            |
-| `CURSOR_BRIDGE_MAX_OUTPUT_BYTES`        | `8388608`       | Cursor child별 stdout/stderr 합산 최대 byte.                                                                 |
-| `CURSOR_BRIDGE_MAX_CONCURRENCY`         | `8`             | 전체 in-flight chat completion 최대 수.                                                                      |
-| `CURSOR_BRIDGE_MAX_CONCURRENCY_PER_KEY` | `4`             | 인증 key별 in-flight completion 최대 수.                                                                     |
-| `CURSOR_BRIDGE_CHILD_ENV_ALLOW`         | unset           | Cursor child에 추가 전달하는 정확한 environment 이름의 comma-separated 목록.                                 |
-| `CURSOR_AUTH_TOKEN`                     | Keychain        | `cursor-api`용 direct bearer token. Unset이면 macOS Keychain 사용.                                           |
-| `CURSOR_API_KEY`                        | unset           | `cursor-api`가 access token으로 교환하는 first-class env credential.                                         |
-| `CURSOR_BRIDGE_DASHBOARD_CONFIG`        | user config dir | Dashboard JSON 경로. 기본값은 `~/.config/cursor-ai-proxy-bridge/dashboard.json`.                             |
-| `CURSOR_BRIDGE_CREDENTIAL_COOLDOWN_MS`  | `300000`        | Auth-failed cursor-api credential의 lazy recovery 전 cooldown.                                               |
-| `CURSOR_API_ENDPOINT`                   | Cursor api2     | Legacy api2 endpoint override.                                                                               |
-| `CURSOR_BRIDGE_CURSOR_API_ENDPOINT`     | Cursor api2     | api2 override. Legacy 변수보다 우선합니다.                                                                   |
-| `CURSOR_BRIDGE_CURSOR_AGENT_ENDPOINT`   | discovered      | Discovery 결과 대신 사용할 Agent Run endpoint.                                                               |
-| `CURSOR_BRIDGE_AUTO_PROBE_TIMEOUT_MS`   | `5000`          | Startup/recovery `GetServerConfig` probe timeout.                                                            |
-| `CURSOR_BRIDGE_AUTO_COOLDOWN_MS`        | `60000`         | cursor-api를 다시 probe하기 전 CLI fallback cooldown.                                                        |
-| `CURSOR_BRIDGE_AUTO_FATAL_THRESHOLD`    | `3`             | CLI로 전환하기 전 연속 transport failure 수.                                                                 |
-
-그 외에는 일반 runtime 변수, `XDG_*`, upstream `CURSOR_*`, `NODE_COMPILE_CACHE`만 Cursor child에 전달하며 bridge control과 관련 없는 secret은 제외합니다. 어느 workspace mode도 `--force`나 `--yolo`를 전달하지 않습니다.
-
-## Workspace 및 network 안전
-
-기본 `chat-only`는 각 request를 disposable directory와 Cursor ask mode에서 실행합니다. `real-workspace`는 선택한 directory를 Cursor의 writable default agent mode에 노출하므로 명시적으로 opt-in해야 합니다. 동일한 resolved real workspace를 공유하는 request는 serialize됩니다.
-
-기본 localhost bind를 유지하십시오. Remote access가 필요하면 신뢰하는 VPN/tailnet 또는 private reverse proxy와 강한 client key를 사용하십시오. Dashboard는 key나 Cursor credential을 표시하지 않습니다.
-
-## 개발
-
-```bash
-npm run verify
-npm audit --omit=dev
+```text
+object: chat.completion
+choices[].message: assistant content or tool_calls
+usage: prompt_tokens, completion_tokens, total_tokens
+stream terminator: data: [DONE]
 ```
 
-`verify`는 type check, lint, format check, 격리된 single-worker Vitest suite, production build를 실행합니다.
+`cursor-api`는 upstream turn usage를 세 token field로 매핑합니다. `cursor-cli`는 사용 가능한 경우 report된 usage를 사용하고, Cursor가 usage를 주지 않을 때만 text에서 usage를 추정합니다.
 
-### 실제 end-to-end smoke test
+### Tool calls
 
-Build/unit gate가 green이고 Cursor Agent에 login된 경우에만 실행하십시오. 실제 Cursor quota를 사용하며 보통 약 3-4분이 걸립니다.
+Bridge는 completion을 반환하기 전에 선언된 tool schema와 일치하는 tool history를 검증합니다.
 
-```bash
-CURSOR_BRIDGE_CURSOR_BIN=/absolute/path/to/cursor-agent npm run extract-protos
-CURSOR_BRIDGE_BACKEND=auto npm run test:e2e
-CURSOR_BRIDGE_CURSOR_BIN=/absolute/path/to/cursor-agent CURSOR_BRIDGE_BACKEND=cursor-cli npm run test:e2e
+| Mode         | Request setting                                                | Behavior                                                  |
+| ------------ | -------------------------------------------------------------- | --------------------------------------------------------- |
+| `auto`       | `tool_choice: "auto"`                                          | Model이 선언된 tool을 호출할지 결정합니다.                |
+| `single`     | `parallel_tool_calls: false`                                   | 허용된 tool call을 최대 하나 반환합니다.                  |
+| `parallel`   | `parallel_tool_calls: true`                                    | 하나의 response에서 여러 indexed tool call을 허용합니다.  |
+| `sequential` | 일치하는 assistant와 `tool` message                            | 검증된 call ID와 result로 tool conversation을 이어갑니다. |
+| `forced`     | `tool_choice: { type: "function", function: { name: "..." } }` | 선언된 function 하나를 선택합니다.                        |
+| `required`   | `tool_choice: "required"`                                      | 선언된 tool call을 하나 이상 요구합니다.                  |
+| `none`       | `tool_choice: "none"`                                          | Tool call을 억제하고 일반 text를 반환합니다.              |
+
+### Dashboard
+
+실행 중인 bridge를 관리하려면 `http://127.0.0.1:9996/dashboard`를 여세요. Console에서 status, active backend, credential state, model state를 확인할 수 있습니다. 관리 credential의 add, update, weight, enable, disable, delete를 지원하며, model별 toggle과 model family bulk toggle도 제공합니다. 전체 API key는 console로 반환되지 않습니다.
+
+Model policy는 기본적으로 top-tier family를 활성화하고, 다른 discovered model은 override를 설정하기 전까지 숨깁니다. Policy pattern은 `composer-2.5`, `cursor-grok-4.6-*`, `claude-opus-5-*`, `claude-sonnet-5-*`, `claude-fable-5-*`, `gpt-5.6-(sol|terra|luna)-*`, `kimi-k3-*`, `glm-5.2-*`, `default`, `auto`를 대상으로 합니다.
+
+## 동작 방식
+
+1. **설정을 읽습니다.** `.env`와 dashboard JSON을 읽고 host, port, client auth, workspace mode, model policy, credential를 결정합니다.
+2. **Backend를 선택합니다.** `auto`는 descriptor, Cursor authentication, `GetServerConfig` probe를 확인하고 headless `cursor-api`를 선택합니다. 사용할 수 없으면 실행 가능한 `cursor-agent`, `agent`, `cursor` CLI를 찾습니다.
+3. **Credential를 라우팅합니다.** Direct backend는 weight credential을 사용하고, auth failure를 다른 credential로 한 번 retry하며 cooldown과 recovery state를 기록합니다.
+4. **Model을 발견하고 선별합니다.** Active backend가 model을 제공하면 policy가 default family rule과 dashboard override를 적용한 뒤 `/v1/models`와 completion dispatch에 사용합니다.
+5. **Request를 검증합니다.** Server는 OpenAI message를 normalize하고 tool history와 JSON Schema argument를 검사하며 disabled model을 upstream 작업 전에 거부합니다.
+6. **실행하고 stream합니다.** `cursor-api`는 `agent.v1` Connect-RPC sequence를 보내고, `cursor-cli`는 기본적으로 disposable `chat-only` workspace에서 Cursor를 실행합니다. 두 backend 모두 completion usage를 매핑하고 server는 OpenAI 형태의 JSON 또는 SSE를 보냅니다.
+7. **복구합니다.** `auto`에서 auth, protocol, threshold를 넘은 transport failure가 발생하면 CLI가 있을 때 CLI로 전환하고, cooldown 뒤 probe가 성공하면 `cursor-api`를 복원할 수 있습니다.
+
+## 레포지토리 구조
+
+```text
+src/                    TypeScript server, backends, dashboard, and model policy
+src/backend/cursor-api/ headless Connect-RPC backend and descriptor snapshot
+scripts/                descriptor extraction and e2e smoke test
+tests/                   Vitest coverage for auth, routing, models, tools, and SSE
+docs/assets/banner.svg  README hero banner
 ```
 
-Dependency 없는 Node smoke test가 ephemeral localhost port에서 `dist/index.js`를 실행하고 auth, chat, tool mode/history/validation, SSE timing/usage/tool call, malformed request, disconnect cleanup을 검사합니다. 모든 row가 pass하지 않으면 nonzero로 종료합니다. 의도적으로 `npm run verify`에는 포함하지 않습니다.
+## 현재 한계
 
-## 제한 사항
+- **비공식 protocol.** Cursor가 reverse-engineered `agent.v1` service나 bundle을 바꿀 수 있습니다. `npm run extract-protos`를 `cursor-agent` update 뒤 다시 실행하거나 `CURSOR_BRIDGE_BACKEND=cursor-cli`를 강제하세요.
+- **로컬 network 경계.** 기본 bind는 `127.0.0.1`입니다. localhost 또는 신뢰하는 tailnet에 유지하고, private reverse proxy가 노출할 때는 client auth도 유지하세요.
+- **Tool streaming 경계.** Tool을 선언하면 marker를 안전하게 변환하기 위해 Cursor가 끝날 때까지 model text를 buffer합니다. Incremental content가 중요하면 tool을 선언하지 마세요.
+- **Cursor 경계.** 두 real backend 모두 Cursor quota를 사용하며, `cursor-api`는 local 실행이어도 account 또는 약관 위험을 가질 수 있습니다. Quota를 계획하고 필요하면 CLI 경로를 선택하세요.
 
-- Tool delegation은 prompt-level `[TOOL_CALLS: ...]` contract에 의존합니다. Bridge가 결과를 검증하지만 model-dependent라는 성질은 남습니다.
-- Tool을 선언한 streaming request는 Cursor 완료까지 model text를 의도적으로 buffer합니다. 따라서 content/tool-call TTFB는 incremental하지 않으며 tool이 없는 request만 incremental하게 stream합니다.
-- Cursor thinking delta는 소비하지만 OpenAI response로 노출하지 않습니다.
-- `cursor-cli`는 local CLI 상태를 따릅니다. Unofficial `cursor-api`는 Cursor bundle/service 변경 때 깨질 수 있으며 agent update 후 `npm run extract-protos`를 다시 실행해야 합니다.
-- 두 real backend 모두 Cursor quota를 사용하며, local 실행이어도 `cursor-api`에는 account/약관 위험이 있을 수 있습니다.
+## 라이선스
 
-## Future
+프로젝트 라이선스는 공개 전에 선언될 예정이며 현재 상태는 "to be declared"입니다.
 
-Cursor가 공식 chat-completions endpoint를 제공하면 HTTP compatibility와 validation boundary는 유지하면서 unofficial direct protocol을 대체해야 합니다.
+---
 
-## License
-
-MIT.
+<p align="center"><em>Cursor AI Bridge, bridge는 로컬에 둡니다.</em></p>

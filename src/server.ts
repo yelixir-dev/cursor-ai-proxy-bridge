@@ -204,17 +204,11 @@ async function requireClientAuth(
   reply: FastifyReply,
   config: BridgeConfig,
 ): Promise<boolean> {
-  if (!config.apiKey) {
-    await reply.code(503).send({
-      error: {
-        type: 'configuration_error',
-        message: 'CURSOR_BRIDGE_API_KEY must be configured before /v1 endpoints are available',
-      },
-    });
-    return false;
-  }
+  if (config.clientAuth === 'off') return true;
+  const apiKey = config.apiKey;
+  if (!apiKey) throw new Error('CURSOR_BRIDGE_AUTH=on requires CURSOR_BRIDGE_API_KEY');
   const token = tokenFromRequest(request);
-  if (token !== undefined && timingSafeKeyEqual(token, config.apiKey)) return true;
+  if (token !== undefined && timingSafeKeyEqual(token, apiKey)) return true;
   await reply.code(401).send({
     error: {
       type: 'authentication_error',
@@ -550,7 +544,15 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   if (options.config.apiKey !== undefined && !configuredApiKey) {
     throw new Error('CURSOR_BRIDGE_API_KEY must not be empty or whitespace');
   }
-  const config: BridgeConfig = { ...options.config, apiKey: configuredApiKey };
+  const clientAuth = options.config.clientAuth ?? (configuredApiKey ? 'on' : 'off');
+  if (clientAuth === 'on' && !configuredApiKey) {
+    throw new Error('CURSOR_BRIDGE_AUTH=on requires CURSOR_BRIDGE_API_KEY');
+  }
+  const config: BridgeConfig = {
+    ...options.config,
+    apiKey: configuredApiKey,
+    clientAuth,
+  };
   const { backend } = options;
   let dashboardConfig: DashboardConfig = config.dashboardConfig ?? {};
   const configPath = config.dashboardConfigPath ?? dashboardConfigPath(process.env);
@@ -597,6 +599,9 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     logController: new LogController({ disableRequestLogging: true }),
     bodyLimit: 2 * 1024 * 1024,
   });
+  if (config.clientAuth === 'off') {
+    app.log.warn('client auth disabled — bind to localhost or a trusted network only');
+  }
   app.addHook('preClose', async () => {
     await backend.shutdown?.();
   });
@@ -630,7 +635,10 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     return {
       status: backendHealth.ok ? 'ok' : 'degraded',
       bridge: redactedConfig(config),
-      auth: { client_api_key_configured: Boolean(config.apiKey) },
+      auth: {
+        client_auth_enabled: config.clientAuth === 'on',
+        client_api_key_configured: Boolean(config.apiKey),
+      },
       backend: backendHealth,
       workspace: {
         mode: config.workspaceMode,

@@ -25,6 +25,7 @@ const baseConfig: BridgeConfig = {
   host: '127.0.0.1',
   port: 9996,
   apiKey: '***',
+  clientAuth: 'on',
   backend: 'mock',
   defaultModel: 'composer-2.5',
   workspaceMode: 'chat-only',
@@ -86,6 +87,7 @@ describe('cursor-ai-bridge server', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.status).toBe('ok');
+    expect(body.auth.client_auth_enabled).toBe(true);
     expect(body.auth.client_api_key_configured).toBe(true);
     expect(JSON.stringify(body)).not.toContain('***');
     expect(body.workspace.mode).toBe('chat-only');
@@ -95,6 +97,12 @@ describe('cursor-ai-bridge server', () => {
     const server = await app();
     const missing = await server.inject({ method: 'GET', url: '/v1/models' });
     expect(missing.statusCode).toBe(401);
+    const wrong = await server.inject({
+      method: 'GET',
+      url: '/v1/models',
+      headers: { authorization: 'Bearer wrong' },
+    });
+    expect(wrong.statusCode).toBe(401);
 
     const ok = await server.inject({
       method: 'GET',
@@ -105,11 +113,56 @@ describe('cursor-ai-bridge server', () => {
     expect(ok.json().data.map((m: { id: string }) => m.id)).toContain('composer-2.5');
   });
 
-  it('requires configured client API key for /v1/models', async () => {
-    const server = await app({ apiKey: undefined });
-    const res = await server.inject({ method: 'GET', url: '/v1/models' });
-    expect(res.statusCode).toBe(503);
-    expect(res.json().error.type).toBe('configuration_error');
+  it('defaults client auth to off when the API key is unset', async () => {
+    const server = await app({ apiKey: undefined, clientAuth: undefined });
+    const models = await server.inject({ method: 'GET', url: '/v1/models' });
+    const admin = await server.inject({ method: 'GET', url: '/admin/config' });
+
+    expect(models.statusCode).toBe(200);
+    expect(admin.statusCode).toBe(200);
+    expect((await server.inject({ method: 'GET', url: '/health' })).json().auth).toEqual({
+      client_auth_enabled: false,
+      client_api_key_configured: false,
+    });
+  });
+
+  it('ignores absent and invalid credentials when client auth is off', async () => {
+    const configPath = join(mkdtempSync(join(tmpdir(), 'cursor-auth-off-')), 'dashboard.json');
+    const server = await app({
+      apiKey: 'configured-key',
+      clientAuth: 'off',
+      dashboardConfigPath: configPath,
+      dashboardConfig: {},
+    });
+    const models = await server.inject({ method: 'GET', url: '/v1/models' });
+    const admin = await server.inject({
+      method: 'GET',
+      url: '/admin/config',
+      headers: { authorization: 'Bearer wrong-key' },
+    });
+    const completion = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer wrong-key' },
+      payload: { messages: [{ role: 'user', content: 'open auth' }] },
+    });
+
+    const patched = await server.inject({
+      method: 'PATCH',
+      url: '/admin/config',
+      payload: { modelOverrides: { 'composer-2.5': false } },
+    });
+
+    expect(models.statusCode).toBe(200);
+    expect(admin.statusCode).toBe(200);
+    expect(completion.statusCode).toBe(200);
+    expect(patched.statusCode).toBe(200);
+  });
+
+  it('rejects startup when client auth is on without an API key', async () => {
+    await expect(app({ apiKey: undefined, clientAuth: 'on' })).rejects.toThrow(
+      'CURSOR_BRIDGE_AUTH=on requires CURSOR_BRIDGE_API_KEY',
+    );
   });
 
   it('accepts x-api-key auth for /v1/models', async () => {

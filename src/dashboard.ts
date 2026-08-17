@@ -41,13 +41,13 @@ export function renderDashboard(version: string): string {
     .add-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:18px;padding:14px;background:var(--paper-2);border-left:3px solid var(--rust)}.field{display:grid;gap:5px;min-width:0}.field label{font:800 10px/1 var(--sans);letter-spacing:.09em;color:var(--muted);text-transform:uppercase}.field-wide{grid-column:1/-1}.add-actions{display:flex;align-items:end}.add-actions button{width:100%}
     .table-wrap{overflow-x:auto;border:1px solid var(--rule)}table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:12px}th,td{padding:10px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:middle;white-space:nowrap}th{background:var(--paper-2);color:var(--muted);font-size:10px;letter-spacing:.06em;text-transform:uppercase}tbody tr:last-child td{border-bottom:0}td code{font-family:var(--mono);font-size:11px}.weight-input{width:72px;min-height:34px}.locked-note{display:block;max-width:180px;color:var(--muted);font-size:10px;white-space:normal}.empty{border:1px dashed var(--rule);background:var(--paper-2);color:var(--muted);padding:13px;margin:0 0 12px;font-family:var(--sans);font-size:12px}
     .switch{position:relative;display:inline-block;width:46px;height:25px}.switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}.slider{position:absolute;inset:0;border:1px solid var(--rule);background:var(--disabled);pointer-events:none}.slider::before{content:"";position:absolute;width:19px;height:19px;left:2px;top:2px;background:var(--paper);transition:transform .15s}.switch input:checked+.slider{background:var(--teal)}.switch input:checked+.slider::before{transform:translateX(21px)}.switch input:focus-visible+.slider{outline:3px solid var(--gold);outline-offset:3px}
-    .model-tools{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;margin-bottom:12px}.search{position:relative}.search input{padding-left:34px}.search::before{content:"⌕";position:absolute;left:11px;top:7px;color:var(--teal);font-size:20px}.model-total{font:800 12px/1.3 var(--sans);color:var(--teal);white-space:nowrap}.families{display:grid;gap:10px}.family{border:1px solid var(--rule);background:var(--paper)}.family summary{display:flex;align-items:center;gap:9px;padding:12px 14px;cursor:pointer;list-style:none;font-weight:700}.family summary::-webkit-details-marker{display:none}.family summary::before{content:"+";display:inline-grid;place-items:center;width:22px;height:22px;border:1px solid var(--rust);color:var(--rust);font:800 16px/1 var(--sans)}.family[open] summary::before{content:"−"}.family[open] summary{border-bottom:1px solid var(--rule)}.family-count{margin-left:auto;color:var(--teal);font:700 12px/1 var(--sans)}.model-list{display:grid;grid-template-columns:1fr;gap:9px;padding:12px}.model-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border-left:3px solid var(--rule);background:var(--paper-2);padding:10px 12px}.model-name{min-width:0}.model-name code{display:block;font:700 12px/1.4 var(--mono);overflow-wrap:anywhere}.model-meta{display:flex;align-items:center;gap:7px;margin-top:4px;font:10px/1.3 var(--sans)}.badge{display:inline-flex;border:1px solid var(--rule);background:var(--paper);padding:2px 6px;color:var(--muted)}.model-control{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+    .model-tools{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;margin-bottom:12px}.search{position:relative}.search input{padding-left:34px}.search::before{content:"⌕";position:absolute;left:11px;top:7px;color:var(--teal);font-size:20px}.model-total{font:800 12px/1.3 var(--sans);color:var(--teal);white-space:nowrap}.families{display:grid;gap:14px}.family{--family-accent:var(--rust);overflow:hidden;border:1px solid var(--rule);border-left:5px solid var(--family-accent);background:var(--paper);box-shadow:0 7px 18px rgba(65,49,35,.07);transition:opacity .15s,filter .15s}.family.is-disabled{opacity:.58;filter:saturate(.45);background:#ebe7df}.family summary{display:flex;align-items:center;gap:9px;padding:12px 14px;cursor:pointer;list-style:none;font-weight:700}.family summary::-webkit-details-marker{display:none}.family summary::before{content:"+";display:inline-grid;place-items:center;width:22px;height:22px;border:1px solid var(--family-accent);color:var(--family-accent);font:800 16px/1 var(--sans)}.family[open] summary::before{content:"−"}.family[open] summary{border-bottom:1px solid var(--rule)}.family-dot{width:9px;height:9px;border-radius:50%;background:var(--family-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--family-accent) 18%,transparent)}.family-name{font-size:17px;letter-spacing:-.01em}.family-count{margin-left:auto;border:1px solid var(--family-accent);background:var(--paper);color:var(--family-accent);padding:3px 7px;font:800 11px/1 var(--sans);white-space:nowrap}.family-actions{display:flex;gap:5px}.family-action{min-height:30px;padding:5px 8px;background:transparent;border-color:var(--rule);color:var(--ink);font-size:9px}.family-action:hover{border-color:var(--family-accent);color:var(--family-accent)}.model-list{display:grid;grid-template-columns:1fr;gap:9px;padding:12px}.model-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border-left:3px solid var(--family-accent);background:var(--paper-2);padding:10px 12px}.model-name{min-width:0}.model-name code{display:block;font:700 12px/1.4 var(--mono);overflow-wrap:anywhere}.model-meta{display:flex;align-items:center;gap:7px;margin-top:4px;font:10px/1.3 var(--sans)}.badge{display:inline-flex;border:1px solid var(--rule);background:var(--paper);padding:2px 6px;color:var(--muted)}.model-control{display:flex;align-items:center;gap:10px;flex:0 0 auto}
     .guide{margin:0;color:var(--muted);font-family:var(--sans)}.guide strong{color:var(--ink)}
     .toast{position:fixed;left:10px;right:10px;top:10px;z-index:50;pointer-events:none;transform:translateY(-150%);transition:transform .2s;background:var(--ink);color:var(--paper);border-left:4px solid var(--gold);box-shadow:var(--shadow);padding:12px 15px;font-family:var(--sans)}.toast.error{border-left-color:#d07b59}.toast.show{transform:translateY(0)}
     dialog{width:min(calc(100% - 28px),430px);border:0;border-top:4px solid var(--rust);border-radius:0;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);padding:24px}dialog::backdrop{background:rgba(40,35,31,.48)}dialog h2{margin:0 0 8px;font-size:25px}dialog p{margin:0 0 18px;color:var(--muted);font-family:var(--sans);font-size:12px}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.auth-error{color:var(--bad);min-height:18px;margin-top:8px;font:700 11px/1.4 var(--sans)}
     .busy [data-admin-control]{pointer-events:none;opacity:.55}
     @media(min-width:760px){.wrap{padding:22px 0 38px}.grid{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}.status-grid{grid-template-columns:1fr 1fr}.add-form{grid-template-columns:1fr 1.2fr 2fr 100px 110px}.field-wide{grid-column:auto}.model-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
-    @media(max-width:620px){.top{align-items:flex-start;padding:26px 20px}.top h1{font-size:27px}.toolbar{align-items:flex-start}.card h2{align-items:flex-start;flex-direction:column;gap:6px}.sub{text-align:left}.add-form{grid-template-columns:1fr}.field-wide{grid-column:auto}.model-tools{grid-template-columns:1fr}.model-row{align-items:flex-start}.model-control{flex-direction:column-reverse;align-items:flex-end}}
+    @media(max-width:620px){.top{align-items:flex-start;padding:26px 20px}.top h1{font-size:27px}.toolbar{align-items:flex-start}.card h2{align-items:flex-start;flex-direction:column;gap:6px}.sub{text-align:left}.add-form{grid-template-columns:1fr}.field-wide{grid-column:auto}.model-tools{grid-template-columns:1fr}.family summary{align-items:flex-start;flex-wrap:wrap}.family-count{margin-left:0}.family-actions{width:100%;padding-left:31px}.family-action{flex:1}.model-row{align-items:flex-start}.model-control{flex-direction:column-reverse;align-items:flex-end}}
     @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}}
   </style>
 </head>
@@ -118,6 +118,13 @@ export function renderDashboard(version: string): string {
 const bridgeVersion=${scriptJson(version)};
 const storageKey='cursorBridgeAdminApiKey';
 const familyOrder=['composer','grok','opus','sonnet','fable','gpt-5.6','kimi','glm','기타'];
+const familyMeta={
+  composer:{name:'Composer',accent:'#9f4d2e'},grok:{name:'Grok',accent:'#1f6f78'},
+  opus:{name:'Claude Opus',accent:'#76518b'},sonnet:{name:'Claude Sonnet',accent:'#b57920'},
+  fable:{name:'Claude Fable',accent:'#b45f71'},'gpt-5.6':{name:'GPT-5.6',accent:'#39735c'},
+  kimi:{name:'Kimi',accent:'#4267a8'},glm:{name:'GLM',accent:'#876b32'},
+  '기타':{name:'기타',accent:'#6d665e'}
+};
 const openFamilies=new Set(['composer']);
 let apiKey=readStoredKey();
 let dashboardData=null;
@@ -303,9 +310,17 @@ function renderModels(){
     if(!filtered.length)return;
     visible+=filtered.length;
     const familyEnabled=all.filter(model=>model.enabled).length;
-    const details=make('details','family');details.open=query.length>0||openFamilies.has(family);
+    const meta=familyMeta[family];
+    const details=make('details','family'+(familyEnabled===0?' is-disabled':''));details.open=query.length>0||openFamilies.has(family);details.style.setProperty('--family-accent',meta.accent);
     details.addEventListener('toggle',()=>{if(details.open)openFamilies.add(family);else openFamilies.delete(family);});
-    const summary=make('summary');summary.append(make('span','',family),make('span','family-count','활성 '+familyEnabled+' / 전체 '+all.length));details.append(summary);
+    const summary=make('summary');
+    const dot=make('span','family-dot');dot.setAttribute('aria-hidden','true');
+    const actions=make('span','family-actions');
+    const bulkTitle='검색 필터와 관계없이 이 패밀리의 모든 모델에 적용합니다.';
+    const enableAll=make('button','family-action','모두 켜기');enableAll.type='button';enableAll.title=bulkTitle;enableAll.dataset.adminControl='';enableAll.disabled=familyEnabled===all.length;enableAll.addEventListener('click',async event=>{event.preventDefault();event.stopPropagation();await patchConfig({modelOverrides:Object.fromEntries(all.map(model=>[model.id,true]))});});
+    const disableAll=make('button','family-action','모두 끄기');disableAll.type='button';disableAll.title=bulkTitle;disableAll.dataset.adminControl='';disableAll.disabled=familyEnabled===0;disableAll.addEventListener('click',async event=>{event.preventDefault();event.stopPropagation();await patchConfig({modelOverrides:Object.fromEntries(all.map(model=>[model.id,false]))});});
+    actions.append(enableAll,disableAll);
+    summary.append(dot,make('span','family-name',meta.name),make('span','family-count','활성 '+familyEnabled+'/'+all.length),actions);details.append(summary);
     const list=make('div','model-list');
     filtered.forEach(model=>{
       const row=make('div','model-row');
@@ -354,19 +369,18 @@ async function loadDashboard(){
   $('app').setAttribute('aria-busy','true');
   showPageState('상태와 설정을 불러오는 중입니다.');
   const healthRequest=fetchJson('/health').then(value=>{healthData=value;renderHealth();}).catch(()=>{healthData=null;renderHealth();});
-  if(!apiKey){
-    await healthRequest;
+  await healthRequest;
+  const clientAuthEnabled=!healthData||!healthData.auth||healthData.auth.client_auth_enabled!==false;
+  if(clientAuthEnabled&&!apiKey){
     showPageState('관리 API key를 입력하면 설정을 불러옵니다.');
     showAuth();
     return;
   }
   try{
     dashboardData=await fetchJson('/admin/config',{},true);
-    await healthRequest;
     renderAll();
     hidePageState();
   }catch(error){
-    await healthRequest;
     handleAdminError(error);
   }
 }
