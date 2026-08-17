@@ -2,8 +2,17 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
+import {
+  dashboardConfigPath,
+  readDashboardConfigFile,
+  type DashboardConfig,
+} from './dashboard-config.js';
+import {
+  cursorCredentialsFromConfig,
+  type CursorApiCredential,
+} from './backend/cursor-api/credentials.js';
 
-export type BackendKind = 'mock' | 'cursor-cli';
+export type BackendKind = 'auto' | 'mock' | 'cursor-cli' | 'cursor-api';
 export type WorkspaceMode = 'chat-only' | 'real-workspace';
 
 export interface BridgeConfig {
@@ -14,7 +23,12 @@ export interface BridgeConfig {
   defaultModel: string;
   workspaceMode: WorkspaceMode;
   realWorkspacePath?: string;
+  maxConcurrency?: number;
+  maxConcurrencyPerKey?: number;
   version: string;
+  dashboardConfigPath?: string;
+  dashboardConfig?: DashboardConfig;
+  cursorApiCredentials?: CursorApiCredential[];
 }
 
 function packageVersion(): string {
@@ -38,19 +52,39 @@ function numberFromEnv(name: string, fallback: number): number {
 
 export function loadConfig(envFile = '.env'): BridgeConfig {
   dotenv.config({ path: envFile, quiet: true });
+  const configPath = dashboardConfigPath(process.env);
+  const dashboardConfig = readDashboardConfigFile(configPath);
   const workspaceMode =
     process.env.CURSOR_BRIDGE_WORKSPACE_MODE === 'real-workspace' ? 'real-workspace' : 'chat-only';
+  const rawApiKey = process.env.CURSOR_BRIDGE_API_KEY;
+  const apiKey = rawApiKey?.trim();
+  if (rawApiKey !== undefined && !apiKey) {
+    throw new Error('CURSOR_BRIDGE_API_KEY must not be empty or whitespace');
+  }
 
   return {
-    host: process.env.CURSOR_BRIDGE_HOST || '127.0.0.1',
-    port: numberFromEnv('CURSOR_BRIDGE_PORT', 9994),
-    apiKey: process.env.CURSOR_BRIDGE_API_KEY,
-    backend: process.env.CURSOR_BRIDGE_BACKEND === 'cursor-cli' ? 'cursor-cli' : 'mock',
-    defaultModel: process.env.CURSOR_BRIDGE_DEFAULT_MODEL || 'cursor-fast',
+    host: process.env.CURSOR_BRIDGE_HOST || dashboardConfig.server?.host || '127.0.0.1',
+    port: numberFromEnv('CURSOR_BRIDGE_PORT', dashboardConfig.server?.port ?? 9996),
+    apiKey,
+    backend:
+      process.env.CURSOR_BRIDGE_BACKEND === 'cursor-api' ||
+      process.env.CURSOR_BRIDGE_BACKEND === 'cursor-cli' ||
+      process.env.CURSOR_BRIDGE_BACKEND === 'mock'
+        ? process.env.CURSOR_BRIDGE_BACKEND
+        : 'auto',
+    defaultModel: process.env.CURSOR_BRIDGE_DEFAULT_MODEL || 'composer-2.5',
     workspaceMode,
     realWorkspacePath:
       workspaceMode === 'real-workspace' ? process.env.CURSOR_BRIDGE_REAL_WORKSPACE : undefined,
+    maxConcurrency: numberFromEnv('CURSOR_BRIDGE_MAX_CONCURRENCY', 8),
+    maxConcurrencyPerKey: numberFromEnv('CURSOR_BRIDGE_MAX_CONCURRENCY_PER_KEY', 4),
     version: packageVersion(),
+    dashboardConfigPath: configPath,
+    dashboardConfig,
+    cursorApiCredentials: cursorCredentialsFromConfig(
+      process.env,
+      dashboardConfig.credentials ?? [],
+    ),
   };
 }
 

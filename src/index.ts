@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { loadConfig } from './config.js';
 import { createMockBackend } from './backend/mock.js';
-import { createCursorCliBackend } from './backend/cursor-cli.js';
+import { createConfiguredBackend } from './backend/auto.js';
 import { buildServer } from './server.js';
 
 async function main() {
   const config = loadConfig();
   const backend =
-    config.backend === 'cursor-cli' ? createCursorCliBackend(config) : createMockBackend();
+    config.backend === 'mock' ? createMockBackend() : await createConfiguredBackend(config);
   const server = await buildServer({ config, backend });
 
   const close = async () => {

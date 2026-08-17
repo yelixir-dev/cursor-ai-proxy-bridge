@@ -1,14 +1,3 @@
-import type { BridgeConfig } from './config.js';
-import type { BackendHealth, BridgeModel } from './backend/types.js';
-
-export interface DashboardState {
-  config: BridgeConfig;
-  backendHealth: BackendHealth;
-  models: BridgeModel[];
-  uptimeSeconds: number;
-  requestCount: number;
-}
-
 function escapeHtml(value: unknown): string {
   return String(value)
     .replaceAll('&', '&amp;')
@@ -18,83 +7,397 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", '&#39;');
 }
 
-export function renderDashboard(state: DashboardState): string {
-  const { config, backendHealth, models } = state;
-  const authBadge = config.apiKey ? 'protected' : 'open';
-  const workspaceBadge =
-    config.workspaceMode === 'chat-only'
-      ? 'chat-only temporary working directory; no real workspace is mounted by default'
-      : `real workspace: ${config.realWorkspacePath ? 'configured' : 'missing path'}`;
-  const modelRows = models
-    .map(
-      (model) =>
-        `<li><code>${escapeHtml(model.id)}</code><span>${escapeHtml(model.owned_by)}</span></li>`,
-    )
-    .join('');
-  const curlKey = config.apiKey ? 'Bearer $CURSOR_BRIDGE_API_KEY' : 'Bearer <not-configured>';
+function scriptJson(value: unknown): string {
+  return JSON.stringify(value).replaceAll('<', '\\u003c');
+}
 
+export function renderDashboard(version: string): string {
   return `<!doctype html>
 <html lang="ko">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Cursor AI Bridge Console</title>
-<style>
-:root{color-scheme:light;--paper:#eee5d2;--panel:#f8f2e5;--ink:#2f2b25;--muted:#706858;--line:#b9aa91;--accent:#8b6f42;--ok:#3d7653;--warn:#a25f2a;}
-*{box-sizing:border-box}body{margin:0;background:linear-gradient(90deg,rgba(95,82,62,.08) 1px,transparent 1px),linear-gradient(rgba(95,82,62,.08) 1px,transparent 1px),var(--paper);background-size:22px 22px;font:15px/1.5 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
-main{width:min(1100px,100%);margin:0 auto;padding:20px}header{border:1px solid var(--line);background:rgba(248,242,229,.96);padding:18px;border-radius:18px;box-shadow:0 8px 24px rgba(59,46,29,.08)}
-h1{margin:0;font-size:clamp(24px,7vw,44px);letter-spacing:-.04em;white-space:nowrap}.sub{color:var(--muted);margin-top:4px}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px;margin-top:14px}.card{grid-column:span 6;border:1px solid var(--line);background:var(--panel);border-radius:16px;padding:16px;min-height:140px}.wide{grid-column:span 12}h2{margin:0 0 10px;font-size:18px}.kv{display:grid;grid-template-columns:1fr auto;gap:8px;border-top:1px dashed var(--line);padding-top:10px}.badge{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:3px 9px;background:#fff8ea}.ok{color:var(--ok)}.warn{color:var(--warn)}ul{list-style:none;padding:0;margin:0;display:grid;gap:8px}li{display:flex;justify-content:space-between;gap:12px;border-top:1px dashed var(--line);padding-top:8px}pre{white-space:pre-wrap;overflow:auto;background:#26231e;color:#f4ead6;border-radius:12px;padding:12px;font-size:12px}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}a{color:var(--accent)}
-@media(max-width:760px){main{padding:12px}.card{grid-column:span 12}header,.card{border-radius:14px}h1{font-size:28px}.kv{grid-template-columns:1fr}.badge{width:max-content}}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cursor AI Bridge 관리 콘솔</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink:#28231f; --muted:#6d665e; --paper:#fffdf8; --canvas:#f1ede5;
+      --rule:#d9d0c4; --rust:#9f4d2e; --teal:#1f6f78; --gold:#b57920;
+      --paper-2:#f7f1e8; --good:#1f6f78; --warn:#a96917; --bad:#9f4d2e;
+      --disabled:#8c857d; --shadow:0 14px 34px rgba(65,49,35,.10);
+      --serif:Georgia,"Times New Roman",serif;
+      --sans:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+    }
+    *{box-sizing:border-box}html{background:var(--canvas)}body{margin:0;background:var(--canvas);color:var(--ink);font:15px/1.5 var(--serif)}
+    button,input{font:inherit}button{min-height:38px;border:1px solid var(--ink);border-radius:0;background:var(--ink);color:var(--paper);padding:8px 12px;font:800 11px/1.2 var(--sans);letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+    button.secondary{background:transparent;color:var(--ink);border-color:var(--rule)}button.secondary:hover{border-color:var(--teal);color:var(--teal)}button.danger{background:var(--rust);border-color:var(--rust)}button.link{min-height:auto;border:0;background:transparent;color:var(--rust);padding:2px;text-transform:none;letter-spacing:0}button:disabled{cursor:not-allowed;opacity:.5}
+    input{width:100%;min-height:40px;border:1px solid var(--rule);border-radius:0;background:var(--paper);color:var(--ink);padding:8px 10px}input[type=checkbox]{width:auto;min-height:0;accent-color:var(--teal)}
+    button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+    .wrap{width:min(calc(100% - 20px),1120px);margin:0 auto;padding:10px 0 28px}.top{position:relative;display:flex;align-items:center;justify-content:space-between;gap:20px;background:var(--ink);color:var(--paper);box-shadow:var(--shadow);padding:clamp(28px,5vw,52px);margin-bottom:16px}.top::after{content:"";position:absolute;inset:9px;border:1px solid rgba(255,253,248,.28);pointer-events:none}.top>*{position:relative;z-index:1}.eyebrow{font:800 11px/1 var(--sans);letter-spacing:.15em;color:#e5b45b;text-transform:uppercase}.top h1{margin:10px 0 0;font-size:clamp(27px,4.5vw,48px);line-height:1;letter-spacing:-.04em}.top-status{text-align:right;font-family:var(--sans);font-size:11px;color:#e6ddd1}.health-pill{display:inline-flex;align-items:center;gap:7px;border-left:2px solid var(--rust);padding-left:9px}.dot{width:8px;height:8px;border-radius:50%;background:var(--disabled)}.dot.on{background:#64a9a2}.dot.off{background:#d07b59}.version{margin-top:6px;color:#cfc4b6}
+    .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--paper);border-top:3px solid var(--ink);box-shadow:var(--shadow);padding:10px 14px;margin-bottom:16px}.toolbar-note{font:700 11px/1.4 var(--sans);color:var(--muted)}
+    .page-state{border-left:4px solid var(--gold);background:var(--paper);box-shadow:var(--shadow);padding:11px 14px;margin-bottom:16px;font-family:var(--sans)}.page-state.error{border-left-color:var(--rust);color:var(--rust)}.page-state[hidden]{display:none}
+    .grid{display:grid;grid-template-columns:1fr;gap:16px}.card{min-width:0;background:var(--paper);border-top:3px solid var(--ink);box-shadow:var(--shadow);padding:clamp(16px,3vw,28px)}.card h2{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:0 0 16px;border-bottom:1px solid var(--rule);padding-bottom:9px;font-size:clamp(21px,2.5vw,29px);letter-spacing:-.025em}.sub{color:var(--muted);font:600 11px/1.3 var(--sans);letter-spacing:.04em;text-align:right}.status-grid{display:grid;grid-template-columns:1fr;gap:8px}.kv{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;border-bottom:1px solid var(--rule);padding:7px 0;font:12px/1.4 var(--sans)}.kv b{text-align:right;overflow-wrap:anywhere}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}.muted{color:var(--muted)}
+    .add-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:18px;padding:14px;background:var(--paper-2);border-left:3px solid var(--rust)}.field{display:grid;gap:5px;min-width:0}.field label{font:800 10px/1 var(--sans);letter-spacing:.09em;color:var(--muted);text-transform:uppercase}.field-wide{grid-column:1/-1}.add-actions{display:flex;align-items:end}.add-actions button{width:100%}
+    .table-wrap{overflow-x:auto;border:1px solid var(--rule)}table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:12px}th,td{padding:10px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:middle;white-space:nowrap}th{background:var(--paper-2);color:var(--muted);font-size:10px;letter-spacing:.06em;text-transform:uppercase}tbody tr:last-child td{border-bottom:0}td code{font-family:var(--mono);font-size:11px}.weight-input{width:72px;min-height:34px}.locked-note{display:block;max-width:180px;color:var(--muted);font-size:10px;white-space:normal}.empty{border:1px dashed var(--rule);background:var(--paper-2);color:var(--muted);padding:13px;margin:0 0 12px;font-family:var(--sans);font-size:12px}
+    .switch{position:relative;display:inline-block;width:46px;height:25px}.switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}.slider{position:absolute;inset:0;border:1px solid var(--rule);background:var(--disabled);pointer-events:none}.slider::before{content:"";position:absolute;width:19px;height:19px;left:2px;top:2px;background:var(--paper);transition:transform .15s}.switch input:checked+.slider{background:var(--teal)}.switch input:checked+.slider::before{transform:translateX(21px)}.switch input:focus-visible+.slider{outline:3px solid var(--gold);outline-offset:3px}
+    .model-tools{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;margin-bottom:12px}.search{position:relative}.search input{padding-left:34px}.search::before{content:"⌕";position:absolute;left:11px;top:7px;color:var(--teal);font-size:20px}.model-total{font:800 12px/1.3 var(--sans);color:var(--teal);white-space:nowrap}.families{display:grid;gap:10px}.family{border:1px solid var(--rule);background:var(--paper)}.family summary{display:flex;align-items:center;gap:9px;padding:12px 14px;cursor:pointer;list-style:none;font-weight:700}.family summary::-webkit-details-marker{display:none}.family summary::before{content:"+";display:inline-grid;place-items:center;width:22px;height:22px;border:1px solid var(--rust);color:var(--rust);font:800 16px/1 var(--sans)}.family[open] summary::before{content:"−"}.family[open] summary{border-bottom:1px solid var(--rule)}.family-count{margin-left:auto;color:var(--teal);font:700 12px/1 var(--sans)}.model-list{display:grid;grid-template-columns:1fr;gap:9px;padding:12px}.model-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border-left:3px solid var(--rule);background:var(--paper-2);padding:10px 12px}.model-name{min-width:0}.model-name code{display:block;font:700 12px/1.4 var(--mono);overflow-wrap:anywhere}.model-meta{display:flex;align-items:center;gap:7px;margin-top:4px;font:10px/1.3 var(--sans)}.badge{display:inline-flex;border:1px solid var(--rule);background:var(--paper);padding:2px 6px;color:var(--muted)}.model-control{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+    .guide{margin:0;color:var(--muted);font-family:var(--sans)}.guide strong{color:var(--ink)}
+    .toast{position:fixed;left:10px;right:10px;top:10px;z-index:50;pointer-events:none;transform:translateY(-150%);transition:transform .2s;background:var(--ink);color:var(--paper);border-left:4px solid var(--gold);box-shadow:var(--shadow);padding:12px 15px;font-family:var(--sans)}.toast.error{border-left-color:#d07b59}.toast.show{transform:translateY(0)}
+    dialog{width:min(calc(100% - 28px),430px);border:0;border-top:4px solid var(--rust);border-radius:0;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);padding:24px}dialog::backdrop{background:rgba(40,35,31,.48)}dialog h2{margin:0 0 8px;font-size:25px}dialog p{margin:0 0 18px;color:var(--muted);font-family:var(--sans);font-size:12px}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.auth-error{color:var(--bad);min-height:18px;margin-top:8px;font:700 11px/1.4 var(--sans)}
+    .busy [data-admin-control]{pointer-events:none;opacity:.55}
+    @media(min-width:760px){.wrap{padding:22px 0 38px}.grid{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}.status-grid{grid-template-columns:1fr 1fr}.add-form{grid-template-columns:1fr 1.2fr 2fr 100px 110px}.field-wide{grid-column:auto}.model-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:620px){.top{align-items:flex-start;padding:26px 20px}.top h1{font-size:27px}.toolbar{align-items:flex-start}.card h2{align-items:flex-start;flex-direction:column;gap:6px}.sub{text-align:left}.add-form{grid-template-columns:1fr}.field-wide{grid-column:auto}.model-tools{grid-template-columns:1fr}.model-row{align-items:flex-start}.model-control{flex-direction:column-reverse;align-items:flex-end}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}}
+  </style>
 </head>
 <body>
-<main>
-<header>
-  <a href="https://github.com/yelixir-dev" rel="noreferrer">Yorha Workspace</a>
-  <h1>Cursor AI Bridge Console</h1>
-  <div class="sub">read-only status dashboard · no key management UI · no secrets rendered</div>
-</header>
-<section class="grid">
-  <article class="card">
-    <h2>Bridge Health</h2>
-    <div class="kv"><span>Status</span><b class="${backendHealth.ok ? 'ok' : 'warn'}">${backendHealth.ok ? 'online' : 'degraded'}</b></div>
-    <div class="kv"><span>Version</span><b>${escapeHtml(config.version)}</b></div>
-    <div class="kv"><span>Uptime</span><b>${Math.floor(state.uptimeSeconds)}s</b></div>
-    <div class="kv"><span>Requests</span><b>${state.requestCount}</b></div>
-  </article>
-  <article class="card">
-    <h2>Security Boundary</h2>
-    <div class="kv"><span>/v1 client auth</span><b class="badge">${authBadge}</b></div>
-    <div class="kv"><span>Dashboard</span><b>redacted read-only</b></div>
-    <div class="kv"><span>Secrets</span><b>not exposed</b></div>
-  </article>
-  <article class="card">
-    <h2>Cursor Backend</h2>
-    <div class="kv"><span>Type</span><b>${escapeHtml(backendHealth.type)}</b></div>
-    <div class="kv"><span>Auth configured</span><b>${backendHealth.authConfigured ? 'yes' : 'not detected'}</b></div>
-    <div class="kv"><span>Default model</span><b>${escapeHtml(config.defaultModel)}</b></div>
-  </article>
-  <article class="card">
-    <h2>Workspace Safety</h2>
-    <div class="kv"><span>Mode</span><b class="badge">${escapeHtml(config.workspaceMode)}</b></div>
-    <p>${escapeHtml(workspaceBadge)}</p>
-  </article>
-  <article class="card wide">
-    <h2>Models</h2>
-    <ul>${modelRows}</ul>
-  </article>
-  <article class="card wide">
-    <h2>Quick Smoke</h2>
-    <pre>curl -s http://${escapeHtml(config.host)}:${config.port}/v1/models \\
-  -H 'Authorization: ${escapeHtml(curlKey)}'
+  <main id="app" class="wrap" aria-busy="true">
+    <header class="top">
+      <div><div class="eyebrow">Cursor AI Proxy Bridge</div><h1>관리 콘솔</h1></div>
+      <div class="top-status"><span class="health-pill"><i id="healthDot" class="dot"></i><span id="healthLabel">확인 중</span></span><div id="bridgeVersion" class="version">v${escapeHtml(version)}</div></div>
+    </header>
 
-curl -s http://${escapeHtml(config.host)}:${config.port}/v1/chat/completions \\
-  -H 'Authorization: ${escapeHtml(curlKey)}' \\
-  -H 'Content-Type: application/json' \\
-  -d '{"model":"${escapeHtml(config.defaultModel)}","messages":[{"role":"user","content":"hello"}]}'</pre>
-  </article>
-</section>
-</main>
+    <div class="toolbar"><span class="toolbar-note">Cursor 업스트림, 모델 정책, 런타임 상태를 한곳에서 관리합니다.</span><button id="changeKey" class="secondary" type="button">API key 변경</button></div>
+    <div id="pageState" class="page-state">설정을 불러오는 중입니다.</div>
+
+    <section class="grid">
+      <section class="card wide" aria-labelledby="statusTitle">
+        <h2 id="statusTitle">상태 <span class="sub">Bridge와 활성 백엔드</span></h2>
+        <div class="status-grid">
+          <div class="kv"><span>활성 백엔드</span><b id="activeBackend">—</b></div>
+          <div class="kv"><span>서버</span><b id="serverAddress">—</b></div>
+          <div class="kv"><span>Bridge 버전</span><b id="statusVersion">v${escapeHtml(version)}</b></div>
+          <div class="kv"><span>상태 요약</span><b id="healthSummary">확인 중</b></div>
+        </div>
+      </section>
+
+      <section class="card wide" aria-labelledby="credentialsTitle">
+        <h2 id="credentialsTitle">크리덴셜 <span class="sub">Upstream Cursor API keys</span></h2>
+        <form id="addCredential" class="add-form" autocomplete="off">
+          <div class="field"><label for="credentialId">ID</label><input id="credentialId" name="id" maxlength="100" required placeholder="team-primary" /></div>
+          <div class="field"><label for="credentialLabel">라벨</label><input id="credentialLabel" name="label" maxlength="200" placeholder="운영 계정" /></div>
+          <div class="field field-wide"><label for="credentialKey">Cursor API key</label><input id="credentialKey" name="apiKey" type="password" required autocomplete="new-password" placeholder="새 key 입력" /></div>
+          <div class="field"><label for="credentialWeight">가중치</label><input id="credentialWeight" name="weight" type="number" min="0.01" step="0.01" value="1" required /></div>
+          <div class="add-actions"><button data-admin-control type="submit">추가</button></div>
+        </form>
+        <div id="credentialEmpty" class="empty" hidden>대시보드에서 관리하는 크리덴셜이 없습니다. 위 폼에서 key를 추가하세요.</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>라벨</th><th>가중치</th><th>사용</th><th>Key</th><th>상태</th><th>작업</th></tr></thead>
+            <tbody id="credentialRows"><tr><td colspan="7" class="muted">불러오는 중</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card wide" aria-labelledby="modelsTitle">
+        <h2 id="modelsTitle">모델 <span id="modelHeadingCount" class="sub">활성 0 / 전체 0</span></h2>
+        <div class="model-tools"><label class="search"><span class="visually-hidden"></span><input id="modelSearch" type="search" placeholder="모델 ID 검색" autocomplete="off" /></label><span id="modelTotal" class="model-total">활성 0 / 전체 0</span></div>
+        <div id="modelGroups" class="families"><div class="empty">불러오는 중</div></div>
+      </section>
+
+      <section class="card wide" aria-labelledby="guideTitle">
+        <h2 id="guideTitle">안내 <span class="sub">읽기 전용 서버 설정</span></h2>
+        <p class="guide"><strong>Host와 port는 이 화면에서 변경되지 않습니다.</strong> 설정 파일 또는 환경 변수를 수정한 뒤 Bridge를 재시작해야 적용됩니다.</p>
+      </section>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <dialog id="authDialog" aria-labelledby="authTitle">
+    <form id="authForm">
+      <h2 id="authTitle">Bridge API key</h2>
+      <p>관리 API 인증에 사용할 CURSOR_BRIDGE_API_KEY를 입력하세요. 이 브라우저의 localStorage에만 저장됩니다.</p>
+      <div class="field"><label for="authKey">API key</label><input id="authKey" type="password" required autocomplete="current-password" /></div>
+      <div id="authError" class="auth-error" aria-live="polite"></div>
+      <div class="dialog-actions"><button id="authCancel" class="secondary" type="button">닫기</button><button type="submit">연결</button></div>
+    </form>
+  </dialog>
+
+<script>
+const bridgeVersion=${scriptJson(version)};
+const storageKey='cursorBridgeAdminApiKey';
+const familyOrder=['composer','grok','opus','sonnet','fable','gpt-5.6','kimi','glm','기타'];
+const openFamilies=new Set(['composer']);
+let apiKey=readStoredKey();
+let dashboardData=null;
+let healthData=null;
+let patching=false;
+let toastTimer;
+const $=id=>document.getElementById(id);
+
+function readStoredKey(){try{return String(localStorage.getItem(storageKey)||'').trim();}catch{return '';}}
+function storeKey(value){apiKey=String(value||'').trim();try{if(apiKey)localStorage.setItem(storageKey,apiKey);else localStorage.removeItem(storageKey);}catch{}}
+function make(tag,className,text){const item=document.createElement(tag);if(className)item.className=className;if(text!==undefined)item.textContent=String(text);return item;}
+function setText(id,value){const item=$(id);if(item)item.textContent=String(value??'—');}
+function showPageState(message,kind){const item=$('pageState');item.textContent=message;item.className='page-state'+(kind?' '+kind:'');item.hidden=false;}
+function hidePageState(){$('pageState').hidden=true;}
+function showToast(message,error=false){clearTimeout(toastTimer);const item=$('toast');item.textContent=String(message);item.className='toast'+(error?' error':'')+' show';toastTimer=setTimeout(()=>item.classList.remove('show'),4200);}
+function hideToast(){clearTimeout(toastTimer);$('toast').classList.remove('show');}
+function errorMessage(error){return error&&error.message?String(error.message):'요청을 처리하지 못했습니다.';}
+
+async function fetchJson(path,options={},authenticated=false){
+  const headers={accept:'application/json',...(options.headers||{})};
+  if(options.body)headers['content-type']='application/json';
+  if(authenticated&&apiKey)headers.authorization='Bearer '+apiKey;
+  const response=await fetch(path,{...options,headers,cache:'no-store'});
+  const text=await response.text();
+  let payload=null;
+  if(text){try{payload=JSON.parse(text);}catch{payload=null;}}
+  if(!response.ok){
+    const message=payload&&payload.error&&payload.error.message?payload.error.message:(text||('HTTP '+response.status));
+    const error=new Error(String(message));
+    error.status=response.status;
+    throw error;
+  }
+  return payload;
+}
+
+function showAuth(message=''){
+  $('authError').textContent=message;
+  $('authKey').value='';
+  const dialog=$('authDialog');
+  if(!dialog.open)dialog.showModal();
+  requestAnimationFrame(()=>$('authKey').focus());
+}
+
+function handleAdminError(error){
+  if(error&&error.status===401){
+    storeKey('');
+    showPageState('관리 API 인증이 필요합니다.','error');
+    showAuth('API key가 올바르지 않습니다.');
+    return;
+  }
+  const message=errorMessage(error);
+  showPageState('관리 설정을 불러오지 못했습니다: '+message,'error');
+  showToast(message,true);
+}
+
+function renderHealth(){
+  const ok=Boolean(healthData&&(healthData.status==='ok'||healthData.backend&&healthData.backend.ok));
+  $('healthDot').className='dot '+(ok?'on':'off');
+  setText('healthLabel',healthData?(ok?'정상':'저하'):'확인 실패');
+  setText('statusVersion','v'+bridgeVersion);
+  const backend=healthData&&healthData.backend;
+  let summary=healthData?(ok?'정상':'저하'):'상태 확인 실패';
+  if(backend&&backend.detail)summary+=' · '+backend.detail;
+  setText('healthSummary',summary);
+  $('healthSummary').className=ok?'good':'bad';
+}
+
+function renderStatus(){
+  if(!dashboardData)return;
+  const config=dashboardData.config||{};
+  const state=dashboardData.state||{};
+  const server=config.server||{};
+  setText('activeBackend',state.activeBackend||'—');
+  setText('serverAddress',server.host&&server.port?server.host+':'+server.port:'—');
+}
+
+function credentialStatus(config,state){
+  if(config.enabled===false||state&&state.enabled===false)return {text:'비활성',className:'muted'};
+  if(state&&state.disabledReason==='auth')return {text:'인증오류',className:'bad'};
+  if(state&&state.disabledReason==='cooldown'){
+    const remaining=Math.max(0,Number(state.disabledUntil||0)-Date.now());
+    return {text:'쿨다운 · '+duration(remaining),className:'warn'};
+  }
+  return {text:'정상',className:'good'};
+}
+function duration(milliseconds){
+  const seconds=Math.max(0,Math.ceil(milliseconds/1000));
+  if(seconds<60)return seconds+'초 남음';
+  const minutes=Math.ceil(seconds/60);
+  return minutes+'분 남음';
+}
+function switchControl(checked,disabled,label,onChange){
+  const wrap=make('label','switch');
+  wrap.title=label;
+  const input=make('input');
+  input.type='checkbox';input.checked=checked;input.disabled=disabled;input.dataset.adminControl='';
+  if(onChange)input.addEventListener('change',onChange);
+  wrap.append(input,make('span','slider'));
+  return wrap;
+}
+
+function joinedCredentials(){
+  const configured=dashboardData&&dashboardData.config&&dashboardData.config.credentials||[];
+  const states=dashboardData&&dashboardData.state&&dashboardData.state.credentials||[];
+  const stateById=new Map(states.map(item=>[String(item.id),item]));
+  const rows=configured.map(item=>({config:item,state:stateById.get(String(item.id))||null}));
+  const configuredIds=new Set(configured.map(item=>String(item.id)));
+  states.forEach(state=>{if(!configuredIds.has(String(state.id)))rows.push({config:{id:state.id,label:state.label,weight:1,enabled:state.enabled},state});});
+  return rows;
+}
+
+function renderCredentials(){
+  if(!dashboardData)return;
+  const rows=joinedCredentials();
+  const body=$('credentialRows');
+  body.replaceChildren();
+  const managed=rows.filter(row=>row.config.id!=='env'&&row.config.id!=='system');
+  $('credentialEmpty').hidden=managed.length>0;
+  if(rows.length===0){const row=make('tr');const cell=make('td','muted','등록된 크리덴셜이 없습니다.');cell.colSpan=7;row.append(cell);body.append(row);return;}
+  rows.forEach(({config,state})=>{
+    const id=String(config.id||'');
+    const locked=id==='env'||id==='system';
+    const row=make('tr');
+    const idCell=make('td');idCell.append(make('code','',id));
+    if(id==='env')idCell.append(make('span','locked-note','CURSOR_API_KEY 관리'));
+    if(id==='system')idCell.append(make('span','locked-note','예약된 fallback'));
+    const labelCell=make('td','',config.label||state&&state.label||'—');
+    const weightCell=make('td');
+    const weight=make('input','weight-input');weight.type='number';weight.min='0.01';weight.step='0.01';weight.value=String(config.weight??1);weight.disabled=locked;weight.dataset.adminControl='';weight.setAttribute('aria-label',id+' 가중치');
+    weight.addEventListener('change',async()=>{const value=Number(weight.value);if(!Number.isFinite(value)||value<=0){showToast('가중치는 0보다 커야 합니다.',true);renderCredentials();return;}await patchConfig({credentials:[{id,weight:value}]});});
+    weightCell.append(weight);
+    const enabledCell=make('td');enabledCell.append(switchControl(config.enabled!==false,locked,id+' 사용 여부',async event=>{await patchConfig({credentials:[{id,enabled:event.currentTarget.checked}]});}));
+    const previewCell=make('td');previewCell.append(make('code','',config.apiKeyPreview||'—'));
+    const status=credentialStatus(config,state);const statusCell=make('td',status.className,status.text);statusCell.dataset.credentialStatus=id;
+    if(state&&state.disabledReason)statusCell.dataset.reason=String(state.disabledReason);
+    if(state&&state.disabledUntil)statusCell.dataset.until=String(state.disabledUntil);
+    if(config.enabled===false)statusCell.dataset.enabled='false';
+    const actionCell=make('td');const remove=make('button','danger','삭제');remove.type='button';remove.disabled=locked;remove.dataset.adminControl='';remove.addEventListener('click',async()=>{if(!confirm(id+' 크리덴셜을 삭제할까요?'))return;await patchConfig({credentials:[{id,_delete:true}]});});actionCell.append(remove);
+    row.append(idCell,labelCell,weightCell,enabledCell,previewCell,statusCell,actionCell);body.append(row);
+  });
+}
+
+function updateCredentialTimes(){
+  document.querySelectorAll('[data-credential-status]').forEach(item=>{
+    if(item.dataset.enabled==='false')return;
+    if(item.dataset.reason==='auth'){item.textContent='인증오류';item.className='bad';return;}
+    if(item.dataset.reason==='cooldown'){
+      const remaining=Math.max(0,Number(item.dataset.until||0)-Date.now());
+      item.textContent=remaining>0?'쿨다운 · '+duration(remaining):'정상';
+      item.className=remaining>0?'warn':'good';
+    }
+  });
+}
+
+function familyFor(id){
+  const value=String(id).toLowerCase();
+  if(value.startsWith('composer-'))return 'composer';
+  if(value.startsWith('cursor-grok-')||value.startsWith('grok-'))return 'grok';
+  if(value.startsWith('claude-opus-')||value.startsWith('opus-'))return 'opus';
+  if(value.startsWith('claude-sonnet-')||value.startsWith('sonnet-'))return 'sonnet';
+  if(value.startsWith('claude-fable-')||value.startsWith('fable-'))return 'fable';
+  if(value.startsWith('gpt-5.6-'))return 'gpt-5.6';
+  if(value.startsWith('kimi-'))return 'kimi';
+  if(value.startsWith('glm-'))return 'glm';
+  return '기타';
+}
+
+function renderModels(){
+  if(!dashboardData)return;
+  const models=dashboardData.state&&dashboardData.state.models||[];
+  const query=$('modelSearch').value.trim().toLowerCase();
+  const enabled=models.filter(model=>model.enabled).length;
+  const countText='활성 '+enabled+' / 전체 '+models.length;
+  setText('modelTotal',countText);setText('modelHeadingCount',countText);
+  const grouped=new Map(familyOrder.map(name=>[name,[]]));
+  models.forEach(model=>grouped.get(familyFor(model.id)).push(model));
+  const container=$('modelGroups');container.replaceChildren();
+  let visible=0;
+  familyOrder.forEach(family=>{
+    const all=grouped.get(family);
+    if(!all.length)return;
+    const filtered=all.filter(model=>String(model.id).toLowerCase().includes(query));
+    if(!filtered.length)return;
+    visible+=filtered.length;
+    const familyEnabled=all.filter(model=>model.enabled).length;
+    const details=make('details','family');details.open=query.length>0||openFamilies.has(family);
+    details.addEventListener('toggle',()=>{if(details.open)openFamilies.add(family);else openFamilies.delete(family);});
+    const summary=make('summary');summary.append(make('span','',family),make('span','family-count','활성 '+familyEnabled+' / 전체 '+all.length));details.append(summary);
+    const list=make('div','model-list');
+    filtered.forEach(model=>{
+      const row=make('div','model-row');
+      const name=make('div','model-name');name.append(make('code','',model.id));
+      const meta=make('div','model-meta');
+      if(model.source==='default')meta.append(make('span','badge','기본값'));
+      else meta.append(make('span','badge','재정의'));
+      name.append(meta);
+      const controls=make('div','model-control');
+      if(model.source==='override'){
+        const reset=make('button','link','되돌리기');reset.type='button';reset.dataset.adminControl='';reset.addEventListener('click',async()=>{await patchConfig({modelOverrides:{[model.id]:null}});});controls.append(reset);
+      }
+      controls.append(switchControl(Boolean(model.enabled),false,model.id+' 사용 여부',async event=>{await patchConfig({modelOverrides:{[model.id]:event.currentTarget.checked}});}));
+      row.append(name,controls);list.append(row);
+    });
+    details.append(list);container.append(details);
+  });
+  if(visible===0)container.append(make('div','empty',query?'검색 결과가 없습니다.':'표시할 모델이 없습니다.'));
+}
+
+function renderAll(){renderHealth();renderStatus();renderCredentials();renderModels();$('app').setAttribute('aria-busy','false');}
+function setBusy(value){patching=value;$('app').classList.toggle('busy',value);$('app').setAttribute('aria-busy',String(value));}
+
+async function patchConfig(payload){
+  if(patching){showToast('이전 변경을 적용하는 중입니다.');return false;}
+  setBusy(true);
+  try{
+    const fresh=await fetchJson('/admin/config',{method:'PATCH',body:JSON.stringify(payload)},true);
+    dashboardData=fresh;
+    setBusy(false);
+    renderAll();
+    hidePageState();
+    showToast('변경을 적용했습니다.');
+    return true;
+  }catch(error){
+    setBusy(false);
+    if(dashboardData)renderAll();
+    if(error&&error.status===401)handleAdminError(error);
+    else showPageState('변경을 적용하지 못했습니다: '+errorMessage(error),'error');
+    showToast(errorMessage(error),true);
+    return false;
+  }
+}
+
+async function loadDashboard(){
+  $('app').setAttribute('aria-busy','true');
+  showPageState('상태와 설정을 불러오는 중입니다.');
+  const healthRequest=fetchJson('/health').then(value=>{healthData=value;renderHealth();}).catch(()=>{healthData=null;renderHealth();});
+  if(!apiKey){
+    await healthRequest;
+    showPageState('관리 API key를 입력하면 설정을 불러옵니다.');
+    showAuth();
+    return;
+  }
+  try{
+    dashboardData=await fetchJson('/admin/config',{},true);
+    await healthRequest;
+    renderAll();
+    hidePageState();
+  }catch(error){
+    await healthRequest;
+    handleAdminError(error);
+  }
+}
+
+$('authForm').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const value=$('authKey').value.trim();
+  if(!value){$('authError').textContent='API key를 입력하세요.';return;}
+  storeKey(value);
+  $('authDialog').close();
+  await loadDashboard();
+});
+$('authCancel').addEventListener('click',()=>$('authDialog').close());
+$('changeKey').addEventListener('click',()=>showAuth());
+$('modelSearch').addEventListener('input',renderModels);
+$('addCredential').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const form=event.currentTarget;
+  const id=$('credentialId').value.trim();
+  const label=$('credentialLabel').value.trim();
+  const key=$('credentialKey').value.trim();
+  const weight=Number($('credentialWeight').value);
+  if(!id||!key||!Number.isFinite(weight)||weight<=0){showToast('ID, API key, 올바른 가중치를 입력하세요.',true);return;}
+  const credential={id,apiKey:key,weight,enabled:true};
+  if(label)credential.label=label;
+  if(await patchConfig({credentials:[credential]}))form.reset();
+});
+document.addEventListener('keydown',event=>{if(event.key==='Escape')hideToast();});
+setInterval(updateCredentialTimes,1000);
+loadDashboard();
+</script>
 </body>
 </html>`;
 }

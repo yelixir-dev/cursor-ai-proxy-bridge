@@ -1,354 +1,166 @@
 <p align="right">
-  🌐 <a href="README.md">English</a> · 한국어
+  <a href="README.md">English</a> · 한국어
 </p>
 
 # Cursor AI Bridge
 
-<p align="center">
-  <img src="docs/assets/readme/dashboard.png" alt="Cursor AI Bridge read-only 대시보드" width="760">
-</p>
+Cursor Agent를 작은 OpenAI-compatible API로 노출하는 로컬 HTTP proxy입니다. Public internet이 아니라 localhost 또는 신뢰하는 private network에서 사용하는 도구입니다.
 
-<p align="center">
-  <strong>로컬 Cursor AI 자동화를 OpenAI-compatible API로 연결하는 안전한 브리지와 read-only 운영 대시보드.</strong>
-</p>
+## API와 동작
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Status-MVP-8b7355?style=flat-square" alt="MVP status">
-  <img src="https://img.shields.io/badge/Node.js-20%2B-5fa04e?style=flat-square" alt="Node.js 20+">
-  <img src="https://img.shields.io/badge/API-OpenAI--compatible-6b7280?style=flat-square" alt="OpenAI-compatible API">
-  <img src="https://img.shields.io/badge/Dashboard-read--only-b08968?style=flat-square" alt="Read-only dashboard">
-  <img src="https://img.shields.io/badge/License-MIT-2ea44f?style=flat-square" alt="MIT License">
-</p>
+- `GET /health` - 인증이 필요 없는 bridge/backend 상태.
+- `GET /dashboard` - 인증이 필요 없는 read-only 상태 페이지.
+- `GET|PATCH /admin/config` - 인증된 redacted 설정 조회 및 credential/model override hot update.
+- `GET /v1/models` - active backend에서 검색하고 policy로 선별한 인증 model 목록.
+- `POST /v1/chat/completions` - 인증된 non-streaming 또는 SSE chat completion.
+- OpenAI function tool에서 `auto`, `required`, `none`, forced function choice, parallel-call 제어, tool history 검증, JSON Schema argument 검증을 지원합니다. Client가 선언한 function name은 변경하지 않습니다. Model argument가 invalid하면 한 번의 corrective model retry를 수행합니다.
+- Tool이 없는 streaming은 Cursor `stream-json --stream-partial-output` assistant fragment를 incremental하게 전달합니다. Tool-mode streaming은 완료 시점까지 assistant text를 buffer하고 authoritative `[TOOL_CALLS: ...]` marker를 indexed OpenAI `tool_calls`로 변환하며 marker가 content delta에 유출되지 않게 합니다. `stream_options.include_usage`는 마지막에 `choices: []` usage chunk를 보냅니다.
+- Cursor child는 environment allowlist와 stdout/stderr 합산 output cap 안에서 실행됩니다. Global/key별 concurrency limit, request abort 전달, process-group 종료, timeout escalation, 임시 chat-only workspace, 동일 workspace serialization으로 runtime access를 제한합니다.
 
-Cursor AI Bridge는 Cursor의 로컬 CLI/agent backend 앞에 작은 OpenAI-compatible HTTP API를 세우는 신뢰 환경용 브리지입니다. Fastify 기반 보안 경계, client API-key 인증, read-only 운영 대시보드 뒤에서 로컬 자동화를 안전하게 다룹니다.
-
-> [!IMPORTANT]
-> Cursor AI Bridge는 Cursor credential, token, hardware-ID reset 기능을 번들하지 않습니다. 본인의 Cursor CLI/account 환경에서만 사용하고, localhost 또는 신뢰하는 VPN/tailnet 안에서만 노출하십시오.
-
-## 한눈에 보기
-
-| 영역      | 요약                                                                                                               |
-| --------- | ------------------------------------------------------------------------------------------------------------------ |
-| API 표면  | `/health`, `/dashboard`, `/v1/models`, `/v1/chat/completions`                                                      |
-| 핵심 가치 | OpenAI-compatible client가 Cursor process invocation을 직접 관리하지 않고 Cursor-backed local bridge를 호출합니다. |
-| 대시보드  | backend, model, workspace, auth, endpoint 상태를 보여주는 모바일 친화 read-only 상태 페이지.                       |
-| 안전 경계 | client API key가 없으면 `/v1/*`는 fail-closed; 실제 workspace 접근은 명시적 opt-in.                                |
-| 현재 범위 | MVP: deterministic mock backend와 Cursor CLI backend adapter, non-streaming 및 SSE streaming chat completion.      |
-
-로컬 preview one-shot:
-
-```bash
-npm install
-CURSOR_BRIDGE_API_KEY=sk-curbr-local-dev \
-CURSOR_BRIDGE_BACKEND=mock \
-npm run build && npm start
-```
-
-열기:
-
-```text
-http://127.0.0.1:9994/dashboard
-```
-
-정상 preview에서는 read-only 대시보드가 보이고, mock backend가 OpenAI-compatible model/chat 응답을 반환합니다.
-
-## 이 브리지가 하는 일
-
-- OpenAI-compatible endpoint 제공:
-  - `GET /health`
-  - `GET /dashboard`
-  - `GET /v1/models`
-  - `POST /v1/chat/completions`
-- `/v1/*`에 client API-key 인증 적용:
-  - `Authorization: Bearer <CURSOR_BRIDGE_API_KEY>`
-  - `x-api-key: <CURSOR_BRIDGE_API_KEY>`
-- `CURSOR_BRIDGE_API_KEY`가 없으면 `/v1/*`는 `503 configuration_error`를 반환합니다.
-- Cursor login 상태 없이 dashboard/API smoke test를 할 수 있는 deterministic `mock` backend 포함.
-- 로컬 Cursor CLI/agent 실행용 `cursor-cli` backend adapter 포함.
-- 기본값은 실제 프로젝트 파일을 mount하지 않는 `chat-only` 임시 workspace 모드.
-- `real-workspace`는 명시적으로 켜고, 실제 경로가 유효할 때만 사용.
-- Fastify, Helmet/CSP, body limit, rate limit, Zod request validation 적용.
-- `[{"type":"text","text":"..."}]` 같은 OpenAI content-part array를 Cursor CLI 호출 전에 plain text로 normalize.
-- 도구가 필요할 때 Cursor CLI가 strict JSON을 내도록 지시하고, 유효한 Cursor 출력을 표준 OpenAI `tool_calls`로 변환.
-- credential 입력 form, token 표시, credential 저장 UI, `reset-hwid` 동작 제외.
-
-## 구조
-
-```text
-OpenAI-compatible client
-  -> Cursor AI Bridge :9994
-  -> Cursor CLI / agent backend
-  -> normalized OpenAI chat.completion response
-```
-
-```mermaid
-flowchart LR
-  C[OpenAI-compatible client] -->|Bearer / x-api-key| B[Cursor AI Bridge]
-  D[Read-only dashboard] -->|status only| B
-  B --> H[/health]
-  B --> M[/v1/models]
-  B --> X[/v1/chat/completions]
-  X --> W{Workspace mode}
-  W -->|default| T[Temporary chat-only directory]
-  W -->|explicit opt-in| R[Real workspace path]
-  X --> A[Cursor CLI backend]
-```
-
-브리지는 HTTP/auth/dashboard 경계와 Cursor upstream 인증을 분리합니다. Cursor login/session material은 이 대시보드가 아니라 로컬 Cursor CLI 환경이 소유해야 합니다.
+Client API key가 설정되지 않으면 `/v1/*`는 fail-closed입니다. 인증은 `Authorization: Bearer <key>` 또는 `x-api-key: <key>`를 받습니다. Malformed/invalid request는 OpenAI-style error envelope를 반환합니다.
 
 ## 요구 사항
 
-- Node.js **20+**
-- npm **10+**
-- source 실행용 macOS, Linux, WSL
-- 실제 `cursor-cli` backend 사용을 위한 Cursor CLI/account 환경
-- `/v1/*` 트래픽용 client-facing `CURSOR_BRIDGE_API_KEY`
+- Node.js 22+ 및 npm
+- 기본 headless-first `auto` mode용 cursor-agent bundle과 Cursor credential
+- 자동 fallback이 필요할 때 login된 Cursor CLI/Agent executable
+- macOS, Linux 또는 WSL
 
-UI/API 개발과 smoke test는 `mock` backend만으로 가능하며 Cursor login이 필요 없습니다.
+`mock` backend는 Cursor가 필요 없으며 local development와 unit test용입니다.
 
-## 설치
+## 설치와 실행
 
 ```bash
-git clone <your-cursor-ai-bridge-repository-url> cursor-ai-bridge
+git clone <repository-url> cursor-ai-bridge
 cd cursor-ai-bridge
 npm install
 cp .env.example .env
-```
-
-최소 local `.env`:
-
-```env
-CURSOR_BRIDGE_HOST=127.0.0.1
-CURSOR_BRIDGE_PORT=9994
-CURSOR_BRIDGE_API_KEY=replace-with-a-long-random-client-key
-CURSOR_BRIDGE_BACKEND=mock
-CURSOR_BRIDGE_WORKSPACE_MODE=chat-only
-```
-
-빌드 및 실행:
-
-```bash
 npm run build
 npm start
 ```
 
-실제 Cursor backend로 바꾸려면 아래처럼 설정합니다. 일부 설치에서는 CLI binary가 `cursor`이고, Oracle/systemd 호스트에서는 `agent`, 로컬 Cursor Agent 설치에서는 `cursor-agent`일 수 있으므로 해당 환경에서 동작하는 executable 경로를 `CURSOR_BRIDGE_CURSOR_BIN`에 지정하십시오.
+기본 주소는 `http://127.0.0.1:9996`입니다. Backend mode 기본값은 `auto`입니다. 시작 시 descriptor, credential, 짧은 timeout의 `GetServerConfig` probe를 확인해 모두 성공하면 headless `cursor-api`를 선택하고, 아니면 executable `cursor-agent`, `agent`, `cursor` CLI로 fallback합니다. 둘 다 사용할 수 없으면 시도한 두 경로의 원인과 함께 시작에 실패합니다. 한 경로를 강제하려면 `CURSOR_BRIDGE_BACKEND=cursor-api` 또는 `cursor-cli`를 설정하십시오.
 
-```env
-CURSOR_BRIDGE_BACKEND=cursor-cli
-CURSOR_BRIDGE_CURSOR_BIN=/home/ubuntu/.local/bin/agent
-CURSOR_BRIDGE_DEFAULT_MODEL=composer-2.5
-CURSOR_BRIDGE_CURSOR_TIMEOUT_MS=600000
-```
+### 완전한 headless `cursor-api` backend
 
-`cursor-cli` backend는 headless chat completion에 `--print --trust`를 전달하고, 의도적으로 `--mode`를 생략합니다. 일반 `cursor` binary에서는 `cursor agent --print ...`로 실행하고, binary 이름이 standalone `agent`인 경우에는 중복 subcommand 없이 `agent --print ...`로 실행합니다. `--trust`는 headless/systemd 환경에서 workspace trust prompt로 막히는 문제를 피하고, `--mode`를 생략하면 Cursor Agent가 read-only `ask`/`plan` 모드가 아니라 쓰기 가능한 기본 headless 모드로 동작합니다.
-
-Cursor Agent 기반 요청은 일반 HTTP model call보다 오래 걸릴 수 있습니다. 운영에서는 `composer-2.5`에 600초급 bridge timeout을 사용하십시오. upstream timeout이 너무 짧으면 실제 agent가 정상 완료될 수 있는 요청도 router timeout 장애로 보일 수 있습니다.
-
-LiteLLM을 통해 `composer-2.5`를 노출할 때는 downstream OpenAI-compatible client가 의도한 context budget을 볼 수 있고, agent backend timeout 시 안전한 우회 경로가 있도록 model metadata, request timeout, model-group fallback을 명시하십시오:
-
-```yaml
-model_list:
-  - model_name: composer-2.5
-    litellm_params:
-      model: openai/composer-2.5
-      api_base: http://127.0.0.1:9994/v1
-      api_key: os.environ/CURSOR_BRIDGE_API_KEY
-      request_timeout: 600
-      timeout: 600
-    model_info:
-      max_input_tokens: 200000
-      max_tokens: 200000
-      context_window: 200000
-
-litellm_settings:
-  request_timeout: 600
-  fallbacks:
-    - composer-2.5:
-        - <fallback-model-group>
-```
-
-`composer-2.5` fallback이 없으면 agent route가 timeout을 넘을 때 LiteLLM이 `No fallback model group found for original model_group=composer-2.5` 같은 오류를 반환할 수 있습니다.
-
-## 첫 검증
-
-Health check:
+`cursor-api`는 Cursor CLI process를 시작하지 않고 Connect-RPC service에 직접 연결합니다. 설치된 cursor-agent bundle에서 local descriptor를 먼저 추출한 뒤 build합니다.
 
 ```bash
-curl -fsS http://127.0.0.1:9994/health
+CURSOR_BRIDGE_CURSOR_BIN="$HOME/.local/bin/cursor-agent" npm run extract-protos
+npm run build
+CURSOR_BRIDGE_BACKEND=cursor-api npm start
 ```
 
-인증된 model list:
+생성된 `src/backend/cursor-api/proto-descriptors.json`은 gitignore되며 build 때 `dist`로 복사됩니다. Runtime은 proprietary bundle을 import하지 않습니다. `CURSOR_API_KEY`는 독립적으로 routing되는 `env` credential이며 mode-0600 dashboard config에 weighted credential을 추가할 수 있습니다. Credential이 없으면 기존 `CURSOR_AUTH_TOKEN`/macOS Keychain 단일 credential 동작을 `system`으로 유지합니다. Auth failure는 해당 credential만 cooldown하고 사용 가능한 다른 credential로 한 번 retry합니다. 이 routing은 `cursor-api`에만 적용되며 `cursor-cli`와 `mock`은 자체 login을 그대로 사용합니다. 두 목적지는 `CURSOR_BRIDGE_CURSOR_API_ENDPOINT`, `CURSOR_BRIDGE_CURSOR_AGENT_ENDPOINT`로 override할 수 있습니다.
+
+**CLI 없는 호스트에서 실행 (headless-only).** `cursor-agent` binary가 없으면 `auto`는 `cursor-api`만 사용하고, API 경로마저 사용 불가할 때만 시작에 실패합니다. 그런 호스트에서는 두 가지가 CLI를 대체합니다: (1) descriptor 스냅샷 — cursor-agent가 있는 머신에서 `npm run extract-protos`를 한 번 실행해 생성된 `proto-descriptors.json`을 복사하고 `CURSOR_BRIDGE_CURSOR_API_DESCRIPTORS`로 가리키게 합니다. (2) env 자격증명 — macOS Keychain token은 Cursor CLI로 로그인한 머신에만 있으므로 `CURSOR_API_KEY` 또는 `CURSOR_AUTH_TOKEN`을 설정합니다.
+
+`auto` mode에서는 auth 거부, outdated-client/protocol 오류 또는 연속 3회 transport 실패 시 warning을 남기고 CLI로 전환합니다. HTTP 429와 일반 bad request/model 오류는 전환하지 않습니다. Cooldown 뒤 다음 요청에서 cursor-api를 probe해 성공하면 복구합니다. `/health`에는 configured mode, active backend, fallback 가능 여부, fatal counter, cooldown과 마지막 전환 원인이 표시됩니다.
+
+Wire parity를 위해 시작 시 AI 관련 CLI unary sequence와 비어 있는 최소 `TrackEvents`/`SubmitLogs` batch를 보냅니다. Capture에서는 `x-ghost-mode: true`에서도 analytics가 전송되었고 bundle에서도 privacy/ghost mode가 operational buffer를 억제하지 않았으므로, 임의 event/log 내용 없이 method shape만 재현합니다. Fresh Run마다 32-byte random key를 64-hex `x-blob-encryption-key`로 사용합니다.
+
+**위험 고지:** 이 protocol은 unofficial이며 version 변화에 취약합니다. Direct protocol을 우회하려면 `CURSOR_BRIDGE_BACKEND=cursor-cli`를 강제하십시오.
+
+요청 예시:
 
 ```bash
-export CURSOR_BRIDGE_API_KEY="$YOUR_CURSOR_BRIDGE_API_KEY"
-
-curl -fsS http://127.0.0.1:9994/v1/models \
-  -H "Authorization: Bearer [BRIDGE_CLIENT_TOKEN]"
-```
-
-Non-streaming chat completion:
-
-```bash
-curl -sS http://127.0.0.1:9994/v1/chat/completions \
-  -H "Authorization: Bearer [BRIDGE_CLIENT_TOKEN]" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model": "cursor-fast",
-    "messages": [{"role": "user", "content": "Reply exactly: OK"}],
-    "temperature": 0
-  }'
-```
-
-SSE streaming chat completion:
-
-```bash
-curl -N -sS http://127.0.0.1:9994/v1/chat/completions \
-  -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model": "cursor-fast",
-    "stream": true,
-    "messages": [{"role": "user", "content": "Reply in chunks"}]
-  }'
-```
-
-OpenAI content-part array 요청도 받을 수 있으며, text-only Cursor CLI backend로 넘기기 전에 plain text로 normalize합니다.
-
-```bash
-curl -sS http://127.0.0.1:9994/v1/chat/completions \
+curl -sS http://127.0.0.1:9996/v1/chat/completions \
   -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "composer-2.5",
-    "messages": [
-      {
-        "role": "user",
-        "content": [{"type": "text", "text": "Reply exactly: OK"}]
-      }
-    ]
+    "messages": [{"role": "user", "content": "Reply exactly: OK"}]
   }'
 ```
 
-이미지 block은 현재 bridge가 multimodal Cursor automation이 아니라 text chat completion semantics를 대상으로 하므로 `[image omitted: cursor composer bridge is text-only]`로 표시합니다. 지원하지 않는 typed block은 `[unsupported content type omitted: <type>]`로 표시하며, message 하나당 content part는 최대 1,000개까지 허용합니다.
+Streaming 요청:
 
-LiteLLM model entry 예시:
-
-```yaml
-model_name: composer-2.5
-litellm_params:
-  model: openai/composer-2.5
-  api_base: http://127.0.0.1:9994/v1
-  api_key: os.environ/CURSOR_BRIDGE_API_KEY
+```bash
+curl -N -sS http://127.0.0.1:9996/v1/chat/completions \
+  -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "composer-2.5",
+    "stream": true,
+    "stream_options": {"include_usage": true},
+    "messages": [{"role": "user", "content": "Count from 1 to 10"}]
+  }'
 ```
 
-## 웹 대시보드
+OpenAI text content-part array는 text-only CLI backend에 맞게 flatten합니다. Image와 지원하지 않는 typed block은 명시적인 omission placeholder로 바뀝니다.
 
-열기:
-
-```text
-http://127.0.0.1:9994/dashboard
-```
-
-대시보드는 의도적으로 read-only입니다. 표시 항목:
-
-- bridge version, uptime, request counter;
-- backend mode와 backend health;
-- API key를 출력하지 않는 auth configured/not-configured 상태;
-- workspace safety mode;
-- 사용 가능한 model ID;
-- redacted key placeholder가 들어간 curl 예시.
-
-대시보드에는 key 입력/저장 UI가 없습니다. 나중에 admin write 기능을 추가하더라도 별도의 admin policy를 두고 `/v1/*` client auth는 계속 fail-closed로 유지해야 합니다.
+Model curation은 모든 backend에 적용됩니다. 기본적으로 Composer 2.5, Cursor Grok 4.6 variant, Claude 5 Opus/Sonnet/Fable variant, GPT-5.6 Sol/Terra/Luna variant, Kimi K3 variant, GLM 5.2 variant, `default`, `auto`만 활성화됩니다. 나머지 검색 model은 dashboard `modelOverrides`에서 활성화하지 않으면 숨겨지고 요청도 거부됩니다.
 
 ## 설정
 
-| 변수                              | 기본값        | 설명                                                                                                                                                  |
-| --------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CURSOR_BRIDGE_HOST`              | `127.0.0.1`   | HTTP bind address. 신뢰 네트워크 뒤가 아니면 local-only 유지.                                                                                         |
-| `CURSOR_BRIDGE_PORT`              | `9994`        | HTTP port.                                                                                                                                            |
-| `CURSOR_BRIDGE_API_KEY`           | unset         | `/v1/*`에 필수. 없으면 `503 configuration_error`.                                                                                                     |
-| `CURSOR_BRIDGE_BACKEND`           | `mock`        | `mock` 또는 `cursor-cli`.                                                                                                                             |
-| `CURSOR_BRIDGE_DEFAULT_MODEL`     | `cursor-fast` | 기본 model이며, custom 값이면 `/v1/models` discovery에도 노출됨. 예: `composer-2.5`.                                                                  |
-| `CURSOR_BRIDGE_WORKSPACE_MODE`    | `chat-only`   | `chat-only` 또는 `real-workspace`.                                                                                                                    |
-| `CURSOR_BRIDGE_REAL_WORKSPACE`    | unset         | `real-workspace`에서만 필요. 경로가 존재해야 함.                                                                                                      |
-| `CURSOR_BRIDGE_CURSOR_BIN`        | `cursor`      | Cursor CLI executable 이름/경로. standalone agent binary를 쓰면 `/home/ubuntu/.local/bin/agent` 또는 `/Users/yorha/.local/bin/cursor-agent`처럼 지정. |
-| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS` | `120000`      | 1초–10분 범위로 clamp.                                                                                                                                |
+| 변수                                    | 기본값          | 용도                                                                                                         |
+| --------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------ |
+| `CURSOR_BRIDGE_HOST`                    | `127.0.0.1`     | HTTP bind address. 신뢰하는 network control이 없으면 local로 유지.                                           |
+| `CURSOR_BRIDGE_PORT`                    | `9996`          | HTTP port.                                                                                                   |
+| `CURSOR_BRIDGE_API_KEY`                 | unset           | `/v1/*`에 필요한 client-facing key. Unset이면 `503 configuration_error`.                                     |
+| `CURSOR_BRIDGE_BACKEND`                 | `auto`          | Headless-first `auto`, 강제 `cursor-cli`/`cursor-api`, 또는 test용 `mock`.                                   |
+| `CURSOR_BRIDGE_DEFAULT_MODEL`           | `composer-2.5`  | Request default. 검색된 목록에 없으면 목록 앞에도 추가.                                                      |
+| `CURSOR_BRIDGE_WORKSPACE_MODE`          | `chat-only`     | `chat-only`는 disposable workspace와 `--mode ask` 사용. `real-workspace`는 설정한 project를 명시적으로 노출. |
+| `CURSOR_BRIDGE_REAL_WORKSPACE`          | unset           | `real-workspace` mode에서 필요한 기존 directory.                                                             |
+| `CURSOR_BRIDGE_CURSOR_BIN`              | `cursor`        | Cursor executable 이름 또는 absolute path.                                                                   |
+| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS`       | `120000`        | Command별 timeout. 1,000-600,000 ms 범위.                                                                    |
+| `CURSOR_BRIDGE_TERMINATION_GRACE_MS`    | `750`           | Process-group `SIGTERM`과 `SIGKILL` 사이 delay. 1-30,000 ms 범위.                                            |
+| `CURSOR_BRIDGE_MAX_OUTPUT_BYTES`        | `8388608`       | Cursor child별 stdout/stderr 합산 최대 byte.                                                                 |
+| `CURSOR_BRIDGE_MAX_CONCURRENCY`         | `8`             | 전체 in-flight chat completion 최대 수.                                                                      |
+| `CURSOR_BRIDGE_MAX_CONCURRENCY_PER_KEY` | `4`             | 인증 key별 in-flight completion 최대 수.                                                                     |
+| `CURSOR_BRIDGE_CHILD_ENV_ALLOW`         | unset           | Cursor child에 추가 전달하는 정확한 environment 이름의 comma-separated 목록.                                 |
+| `CURSOR_AUTH_TOKEN`                     | Keychain        | `cursor-api`용 direct bearer token. Unset이면 macOS Keychain 사용.                                           |
+| `CURSOR_API_KEY`                        | unset           | `cursor-api`가 access token으로 교환하는 first-class env credential.                                         |
+| `CURSOR_BRIDGE_DASHBOARD_CONFIG`        | user config dir | Dashboard JSON 경로. 기본값은 `~/.config/cursor-ai-proxy-bridge/dashboard.json`.                             |
+| `CURSOR_BRIDGE_CREDENTIAL_COOLDOWN_MS`  | `300000`        | Auth-failed cursor-api credential의 lazy recovery 전 cooldown.                                               |
+| `CURSOR_API_ENDPOINT`                   | Cursor api2     | Legacy api2 endpoint override.                                                                               |
+| `CURSOR_BRIDGE_CURSOR_API_ENDPOINT`     | Cursor api2     | api2 override. Legacy 변수보다 우선합니다.                                                                   |
+| `CURSOR_BRIDGE_CURSOR_AGENT_ENDPOINT`   | discovered      | Discovery 결과 대신 사용할 Agent Run endpoint.                                                               |
+| `CURSOR_BRIDGE_AUTO_PROBE_TIMEOUT_MS`   | `5000`          | Startup/recovery `GetServerConfig` probe timeout.                                                            |
+| `CURSOR_BRIDGE_AUTO_COOLDOWN_MS`        | `60000`         | cursor-api를 다시 probe하기 전 CLI fallback cooldown.                                                        |
+| `CURSOR_BRIDGE_AUTO_FATAL_THRESHOLD`    | `3`             | CLI로 전환하기 전 연속 transport failure 수.                                                                 |
 
-## Workspace 안전 모델
+그 외에는 일반 runtime 변수, `XDG_*`, upstream `CURSOR_*`, `NODE_COMPILE_CACHE`만 Cursor child에 전달하며 bridge control과 관련 없는 secret은 제외합니다. 어느 workspace mode도 `--force`나 `--yolo`를 전달하지 않습니다.
 
-기본 모드:
+## Workspace 및 network 안전
 
-```env
-CURSOR_BRIDGE_WORKSPACE_MODE=chat-only
-```
+기본 `chat-only`는 각 request를 disposable directory와 Cursor ask mode에서 실행합니다. `real-workspace`는 선택한 directory를 Cursor의 writable default agent mode에 노출하므로 명시적으로 opt-in해야 합니다. 동일한 resolved real workspace를 공유하는 request는 serialize됩니다.
 
-이 모드에서는 요청마다 임시 chat-only directory를 사용합니다. 자동화 요청에 실제 프로젝트 checkout을 노출하지 않기 때문에 bridge 실험 기본값으로 안전합니다.
-
-실제 workspace 모드는 명시적으로 켜야 합니다.
-
-```env
-CURSOR_BRIDGE_WORKSPACE_MODE=real-workspace
-CURSOR_BRIDGE_REAL_WORKSPACE=/absolute/path/to/project
-```
-
-설정된 경로는 존재해야 합니다. 호출 client와 network boundary를 신뢰할 수 없는 경우 민감한 workspace를 bind하지 마십시오.
-
-## Client 인증
-
-`CURSOR_BRIDGE_API_KEY`는 client-facing bridge key이며 Cursor upstream credential이 아닙니다.
-
-```env
-CURSOR_BRIDGE_API_KEY=replace-with-a-long-random-client-key
-```
-
-지원 header:
-
-```http
-Authorization: Bearer <key>
-x-api-key: <key>
-```
-
-보안 동작:
-
-- `/health`, `/dashboard`는 인증 없는 read-only 상태 endpoint입니다.
-- `/v1/models`, `/v1/chat/completions`는 client key가 필요합니다.
-- client key가 unset이면 `/v1/*`는 bridge를 열어두지 않고 `503`을 반환합니다.
-- dashboard는 raw key나 Cursor auth material을 출력하지 않습니다.
+기본 localhost bind를 유지하십시오. Remote access가 필요하면 신뢰하는 VPN/tailnet 또는 private reverse proxy와 강한 client key를 사용하십시오. Dashboard는 key나 Cursor credential을 표시하지 않습니다.
 
 ## 개발
 
 ```bash
 npm run verify
-```
-
-Quality gate:
-
-- TypeScript typecheck
-- ESLint
-- Prettier format check
-- Vitest tests
-- production build
-
-유용한 명령:
-
-```bash
-npm run dev
-npm test
-npm run typecheck
-npm run lint
-npm run build
 npm audit --omit=dev
 ```
 
-## 보안 메모
+`verify`는 type check, lint, format check, 격리된 single-worker Vitest suite, production build를 실행합니다.
 
-- public internet service가 아니라 trusted-environment bridge로 취급하십시오.
-- 기본값은 `CURSOR_BRIDGE_HOST=127.0.0.1`로 유지하십시오.
-- `0.0.0.0`에 bind한다면 신뢰하는 VPN/tailnet/private proxy 뒤에 두고 강한 `CURSOR_BRIDGE_API_KEY`를 유지하십시오.
-- `.env`, Cursor auth file, token, API key를 log/commit하지 마십시오.
-- caller를 신뢰할 수 없으면 real workspace mode를 켜지 마십시오.
+### 실제 end-to-end smoke test
+
+Build/unit gate가 green이고 Cursor Agent에 login된 경우에만 실행하십시오. 실제 Cursor quota를 사용하며 보통 약 3-4분이 걸립니다.
+
+```bash
+CURSOR_BRIDGE_CURSOR_BIN=/absolute/path/to/cursor-agent npm run extract-protos
+CURSOR_BRIDGE_BACKEND=auto npm run test:e2e
+CURSOR_BRIDGE_CURSOR_BIN=/absolute/path/to/cursor-agent CURSOR_BRIDGE_BACKEND=cursor-cli npm run test:e2e
+```
+
+Dependency 없는 Node smoke test가 ephemeral localhost port에서 `dist/index.js`를 실행하고 auth, chat, tool mode/history/validation, SSE timing/usage/tool call, malformed request, disconnect cleanup을 검사합니다. 모든 row가 pass하지 않으면 nonzero로 종료합니다. 의도적으로 `npm run verify`에는 포함하지 않습니다.
+
+## 제한 사항
+
+- Tool delegation은 prompt-level `[TOOL_CALLS: ...]` contract에 의존합니다. Bridge가 결과를 검증하지만 model-dependent라는 성질은 남습니다.
+- Tool을 선언한 streaming request는 Cursor 완료까지 model text를 의도적으로 buffer합니다. 따라서 content/tool-call TTFB는 incremental하지 않으며 tool이 없는 request만 incremental하게 stream합니다.
+- Cursor thinking delta는 소비하지만 OpenAI response로 노출하지 않습니다.
+- `cursor-cli`는 local CLI 상태를 따릅니다. Unofficial `cursor-api`는 Cursor bundle/service 변경 때 깨질 수 있으며 agent update 후 `npm run extract-protos`를 다시 실행해야 합니다.
+- 두 real backend 모두 Cursor quota를 사용하며, local 실행이어도 `cursor-api`에는 account/약관 위험이 있을 수 있습니다.
+
+## Future
+
+Cursor가 공식 chat-completions endpoint를 제공하면 HTTP compatibility와 validation boundary는 유지하면서 unofficial direct protocol을 대체해야 합니다.
 
 ## License
 
-MIT. 현재 package license 선언은 `package.json`을 참고하십시오.
+MIT.
