@@ -25,6 +25,7 @@ import {
   type ProtoDescriptorSet,
   type ProtoFieldDescriptor,
 } from '../src/backend/cursor-api/protobuf.js';
+import { mapCursorApiToolRequest } from '../src/backend/cursor-api/tool-wire-names.js';
 import {
   CURSOR_BOOTSTRAP_UNARY_HEADER_NAMES,
   CURSOR_RUN_HEADER_NAMES,
@@ -731,6 +732,26 @@ describe('Cursor API mapping and Run lifecycle', () => {
       },
     ]);
 
+    const toolRequest = {
+      model: 'composer-2.5',
+      messages: [{ role: 'user' as const, content: 'call echo' }],
+      tools: [
+        {
+          type: 'function' as const,
+          function: {
+            name: 'echo_value',
+            parameters: {
+              type: 'object',
+              properties: { value: { type: 'string' } },
+              required: ['value'],
+            },
+          },
+        },
+      ],
+      tool_choice: 'required' as const,
+    };
+    const wireName = mapCursorApiToolRequest(toolRequest).request.tools?.[0]?.function.name;
+    if (!wireName) throw new Error('wire tool name was not created');
     const toolTransport = new FakeTransport([
       serverMessage('execServerMessage', {
         id: 1,
@@ -744,8 +765,8 @@ describe('Cursor API mapping and Run lifecycle', () => {
         message: {
           case: 'mcpArgs',
           value: {
-            name: 'echo_value',
-            toolName: 'echo_value',
+            name: wireName,
+            toolName: wireName,
             providerIdentifier: 'bridge',
             toolCallId: 'call_native_1',
             args: { value: jsonToProtoValue('NATIVE_OK') },
@@ -753,24 +774,7 @@ describe('Cursor API mapping and Run lifecycle', () => {
         },
       }),
     ]);
-    const result = await backendWith(toolTransport).complete({
-      model: 'composer-2.5',
-      messages: [{ role: 'user', content: 'call echo' }],
-      tools: [
-        {
-          type: 'function',
-          function: {
-            name: 'echo_value',
-            parameters: {
-              type: 'object',
-              properties: { value: { type: 'string' } },
-              required: ['value'],
-            },
-          },
-        },
-      ],
-      tool_choice: 'required',
-    });
+    const result = await backendWith(toolTransport).complete(toolRequest);
     expect(result.tool_calls).toEqual([
       {
         id: 'call_native_1',
@@ -782,18 +786,12 @@ describe('Cursor API mapping and Run lifecycle', () => {
   });
 
   it('recovers valid text markers as native OpenAI tool calls', async () => {
-    const transport = new FakeTransport([
-      update('textDelta', {
-        text: '[TOOL_CALLS: [{"function":{"name":"echo_value","arguments":{"value":"RECOVERED"}}}]]',
-      }),
-      update('turnEnded', { inputTokens: 4, outputTokens: 2 }),
-    ]);
-    const result = await backendWith(transport).complete({
+    const toolRequest = {
       model: 'claude-opus-5-high',
-      messages: [{ role: 'user', content: 'call echo' }],
+      messages: [{ role: 'user' as const, content: 'call echo' }],
       tools: [
         {
-          type: 'function',
+          type: 'function' as const,
           function: {
             name: 'echo_value',
             parameters: {
@@ -804,8 +802,15 @@ describe('Cursor API mapping and Run lifecycle', () => {
           },
         },
       ],
-      tool_choice: 'auto',
-    });
+      tool_choice: 'auto' as const,
+    };
+    const transport = new FakeTransport([
+      update('textDelta', {
+        text: '[TOOL_CALLS: [{"function":{"name":"echo_value","arguments":{"value":"RECOVERED"}}}]]',
+      }),
+      update('turnEnded', { inputTokens: 4, outputTokens: 2 }),
+    ]);
+    const result = await backendWith(transport).complete(toolRequest);
 
     expect(result).toMatchObject({
       content: null,

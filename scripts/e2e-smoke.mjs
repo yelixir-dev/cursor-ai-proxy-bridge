@@ -159,6 +159,20 @@ const echoTool = {
   },
 };
 
+const reservedShellTool = {
+  type: 'function',
+  function: {
+    name: 'Shell',
+    description: 'Return one shell command to the caller without executing it.',
+    parameters: {
+      type: 'object',
+      properties: { command: { type: 'string', minLength: 1 } },
+      required: ['command'],
+      additionalProperties: false,
+    },
+  },
+};
+
 const lookupTool = {
   type: 'function',
   function: {
@@ -430,6 +444,31 @@ async function main() {
     assert(
       JSON.stringify(values) === JSON.stringify(['PARALLEL_A', 'PARALLEL_B']),
       'parallel args differ',
+    );
+  });
+
+  await scenario('reserved Shell name returns three parallel calls', async () => {
+    const { response, body } = await chat(baseUrl, {
+      messages: [
+        {
+          role: 'user',
+          content:
+            'Call Shell three times separately with commands printf A, printf B, and printf C. Return tool calls only.',
+        },
+      ],
+      tools: [reservedShellTool],
+      tool_choice: 'required',
+      parallel_tool_calls: true,
+    });
+    assert(response.status === 200, `expected 200, got ${response.status}`);
+    const calls = callsFrom(body);
+    assert(calls.length === 3, `expected three Shell calls, got ${calls.length}`);
+    const commands = calls.map((call) => parseArguments(call).command).sort();
+    assert(
+      commands.some((command) => command.includes('A')) &&
+        commands.some((command) => command.includes('B')) &&
+        commands.some((command) => command.includes('C')),
+      'reserved Shell call arguments changed',
     );
   });
 

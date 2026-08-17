@@ -38,6 +38,7 @@ import {
   usageFromTurnEnded,
 } from './mapper.js';
 import { loadProtoDescriptors, ProtoCodec, type ProtoDescriptorSet } from './protobuf.js';
+import { mapCursorApiToolRequest } from './tool-wire-names.js';
 import {
   NodeCursorApiTransport,
   CursorApiHttpError,
@@ -424,15 +425,23 @@ export class CursorApiBackend implements CursorBackend {
     request: ChatCompletionRequest,
     signal?: AbortSignal,
   ): Promise<RunOutcome> {
-    const recoverTextToolCalls = (candidate: RunOutcome): RunOutcome => {
-      if (candidate.toolCalls.length || !candidate.text || !request.tools?.length) {
-        return candidate;
+    const runMapped = async (candidateRequest: ChatCompletionRequest): Promise<RunOutcome> => {
+      const mapped = mapCursorApiToolRequest(candidateRequest);
+      const candidate = await this.run(mapped.request, signal);
+      if (candidate.toolCalls.length) {
+        return { ...candidate, toolCalls: mapped.restoreToolCalls(candidate.toolCalls) };
       }
-      const recovered = enforceNativeToolChoice(parseToolCallsFromText(candidate.text), request);
+      if (!candidate.text || !mapped.request.tools?.length) return candidate;
+      const parsed = parseToolCallsFromText(candidate.text);
+      const wireRecovered = enforceNativeToolChoice(parsed, mapped.request);
+      const recovered =
+        wireRecovered.length > 0
+          ? mapped.restoreToolCalls(wireRecovered)
+          : enforceNativeToolChoice(parsed, candidateRequest);
       return recovered.length ? { ...candidate, text: '', toolCalls: recovered } : candidate;
     };
 
-    let outcome = recoverTextToolCalls(await this.run(request, signal));
+    let outcome = await runMapped(request);
     if (outcome.toolCalls.length) {
       const failure = validateToolCallArguments(outcome.toolCalls, request.tools);
       if (failure) {
@@ -440,7 +449,7 @@ export class CursorApiBackend implements CursorBackend {
           ...request,
           messages: [...request.messages, { role: 'user', content: retryFeedback(failure) }],
         };
-        outcome = recoverTextToolCalls(await this.run(retryRequest, signal));
+        outcome = await runMapped(retryRequest);
         if (!outcome.toolCalls.length) {
           throw new ToolArgumentValidationError({
             toolName: failure.toolName,
