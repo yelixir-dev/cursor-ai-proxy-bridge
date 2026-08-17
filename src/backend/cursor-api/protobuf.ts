@@ -58,7 +58,17 @@ export function loadProtoDescriptors(path?: string): ProtoDescriptorSet {
       `Cursor API protobuf descriptor file is invalid. Run \`npm run extract-protos\` again: ${descriptorPath}`,
     );
   }
-  return parsed as ProtoDescriptorSet;
+  const descriptors = parsed as ProtoDescriptorSet;
+  const interactionFields = new Set(
+    descriptors.messages['agent.v1.InteractionUpdate']?.fields.map((field) => field.localName) ??
+      [],
+  );
+  if (!interactionFields.has('partialToolCall') || !interactionFields.has('toolCallStarted')) {
+    throw new Error(
+      `Cursor API protobuf descriptor file is outdated. Run \`npm run extract-protos\` again: ${descriptorPath}`,
+    );
+  }
+  return descriptors;
 }
 
 function varint(value: number | bigint): Buffer {

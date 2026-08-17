@@ -190,7 +190,7 @@ export function runRequestMessage(
                 text: cursorApiPrompt(request),
                 messageId: randomUUID(),
                 selectedContext: {},
-                mode: 1,
+                mode: request.tools?.length && request.tool_choice !== 'none' ? 2 : 1,
                 conversationStateBlobId: Buffer.alloc(0),
               },
             },
@@ -290,6 +290,16 @@ export function enforceNativeToolChoice(
     (call) => allowed.has(call.function.name) && (!forced || call.function.name === forced),
   );
   return request.parallel_tool_calls === false ? filtered.slice(0, 1) : filtered;
+}
+
+export function nativeToolBatchComplete(
+  announcedToolCallIds: ReadonlySet<string>,
+  calls: readonly ToolCall[],
+  parallelToolCalls: boolean,
+): boolean {
+  if (!parallelToolCalls) return calls.length > 0;
+  if (announcedToolCallIds.size === 0 || calls.length !== announcedToolCallIds.size) return false;
+  return calls.every((call) => announcedToolCallIds.has(call.id));
 }
 
 function finiteToken(value: unknown): number {

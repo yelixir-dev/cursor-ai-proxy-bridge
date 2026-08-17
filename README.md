@@ -182,7 +182,7 @@ docs/assets/banner.svg  README hero banner
 
 ## Current limitations
 
-- **Unofficial protocol.** Cursor can change the reverse-engineered `agent.v1` service or its bundle; re-run `npm run extract-protos` after a `cursor-agent` update, or force `CURSOR_BRIDGE_BACKEND=cursor-cli`.
+- **Unofficial protocol.** Cursor can change the reverse-engineered `agent.v1` service or its bundle; re-run `npm run extract-protos` after a `cursor-agent` update or when a bridge update reports an outdated descriptor snapshot, or force `CURSOR_BRIDGE_BACKEND=cursor-cli`.
 - **Local network boundary.** The default bind is `127.0.0.1`; keep it on localhost or a trusted tailnet, and keep client auth enabled when a private reverse proxy exposes it.
 - **Tool streaming boundary.** When tools are declared, model text is buffered until Cursor completes so tool markers can be converted safely; omit tools when incremental content matters.
 - **Cursor boundary.** Both real backends consume Cursor quota, and `cursor-api` may carry account or terms risk despite local execution; plan quota use and choose the CLI path when needed.

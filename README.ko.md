@@ -182,7 +182,7 @@ docs/assets/banner.svg  README hero banner
 
 ## 현재 한계
 
-- **비공식 protocol.** Cursor가 reverse-engineered `agent.v1` service나 bundle을 바꿀 수 있습니다. `npm run extract-protos`를 `cursor-agent` update 뒤 다시 실행하거나 `CURSOR_BRIDGE_BACKEND=cursor-cli`를 강제하세요.
+- **비공식 protocol.** Cursor가 reverse-engineered `agent.v1` service나 bundle을 바꿀 수 있습니다. `cursor-agent` update 뒤 또는 bridge update가 outdated descriptor snapshot을 보고할 때 `npm run extract-protos`를 다시 실행하거나 `CURSOR_BRIDGE_BACKEND=cursor-cli`를 강제하세요.
 - **로컬 network 경계.** 기본 bind는 `127.0.0.1`입니다. localhost 또는 신뢰하는 tailnet에 유지하고, private reverse proxy가 노출할 때는 client auth도 유지하세요.
 - **Tool streaming 경계.** Tool을 선언하면 marker를 안전하게 변환하기 위해 Cursor가 끝날 때까지 model text를 buffer합니다. Incremental content가 중요하면 tool을 선언하지 마세요.
 - **Cursor 경계.** 두 real backend 모두 Cursor quota를 사용하며, `cursor-api`는 local 실행이어도 account 또는 약관 위험을 가질 수 있습니다. Quota를 계획하고 필요하면 CLI 경로를 선택하세요.

@@ -13,6 +13,7 @@ import { CURSOR_API_STARTUP_SEQUENCE, CursorApiBackend } from '../src/backend/cu
 import {
   mapRequestedModels,
   mapUsableModels,
+  nativeToolBatchComplete,
   requestContextResult,
   runRequestMessage,
 } from '../src/backend/cursor-api/mapper.js';
@@ -118,11 +119,15 @@ const descriptors: ProtoDescriptorSet = {
     ),
     'agent.v1.InteractionUpdate': fields(
       oneof(1, 'textDelta', 'agent.v1.TextDeltaUpdate'),
+      oneof(2, 'toolCallStarted', 'agent.v1.ToolCallStartedUpdate'),
       oneof(4, 'thinkingDelta', 'agent.v1.ThinkingDeltaUpdate'),
+      oneof(7, 'partialToolCall', 'agent.v1.PartialToolCallUpdate'),
       oneof(14, 'turnEnded', 'agent.v1.TurnEndedUpdate'),
     ),
     'agent.v1.TextDeltaUpdate': fields(scalar(1, 'text', 9)),
+    'agent.v1.ToolCallStartedUpdate': fields(scalar(1, 'callId', 9)),
     'agent.v1.ThinkingDeltaUpdate': fields(scalar(1, 'text', 9)),
+    'agent.v1.PartialToolCallUpdate': fields(scalar(1, 'callId', 9)),
     'agent.v1.TurnEndedUpdate': fields(
       scalar(1, 'inputTokens', 4),
       scalar(2, 'outputTokens', 4),
@@ -356,6 +361,17 @@ describe('Cursor API authentication and descriptors', () => {
     );
   });
 
+  it('rejects descriptors missing native tool announcement fields', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cursor-api-old-descriptors-'));
+    const descriptorPath = join(dir, 'proto-descriptors.json');
+    const outdated = structuredClone(descriptors);
+    outdated.messages['agent.v1.InteractionUpdate']!.fields = outdated.messages[
+      'agent.v1.InteractionUpdate'
+    ]!.fields.filter((field) => !['partialToolCall', 'toolCallStarted'].includes(field.localName));
+    writeFileSync(descriptorPath, JSON.stringify(outdated));
+    expect(() => loadProtoDescriptors(descriptorPath)).toThrow(/outdated.*extract-protos/i);
+  });
+
   it('loads descriptors from CURSOR_BRIDGE_CURSOR_API_DESCRIPTORS on headless-only hosts', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cursor-api-descriptors-'));
     const descriptorPath = join(dir, 'proto-descriptors.json');
@@ -527,9 +543,71 @@ describe('Cursor API startup and wire parity', () => {
     expect(context.supportsMcpAuth).toBe(true);
     expect(context.gitRepoInfoComplete).toBe(true);
   });
+
+  it('uses agent mode only when client tools are available', () => {
+    const baseRequest = {
+      model: 'composer-2.5',
+      messages: [{ role: 'user' as const, content: 'hello' }],
+    };
+    const withoutTools = runRequestMessage(baseRequest, 'request-without-tools');
+    const withTools = runRequestMessage(
+      {
+        ...baseRequest,
+        tools: [
+          {
+            type: 'function' as const,
+            function: {
+              name: 'echo_value',
+              parameters: { type: 'object' },
+            },
+          },
+        ],
+      },
+      'request-with-tools',
+    );
+
+    expect(withoutTools).toMatchObject({
+      message: {
+        value: {
+          action: {
+            action: { value: { userMessage: { mode: 1 } } },
+          },
+        },
+      },
+    });
+    expect(withTools).toMatchObject({
+      message: {
+        value: {
+          action: {
+            action: { value: { userMessage: { mode: 2 } } },
+          },
+        },
+      },
+    });
+  });
 });
 
 describe('Cursor API mapping and Run lifecycle', () => {
+  it('waits for every announced native tool call before completing a batch', () => {
+    const calls = [
+      {
+        id: 'call-one',
+        type: 'function' as const,
+        function: { name: 'echo_value', arguments: '{"value":"one"}' },
+      },
+      {
+        id: 'call-two',
+        type: 'function' as const,
+        function: { name: 'echo_value', arguments: '{"value":"two"}' },
+      },
+    ];
+
+    const announced = new Set(['call-one', 'call-two']);
+    expect(nativeToolBatchComplete(announced, calls.slice(0, 1), true)).toBe(false);
+    expect(nativeToolBatchComplete(announced, calls, true)).toBe(true);
+    expect(nativeToolBatchComplete(announced, calls.slice(0, 1), false)).toBe(true);
+  });
+
   it('maps usable models and completes scripted text while answering exec and KV messages', async () => {
     expect(
       mapUsableModels({ models: [{ modelId: 'composer-2.5', aliases: ['composer'] }] }).map(
@@ -608,6 +686,7 @@ describe('Cursor API mapping and Run lifecycle', () => {
         execId: 'context',
         message: { case: 'requestContextArgs', value: {} },
       }),
+      update('partialToolCall', { callId: 'call_native_1' }),
       serverMessage('execServerMessage', {
         id: 2,
         execId: 'tool',
@@ -649,6 +728,43 @@ describe('Cursor API mapping and Run lifecycle', () => {
       },
     ]);
     expect(toolTransport.stream?.writableEnded || toolTransport.stream?.destroyed).toBe(true);
+  });
+
+  it('recovers valid text markers as native OpenAI tool calls', async () => {
+    const transport = new FakeTransport([
+      update('textDelta', {
+        text: '[TOOL_CALLS: [{"function":{"name":"echo_value","arguments":{"value":"RECOVERED"}}}]]',
+      }),
+      update('turnEnded', { inputTokens: 4, outputTokens: 2 }),
+    ]);
+    const result = await backendWith(transport).complete({
+      model: 'claude-opus-5-high',
+      messages: [{ role: 'user', content: 'call echo' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'echo_value',
+            parameters: {
+              type: 'object',
+              properties: { value: { type: 'string' } },
+              required: ['value'],
+            },
+          },
+        },
+      ],
+      tool_choice: 'auto',
+    });
+
+    expect(result).toMatchObject({
+      content: null,
+      tool_calls: [
+        {
+          type: 'function',
+          function: { name: 'echo_value', arguments: '{"value":"RECOVERED"}' },
+        },
+      ],
+    });
   });
 
   it('destroys a stalled Run stream on abort', async () => {

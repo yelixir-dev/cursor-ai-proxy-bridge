@@ -15,6 +15,7 @@ import {
   validateToolCallArguments,
   type ToolArgumentValidationFailure,
 } from '../tool-arguments.js';
+import { parseToolCallsFromText } from '../tool-call-parse.js';
 import type { BridgeConfig } from '../../config.js';
 import { CursorAuthProvider } from './auth.js';
 import { ConnectFrameDecoder, encodeConnectFrame } from './connect-frame.js';
@@ -31,6 +32,7 @@ import {
   mapUsableModels,
   mcpArgsToToolCall,
   nativeToolDefinition,
+  nativeToolBatchComplete,
   requestContextResult,
   runRequestMessage,
   usageFromTurnEnded,
@@ -84,7 +86,6 @@ export interface CursorApiBackendDependencies {
   clearInterval?: typeof globalThis.clearInterval;
   setTimeout?: typeof globalThis.setTimeout;
   clearTimeout?: typeof globalThis.clearTimeout;
-  setImmediate?: typeof globalThis.setImmediate;
   credentialRouter?: CursorCredentialRouter;
   now?: () => number;
 }
@@ -142,7 +143,7 @@ export class CursorApiBackend implements CursorBackend {
   private readonly credentialRouter: CursorCredentialRouter;
   private readonly environment: NodeJS.ProcessEnv;
   private readonly intervals: Pick<typeof globalThis, 'setInterval' | 'clearInterval'>;
-  private readonly timers: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout' | 'setImmediate'>;
+  private readonly timers: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout'>;
   private readonly activeStreams = new Set<CursorRunStream>();
   private discoveryCache?: { url: string; expiresAt: number };
   private discoveryRefresh?: Promise<string>;
@@ -207,7 +208,6 @@ export class CursorApiBackend implements CursorBackend {
     this.timers = {
       setTimeout: dependencies.setTimeout ?? globalThis.setTimeout,
       clearTimeout: dependencies.clearTimeout ?? globalThis.clearTimeout,
-      setImmediate: dependencies.setImmediate ?? globalThis.setImmediate,
     };
   }
 
@@ -424,7 +424,15 @@ export class CursorApiBackend implements CursorBackend {
     request: ChatCompletionRequest,
     signal?: AbortSignal,
   ): Promise<RunOutcome> {
-    let outcome = await this.run(request, signal);
+    const recoverTextToolCalls = (candidate: RunOutcome): RunOutcome => {
+      if (candidate.toolCalls.length || !candidate.text || !request.tools?.length) {
+        return candidate;
+      }
+      const recovered = enforceNativeToolChoice(parseToolCallsFromText(candidate.text), request);
+      return recovered.length ? { ...candidate, text: '', toolCalls: recovered } : candidate;
+    };
+
+    let outcome = recoverTextToolCalls(await this.run(request, signal));
     if (outcome.toolCalls.length) {
       const failure = validateToolCallArguments(outcome.toolCalls, request.tools);
       if (failure) {
@@ -432,7 +440,7 @@ export class CursorApiBackend implements CursorBackend {
           ...request,
           messages: [...request.messages, { role: 'user', content: retryFeedback(failure) }],
         };
-        outcome = await this.run(retryRequest, signal);
+        outcome = recoverTextToolCalls(await this.run(retryRequest, signal));
         if (!outcome.toolCalls.length) {
           throw new ToolArgumentValidationError({
             toolName: failure.toolName,
@@ -568,7 +576,7 @@ export class CursorApiBackend implements CursorBackend {
 
     return new Promise<RunOutcome>((resolve, reject) => {
       let settled = false;
-      let toolFinishScheduled = false;
+      const announcedToolCallIds = new Set<string>();
       const cleanup = () => {
         this.intervals.clearInterval(heartbeat);
         this.timers.clearTimeout(timeout);
@@ -616,6 +624,19 @@ export class CursorApiBackend implements CursorBackend {
           options.compressed ?? false,
         );
       };
+      const finishToolBatchIfComplete = () => {
+        if (
+          !nativeToolBatchComplete(
+            announcedToolCallIds,
+            calls,
+            request.parallel_tool_calls !== false,
+          )
+        ) {
+          return;
+        }
+        finish();
+        if (!stream.destroyed) stream.destroy();
+      };
       const handleExec = (exec: Record<string, any>) => {
         const message = exec.message as { case?: string; value?: Record<string, any> } | undefined;
         const execCase = message?.case;
@@ -629,15 +650,7 @@ export class CursorApiBackend implements CursorBackend {
         }
         if (execCase === 'mcpArgs') {
           calls.push(mcpArgsToToolCall(message.value ?? {}));
-          if (!toolFinishScheduled) {
-            toolFinishScheduled = true;
-            this.timers.setImmediate(() => {
-              if (!settled) {
-                finish();
-                if (!stream.destroyed) stream.destroy();
-              }
-            });
-          }
+          finishToolBatchIfComplete();
           return;
         }
         if (execCase === 'mcpAllowlistPrecheckArgs') {
@@ -764,6 +777,10 @@ export class CursorApiBackend implements CursorBackend {
         } else if (update?.case === 'thinkingDelta') {
           const delta = String(update.value?.text ?? '');
           if (delta) emit?.({ type: 'thinking', text: delta });
+        } else if (update?.case === 'partialToolCall' || update?.case === 'toolCallStarted') {
+          const callId = String(update.value?.callId ?? '');
+          if (callId) announcedToolCallIds.add(callId);
+          finishToolBatchIfComplete();
         } else if (update?.case === 'turnEnded') {
           usage = usageFromTurnEnded(update.value ?? {});
         }
