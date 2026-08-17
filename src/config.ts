@@ -74,7 +74,7 @@ export function loadConfig(envFile = '.env'): BridgeConfig {
 
   return {
     host: process.env.CURSOR_BRIDGE_HOST || dashboardConfig.server?.host || '127.0.0.1',
-    port: numberFromEnv('CURSOR_BRIDGE_PORT', dashboardConfig.server?.port ?? 9996),
+    port: numberFromEnv('CURSOR_BRIDGE_PORT', dashboardConfig.server?.port ?? 9997),
     apiKey,
     clientAuth,
     backend:

@@ -45,7 +45,7 @@ npm run build
 npm start
 ```
 
-기본 주소는 `http://127.0.0.1:9996`입니다. `CURSOR_BRIDGE_API_KEY`를 설정한 뒤 `CURSOR_BRIDGE_AUTH=on`을 사용하세요. client key가 없으면 auth 기본값은 `off`이고 startup warning이 기록됩니다. `CURSOR_BRIDGE_BACKEND=auto`가 기본값이며, `cursor-api` 또는 `cursor-cli`로 설정해 backend를 강제할 수 있습니다.
+기본 주소는 `http://127.0.0.1:9997`입니다. `CURSOR_BRIDGE_API_KEY`를 설정한 뒤 `CURSOR_BRIDGE_AUTH=on`을 사용하세요. client key가 없으면 auth 기본값은 `off`이고 startup warning이 기록됩니다. `CURSOR_BRIDGE_BACKEND=auto`가 기본값이며, `cursor-api` 또는 `cursor-cli`로 설정해 backend를 강제할 수 있습니다.
 
 ### Headless 호스트용 descriptor snapshot
 
@@ -84,7 +84,7 @@ CURSOR_BRIDGE_BACKEND=cursor-api npm start
 
 ## 사용법
 
-기본 base URL은 `http://127.0.0.1:9996`입니다. `/health`는 인증이 필요 없습니다. Client auth가 켜지면 `/v1/*`와 `/admin/*`을 보호하며, `/dashboard`는 console shell을 제공합니다.
+기본 base URL은 `http://127.0.0.1:9997`입니다. `/health`는 인증이 필요 없습니다. Client auth가 켜지면 `/v1/*`와 `/admin/*`을 보호하며, `/dashboard`는 console shell을 제공합니다.
 
 ### Authentication 및 credential
 
@@ -108,7 +108,7 @@ CURSOR_BRIDGE_BACKEND=cursor-api npm start
 Non-streaming:
 
 ```bash
-curl -sS http://127.0.0.1:9996/v1/chat/completions \
+curl -sS http://127.0.0.1:9997/v1/chat/completions \
   -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
@@ -120,7 +120,7 @@ curl -sS http://127.0.0.1:9996/v1/chat/completions \
 Streaming with usage:
 
 ```bash
-curl -N -sS http://127.0.0.1:9996/v1/chat/completions \
+curl -N -sS http://127.0.0.1:9997/v1/chat/completions \
   -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
@@ -158,7 +158,7 @@ Bridge는 completion을 반환하기 전에 선언된 tool schema와 일치하�
 
 ### Dashboard
 
-실행 중인 bridge를 관리하려면 `http://127.0.0.1:9996/dashboard`를 여세요. Console에서 status, active backend, credential state, model state를 확인할 수 있습니다. 관리 credential의 add, update, weight, enable, disable, delete를 지원하며, model별 toggle과 model family bulk toggle도 제공합니다. 전체 API key는 console로 반환되지 않습니다.
+실행 중인 bridge를 관리하려면 `http://127.0.0.1:9997/dashboard`를 여세요. Console에서 status, active backend, credential state, model state를 확인할 수 있습니다. 관리 credential의 add, update, weight, enable, disable, delete를 지원하며, model별 toggle과 model family bulk toggle도 제공합니다. 전체 API key는 console로 반환되지 않습니다.
 
 Model policy는 기본적으로 top-tier family를 활성화하고, 다른 discovered model은 override를 설정하기 전까지 숨깁니다. Policy pattern은 `composer-2.5`, `cursor-grok-4.6-*`, `claude-opus-5-*`, `claude-sonnet-5-*`, `claude-fable-5-*`, `gpt-5.6-(sol|terra|luna)-*`, `kimi-k3-*`, `glm-5.2-*`, `default`, `auto`를 대상으로 합니다.
 

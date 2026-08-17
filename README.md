@@ -45,7 +45,7 @@ npm run build
 npm start
 ```
 
-The default address is `http://127.0.0.1:9996`. Set `CURSOR_BRIDGE_API_KEY` before using `CURSOR_BRIDGE_AUTH=on`; when the client key is unset, auth defaults to `off` and startup logs a warning. `CURSOR_BRIDGE_BACKEND=auto` is the default. Set it to `cursor-api` or `cursor-cli` to force a backend.
+The default address is `http://127.0.0.1:9997`. Set `CURSOR_BRIDGE_API_KEY` before using `CURSOR_BRIDGE_AUTH=on`; when the client key is unset, auth defaults to `off` and startup logs a warning. `CURSOR_BRIDGE_BACKEND=auto` is the default. Set it to `cursor-api` or `cursor-cli` to force a backend.
 
 ### Descriptor snapshot for headless hosts
 
@@ -84,7 +84,7 @@ Run `npm run test:e2e` with a usable Cursor backend. It consumes real Cursor quo
 
 ## Usage
 
-The default base URL is `http://127.0.0.1:9996`. `/health` is unauthenticated. When client auth is enabled, it protects `/v1/*` and `/admin/*`; `/dashboard` serves the console shell.
+The default base URL is `http://127.0.0.1:9997`. `/health` is unauthenticated. When client auth is enabled, it protects `/v1/*` and `/admin/*`; `/dashboard` serves the console shell.
 
 ### Authentication and credentials
 
@@ -108,7 +108,7 @@ There are two separate key layers:
 Non-streaming:
 
 ```bash
-curl -sS http://127.0.0.1:9996/v1/chat/completions \
+curl -sS http://127.0.0.1:9997/v1/chat/completions \
   -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
@@ -120,7 +120,7 @@ curl -sS http://127.0.0.1:9996/v1/chat/completions \
 Streaming with usage:
 
 ```bash
-curl -N -sS http://127.0.0.1:9996/v1/chat/completions \
+curl -N -sS http://127.0.0.1:9997/v1/chat/completions \
   -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
@@ -158,7 +158,7 @@ The bridge validates declared tool schemas and matching tool history before it r
 
 ### Dashboard
 
-Open `http://127.0.0.1:9996/dashboard` to manage the running bridge. The console shows status, active backend, credential state, and model state. It supports add, update, weight, enable, disable, and delete actions for managed credentials, plus per-model and bulk model family toggles. Full API keys are never returned to the console.
+Open `http://127.0.0.1:9997/dashboard` to manage the running bridge. The console shows status, active backend, credential state, and model state. It supports add, update, weight, enable, disable, and delete actions for managed credentials, plus per-model and bulk model family toggles. Full API keys are never returned to the console.
 
 The model policy enables top-tier families by default and hides other discovered models until an override is set. The policy patterns cover `composer-2.5`, `cursor-grok-4.6-*`, `claude-opus-5-*`, `claude-sonnet-5-*`, `claude-fable-5-*`, `gpt-5.6-(sol|terra|luna)-*`, `kimi-k3-*`, `glm-5.2-*`, `default`, and `auto`.
 

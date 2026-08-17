@@ -12,7 +12,7 @@ describe('dashboard config persistence', () => {
   it('round-trips validated config and forces mode 0600', () => {
     const path = join(mkdtempSync(join(tmpdir(), 'cursor-dashboard-')), 'nested', 'dashboard.json');
     const config = {
-      server: { host: '127.0.0.1', port: 9996 },
+      server: { host: '127.0.0.1', port: 9997 },
       credentials: [
         {
           id: 'team',

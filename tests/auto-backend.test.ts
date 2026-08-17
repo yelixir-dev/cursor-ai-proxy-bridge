@@ -16,7 +16,7 @@ import type { BridgeConfig } from '../src/config.js';
 
 const config: BridgeConfig = {
   host: '127.0.0.1',
-  port: 9996,
+  port: 9997,
   backend: 'auto',
   defaultModel: 'composer-2.5',
   workspaceMode: 'chat-only',

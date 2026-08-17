@@ -7,7 +7,7 @@ import type { BridgeConfig } from '../src/config.js';
 
 const baseConfig: BridgeConfig = {
   host: '127.0.0.1',
-  port: 9996,
+  port: 9997,
   apiKey: 'test-key',
   backend: 'cursor-cli',
   defaultModel: 'composer-2.5',
