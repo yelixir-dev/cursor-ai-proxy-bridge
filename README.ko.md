@@ -156,6 +156,8 @@ Bridge는 completion을 반환하기 전에 선언된 tool schema와 일치하�
 | `required`   | `tool_choice: "required"`                                      | 선언된 tool call을 하나 이상 요구합니다.                  |
 | `none`       | `tool_choice: "none"`                                          | Tool call을 억제하고 일반 text를 반환합니다.              |
 
+Bridge는 tool-history follow-up에서 OpenAI 표준인 `assistant.content: null`을 받고, replay가 가능하도록 `tool_calls`와 함께 `content: ""`를 반환합니다. `content`를 문자열로만 검증하는 LiteLLM 같은 앞단 proxy는 이 replay를 `messages[N].content`에서 400으로 거절하고 이 process까지 요청을 보내지 않습니다. 그 ingress에서 `null`을 `""`로 바꾸고 `tool_calls[].id`는 그대로 두세요.
+
 ### Dashboard
 
 실행 중인 bridge를 관리하려면 `http://127.0.0.1:9997/dashboard`를 여세요. Console에서 status, active backend, credential state, model state를 확인할 수 있습니다. 관리 credential의 add, update, weight, enable, disable, delete를 지원하며, model별 toggle과 model family bulk toggle도 제공합니다. 전체 API key는 console로 반환되지 않습니다.
@@ -187,6 +189,7 @@ docs/assets/banner.svg  README hero banner
 - **비공식 protocol.** Cursor가 reverse-engineered `agent.v1` service나 bundle을 바꿀 수 있습니다. `cursor-agent` update 뒤 또는 bridge update가 outdated descriptor snapshot을 보고할 때 `npm run extract-protos`를 다시 실행하거나 `CURSOR_BRIDGE_BACKEND=cursor-cli`를 강제하세요.
 - **로컬 network 경계.** 기본 bind는 `127.0.0.1`입니다. localhost 또는 신뢰하는 tailnet에 유지하고, private reverse proxy가 노출할 때는 client auth도 유지하세요.
 - **Tool streaming 경계.** Tool을 선언하면 marker를 안전하게 변환하기 위해 Cursor가 끝날 때까지 model text를 buffer합니다. Incremental content가 중요하면 tool을 선언하지 마세요.
+- **앞단 proxy의 `content: null`.** Sequential OpenAI client는 tool-call assistant를 `content: null`로 다시 보냅니다. 이 bridge는 그 형태를 받습니다. LiteLLM 등 ingress가 여전히 `messages[N].content`에서 400을 내면 proxy schema를 고치거나 거기서 `null`을 `""`로 정규화하세요.
 - **Cursor 경계.** 두 real backend 모두 Cursor quota를 사용하며, `cursor-api`는 local 실행이어도 account 또는 약관 위험을 가질 수 있습니다. Quota를 계획하고 필요하면 CLI 경로를 선택하세요.
 
 ## 라이선스

@@ -156,6 +156,8 @@ The bridge validates declared tool schemas and matching tool history before it r
 | `required`   | `tool_choice: "required"`                                      | Require at least one declared tool call.                          |
 | `none`       | `tool_choice: "none"`                                          | Suppress tool calls and return ordinary text.                     |
 
+The bridge accepts OpenAI-standard `assistant.content: null` on a tool-history follow-up and emits `""` with `tool_calls` so a string-only client can replay the assistant message. A front proxy that types `content` as a string only, including some LiteLLM setups, will reject that replay at `messages[N].content` before the request reaches this process. Coerce `null` to `""` at that ingress and leave `tool_calls[].id` unchanged.
+
 ### Dashboard
 
 Open `http://127.0.0.1:9997/dashboard` to manage the running bridge. The console shows status, active backend, credential state, and model state. It supports add, update, weight, enable, disable, and delete actions for managed credentials, plus per-model and bulk model family toggles. Full API keys are never returned to the console.
@@ -187,6 +189,7 @@ docs/assets/banner.svg  README hero banner
 - **Unofficial protocol.** Cursor can change the reverse-engineered `agent.v1` service or its bundle; re-run `npm run extract-protos` after a `cursor-agent` update or when a bridge update reports an outdated descriptor snapshot, or force `CURSOR_BRIDGE_BACKEND=cursor-cli`.
 - **Local network boundary.** The default bind is `127.0.0.1`; keep it on localhost or a trusted tailnet, and keep client auth enabled when a private reverse proxy exposes it.
 - **Tool streaming boundary.** When tools are declared, model text is buffered until Cursor completes so tool markers can be converted safely; omit tools when incremental content matters.
+- **Front-proxy `content: null`.** Sequential OpenAI clients replay tool-call assistants with `content: null`. This bridge accepts that shape. If LiteLLM or another ingress still returns 400 on `messages[N].content`, fix the proxy schema or normalize `null` to `""` there.
 - **Cursor boundary.** Both real backends consume Cursor quota, and `cursor-api` may carry account or terms risk despite local execution; plan quota use and choose the CLI path when needed.
 
 ## License
