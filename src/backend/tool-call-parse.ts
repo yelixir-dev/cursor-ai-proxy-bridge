@@ -1,4 +1,5 @@
-import type { Tool, ToolCall } from './types.js';
+import { randomUUID } from 'node:crypto';
+import type { Tool, ToolCall, ToolChoice } from './types.js';
 
 interface UnknownToolPayload {
   id?: unknown;
@@ -9,8 +10,8 @@ interface UnknownToolPayload {
   function?: { name?: unknown; arguments?: unknown; args?: unknown };
 }
 
-function callId(index = 0): string {
-  return `call_bridge_${Date.now().toString(36)}_${index}`;
+function callId(): string {
+  return `call_bridge_${randomUUID()}`;
 }
 
 function normalizeArguments(raw: unknown): string {
@@ -21,7 +22,7 @@ function normalizeArguments(raw: unknown): string {
   return JSON.stringify(raw && typeof raw === 'object' ? raw : {});
 }
 
-function normalizeToolCall(raw: unknown, index = 0): ToolCall | undefined {
+function normalizeToolCall(raw: unknown): ToolCall | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const candidate = raw as UnknownToolPayload;
   const name =
@@ -46,7 +47,7 @@ function normalizeToolCall(raw: unknown, index = 0): ToolCall | undefined {
   }
 
   return {
-    id: typeof candidate.id === 'string' && candidate.id ? candidate.id : callId(index),
+    id: typeof candidate.id === 'string' && candidate.id ? candidate.id : callId(),
     type: 'function',
     function: { name, arguments: argumentsJson },
   };
@@ -60,8 +61,8 @@ function parseToolCallsPayload(payload: unknown): ToolCall[] {
     : asObject.function_call
       ? [asObject.function_call]
       : [];
-  return rawCalls.flatMap((raw, index) => {
-    const normalized = normalizeToolCall(raw, index);
+  return rawCalls.flatMap((raw) => {
+    const normalized = normalizeToolCall(raw);
     return normalized ? [normalized] : [];
   });
 }
@@ -110,8 +111,8 @@ export function parseToolCallsFromText(output: string): ToolCall[] {
       if (jsonText) {
         try {
           const parsed = JSON.parse(jsonText) as unknown[];
-          return parsed.flatMap((raw, index) => {
-            const normalized = normalizeToolCall(raw, index);
+          return parsed.flatMap((raw) => {
+            const normalized = normalizeToolCall(raw);
             return normalized ? [normalized] : [];
           });
         } catch {
@@ -129,74 +130,6 @@ export function parseToolCallsFromText(output: string): ToolCall[] {
   }
 }
 
-function cursorToolNameToOpenAi(name: string): string | undefined {
-  const mapping: Record<string, string> = {
-    shellToolCall: 'terminal',
-    readToolCall: 'read_file',
-    writeToolCall: 'write_file',
-    searchReplaceToolCall: 'patch',
-    grepToolCall: 'search_files',
-    listDirToolCall: 'search_files',
-  };
-  return mapping[name] ?? (name.endsWith('ToolCall') ? undefined : name);
-}
-
-export function mapCursorStreamToolCall(event: unknown): ToolCall | undefined {
-  if (!event || typeof event !== 'object') return undefined;
-  const candidate = event as {
-    type?: unknown;
-    subtype?: unknown;
-    tool_call?: UnknownToolPayload;
-    toolCall?: UnknownToolPayload;
-    name?: unknown;
-    id?: unknown;
-    args?: unknown;
-    input?: unknown;
-  };
-  if (candidate.subtype !== 'started') return undefined;
-  const rawCall: UnknownToolPayload = candidate.tool_call ??
-    candidate.toolCall ?? {
-      id: candidate.id,
-      name: candidate.name,
-      args: candidate.args ?? candidate.input,
-    };
-  const rawName =
-    typeof rawCall.name === 'string'
-      ? rawCall.name
-      : typeof rawCall.function?.name === 'string'
-        ? rawCall.function.name
-        : '';
-  const name = cursorToolNameToOpenAi(rawName);
-  if (!name) return undefined;
-  const rawArgs = rawCall.args ?? rawCall.arguments ?? candidate.args ?? candidate.input ?? {};
-  let argumentsJson: string;
-  try {
-    argumentsJson = normalizeArguments(rawArgs);
-  } catch {
-    return undefined;
-  }
-  return {
-    id: typeof rawCall.id === 'string' && rawCall.id ? rawCall.id : callId(0),
-    type: 'function',
-    function: { name, arguments: argumentsJson },
-  };
-}
-
-export function parseToolCallsFromCursorStreamJson(output: string): ToolCall[] {
-  const calls: ToolCall[] = [];
-  for (const line of output.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const mapped = mapCursorStreamToolCall(JSON.parse(trimmed));
-      if (mapped) calls.push(mapped);
-    } catch {
-      // Cursor may interleave non-JSON status lines; ignore them.
-    }
-  }
-  return calls;
-}
-
 export function filterToolCallsToAllowed(
   toolCalls: ToolCall[],
   tools: Tool[] | undefined,
@@ -206,11 +139,29 @@ export function filterToolCallsToAllowed(
   return toolCalls.filter((call) => allowedTools.has(call.function.name));
 }
 
-export function toolDelegationPromptSuffix(tools: Tool[] | undefined): string {
+export interface ToolDelegationOptions {
+  toolChoice?: ToolChoice;
+  parallelToolCalls?: boolean;
+}
+
+export function toolDelegationPromptSuffix(
+  tools: Tool[] | undefined,
+  options: ToolDelegationOptions = {},
+): string {
   if (!tools || tools.length === 0) return '';
   const defs = tools.map(
     (tool) =>
       `- ${tool.function.name}: ${tool.function.description ?? ''}\n  parameters: ${JSON.stringify(tool.function.parameters ?? {})}`,
   );
-  return `\n\n--- AVAILABLE TOOLS ---\n${defs.join('\n')}\n--- END TOOLS ---\n\n--- TOOL CALL OUTPUT CONTRACT ---\nIf the user request requires one of these tools, delegate to the OpenAI client instead of pretending to execute it. Do not execute the tool yourself. Respond with ONLY this exact text pattern and no prose:\n[TOOL_CALLS: [{"function":{"name":"tool_name","arguments":{}}}]]\nThe arguments object must match the selected tool schema. Legacy marker for compatibility: CURSOR_BRIDGE_TOOL_CALL. Do not claim you used a tool in prose; emit the [TOOL_CALLS] block instead.\n--- END TOOL CALL OUTPUT CONTRACT ---\n`;
+  const selection =
+    typeof options.toolChoice === 'object'
+      ? `You must call exactly the function named ${JSON.stringify(options.toolChoice.function.name)}.`
+      : options.toolChoice === 'required'
+        ? 'You must call one or more available tools.'
+        : 'Call an available tool only when needed; otherwise answer normally.';
+  const parallel =
+    options.parallelToolCalls === false
+      ? 'Return at most one tool call.'
+      : 'For independent operations, you may return multiple tool calls.';
+  return `\n\n--- AVAILABLE TOOLS ---\n${defs.join('\n')}\n--- END TOOLS ---\n\n--- TOOL CALL OUTPUT CONTRACT ---\nDelegate tool use to the OpenAI client instead of pretending to execute it. Do not execute the tool yourself. Respond with ONLY this exact text pattern and no prose when making calls:\n[TOOL_CALLS: [{"function":{"name":"tool_name","arguments":{}}}]]\nThe arguments object must match the selected tool schema. ${selection} ${parallel} Legacy marker for compatibility: CURSOR_BRIDGE_TOOL_CALL. Do not claim you used a tool in prose; emit the [TOOL_CALLS] block instead.\n--- END TOOL CALL OUTPUT CONTRACT ---\n`;
 }

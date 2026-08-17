@@ -7,7 +7,7 @@ import type { BridgeConfig } from '../src/config.js';
 
 const baseConfig: BridgeConfig = {
   host: '127.0.0.1',
-  port: 9994,
+  port: 9996,
   apiKey: 'test-key',
   backend: 'cursor-cli',
   defaultModel: 'composer-2.5',
@@ -16,13 +16,61 @@ const baseConfig: BridgeConfig = {
   version: '0.1.0',
 };
 
+function cursorResult(
+  result: string,
+  usage: { inputTokens: number; outputTokens: number } | null = {
+    inputTokens: 17,
+    outputTokens: 5,
+  },
+): string {
+  return JSON.stringify({
+    type: 'result',
+    subtype: 'success',
+    is_error: false,
+    result,
+    ...(usage ? { usage } : {}),
+  });
+}
+
+interface Invocation {
+  argv: string[];
+  cwd: string;
+  stdin: string;
+}
+
+const readFileTool = {
+  type: 'function' as const,
+  function: {
+    name: 'read_file',
+    description: 'Read a file from disk',
+    parameters: {
+      type: 'object',
+      properties: { path: { type: 'string' } },
+      required: ['path'],
+    },
+  },
+};
+
+const terminalTool = {
+  type: 'function' as const,
+  function: {
+    name: 'terminal',
+    description: 'Run shell commands',
+    parameters: {
+      type: 'object',
+      properties: { command: { type: 'string' } },
+      required: ['command'],
+    },
+  },
+};
+
 describe('cursor cli backend', () => {
   beforeEach(() => {
     delete process.env.CURSOR_BRIDGE_CURSOR_BIN;
     delete process.env.CURSOR_BRIDGE_CURSOR_TIMEOUT_MS;
   });
 
-  async function fakeCursorBin(output = 'BRIDGE_OK', filename = 'fake-cursor.mjs') {
+  async function fakeCursorBin(output = cursorResult('BRIDGE_OK'), filename = 'fake-cursor.mjs') {
     const dir = await mkdtemp(join(tmpdir(), 'cursor-ai-bridge-test-'));
     const logPath = join(dir, 'invocation.json');
     const binPath = join(dir, filename);
@@ -43,58 +91,58 @@ process.stdout.write(${JSON.stringify(output)});
     return { logPath };
   }
 
-  async function fakeCursorBinByOutputFormat(outputs: { text: string; streamJson: string }) {
+  async function failingCursorBin(filename = 'cursor-agent') {
     const dir = await mkdtemp(join(tmpdir(), 'cursor-ai-bridge-test-'));
-    const logPath = join(dir, 'invocation.json');
-    const binPath = join(dir, 'fake-cursor.mjs');
+    const binPath = join(dir, filename);
     await writeFile(
       binPath,
       `#!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-const argv = process.argv.slice(2);
-const stdin = readFileSync(0, 'utf8');
-const invocation = { argv, cwd: process.cwd(), stdin };
-const existing = existsSync(${JSON.stringify(logPath)}) ? JSON.parse(readFileSync(${JSON.stringify(logPath)}, 'utf8')) : [];
-existing.push(invocation);
-writeFileSync(${JSON.stringify(logPath)}, JSON.stringify(existing));
-const format = argv[argv.indexOf('--output-format') + 1];
-process.stdout.write(format === 'stream-json' ? ${JSON.stringify(outputs.streamJson)} : ${JSON.stringify(outputs.text)});
+process.stderr.write('models unavailable');
+process.exitCode = 1;
 `,
       { mode: 0o755 },
     );
     process.env.CURSOR_BRIDGE_CURSOR_BIN = binPath;
-    return { logPath };
   }
 
-  async function readInvocations(
-    logPath: string,
-  ): Promise<Array<{ argv: string[]; stdin: string }>> {
-    return JSON.parse(await readFile(logPath, 'utf8')) as Array<{ argv: string[]; stdin: string }>;
+  async function readInvocations(logPath: string): Promise<Invocation[]> {
+    return JSON.parse(await readFile(logPath, 'utf8')) as Invocation[];
   }
 
-  it('invokes Cursor CLI without --mode for writable headless agent completions', async () => {
+  it('invokes Cursor exactly once in JSON ask mode for chat-only requests', async () => {
     const { logPath } = await fakeCursorBin();
     const backend = createCursorCliBackend(baseConfig);
 
-    await backend.complete({
+    const result = await backend.complete({
       model: 'composer-2.5',
       messages: [{ role: 'user', content: 'hello' }],
     });
 
-    const [invocation] = await readInvocations(logPath);
-    expect(invocation).toBeDefined();
-    expect(invocation.argv).toEqual(
-      expect.arrayContaining(['agent', '--print', '--trust', '--model', 'composer-2.5']),
+    expect(result.content).toBe('BRIDGE_OK');
+    const invocations = await readInvocations(logPath);
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0]?.argv).toEqual(
+      expect.arrayContaining([
+        'agent',
+        '--print',
+        '--trust',
+        '--mode',
+        'ask',
+        '--model',
+        'composer-2.5',
+        '--output-format',
+        'json',
+      ]),
     );
-    expect(invocation.argv).not.toContain('--mode');
-    expect(invocation.argv).not.toContain('ask');
-    expect(invocation.stdin).toContain('USER: hello');
+    expect(invocations[0]?.argv).not.toContain('--force');
+    expect(invocations[0]?.argv).not.toContain('--yolo');
+    expect(invocations[0]?.stdin).toContain('USER: hello');
   });
 
   it.each(['agent', 'cursor-agent'])(
-    'omits both --mode and the cursor subcommand when configured binary is standalone %s',
+    'omits the cursor subcommand for standalone %s while retaining ask mode',
     async (filename) => {
-      const { logPath } = await fakeCursorBin('BRIDGE_OK', filename);
+      const { logPath } = await fakeCursorBin(cursorResult('BRIDGE_OK'), filename);
       const backend = createCursorCliBackend(baseConfig);
 
       await backend.complete({
@@ -103,179 +151,192 @@ process.stdout.write(format === 'stream-json' ? ${JSON.stringify(outputs.streamJ
       });
 
       const [invocation] = await readInvocations(logPath);
-      expect(invocation).toBeDefined();
-      expect(invocation.argv.slice(0, 2)).toEqual(['--print', '--trust']);
-      expect(invocation.argv[0]).not.toBe('agent');
-      expect(invocation.argv).not.toContain('--mode');
-      expect(invocation.argv).not.toContain('ask');
+      expect(invocation?.argv.slice(0, 4)).toEqual(['--print', '--trust', '--mode', 'ask']);
+      expect(invocation?.argv[0]).not.toBe('agent');
+      expect(invocation?.argv).toEqual(expect.arrayContaining(['--output-format', 'json']));
     },
   );
 
-  it('includes tool definitions and strict tool-call output instructions in prompt when tools are provided', async () => {
-    const { logPath } = await fakeCursorBin('BRIDGE_OK');
+  it('uses writable default agent mode only for explicit real-workspace requests', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'cursor-ai-bridge-real-workspace-'));
+    const { logPath } = await fakeCursorBin();
+    const backend = createCursorCliBackend({
+      ...baseConfig,
+      workspaceMode: 'real-workspace',
+      realWorkspacePath: workspace,
+    });
+
+    await backend.complete({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'work here' }],
+    });
+
+    const [invocation] = await readInvocations(logPath);
+    expect(invocation?.argv).toEqual(expect.arrayContaining(['--workspace', workspace]));
+    expect(invocation?.argv).not.toContain('--mode');
+    expect(invocation?.argv).not.toContain('ask');
+    expect(invocation?.argv).toEqual(expect.arrayContaining(['--output-format', 'json']));
+  });
+
+  it('includes tool definitions and strict marker instructions in the prompt', async () => {
+    const { logPath } = await fakeCursorBin();
     const backend = createCursorCliBackend(baseConfig);
 
     await backend.complete({
       model: 'composer-2.5',
       messages: [{ role: 'user', content: 'read the file' }],
-      tools: [
-        {
-          type: 'function',
-          function: {
-            name: 'read_file',
-            description: 'Read a file from disk',
-            parameters: { type: 'object', properties: { path: { type: 'string' } } },
-          },
-        },
-      ],
+      tools: [readFileTool],
       tool_choice: 'auto',
     });
 
     const [invocation] = await readInvocations(logPath);
-    expect(invocation).toBeDefined();
-    expect(invocation.stdin).toContain('AVAILABLE TOOLS');
-    expect(invocation.stdin).toContain('read_file');
-    expect(invocation.stdin).toContain('Read a file from disk');
-    expect(invocation.stdin).toContain('Tool choice mode: auto');
-    expect(invocation.stdin).toContain('CURSOR_BRIDGE_TOOL_CALL');
-    expect(invocation.stdin).toContain('Do not claim you used a tool in prose');
+    expect(invocation?.stdin).toContain('AVAILABLE TOOLS');
+    expect(invocation?.stdin).toContain('read_file');
+    expect(invocation?.stdin).toContain('Read a file from disk');
+    expect(invocation?.stdin).toContain('Tool choice mode: auto');
+    expect(invocation?.stdin).toContain('[TOOL_CALLS:');
+    expect(invocation?.stdin).toContain('Do not claim you used a tool in prose');
   });
 
-  it('converts Cursor JSON tool-call output into OpenAI tool_calls for auto tool choice', async () => {
-    await fakeCursorBin(
-      JSON.stringify({
-        tool_calls: [
-          {
-            function: {
-              name: 'write_file',
-              arguments: { path: '/tmp/probe.txt', content: 'ok' },
-            },
-          },
-        ],
+  it('passes aggregate Cursor token usage through exactly', async () => {
+    const { logPath } = await fakeCursorBin(
+      cursorResult('usage result', {
+        inputTokens: 123,
+        outputTokens: 45,
       }),
     );
     const backend = createCursorCliBackend(baseConfig);
 
     const result = await backend.complete({
       model: 'composer-2.5',
-      messages: [{ role: 'user', content: 'write /tmp/probe.txt' }],
-      tools: [
-        {
-          type: 'function',
-          function: {
-            name: 'write_file',
-            description: 'Write a file',
-            parameters: {
-              type: 'object',
-              properties: { path: { type: 'string' }, content: { type: 'string' } },
-            },
-          },
-        },
-      ],
+      messages: [{ role: 'user', content: 'report usage' }],
+    });
+
+    expect(result.content).toBe('usage result');
+    expect(result.usage).toEqual({
+      prompt_tokens: 123,
+      completion_tokens: 45,
+      total_tokens: 168,
+    });
+    expect(await readInvocations(logPath)).toHaveLength(1);
+  });
+
+  it('parses the authoritative tool marker from the aggregate result in one invocation', async () => {
+    const marker =
+      '[TOOL_CALLS: [{"function":{"name":"read_file","arguments":{"path":"/model/chosen.txt"}}}]]';
+    const { logPath } = await fakeCursorBin(
+      cursorResult(marker, {
+        inputTokens: 88,
+        outputTokens: 12,
+      }),
+    );
+    const backend = createCursorCliBackend(baseConfig);
+
+    const result = await backend.complete({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'read a file' }],
+      tools: [readFileTool],
       tool_choice: 'auto',
     });
 
     expect(result.content).toBeNull();
     expect(result.tool_calls).toHaveLength(1);
-    expect(result.tool_calls?.[0]?.type).toBe('function');
-    expect(result.tool_calls?.[0]?.function.name).toBe('write_file');
+    expect(result.tool_calls?.[0]?.function.name).toBe('read_file');
     expect(JSON.parse(result.tool_calls?.[0]?.function.arguments ?? '{}')).toEqual({
-      path: '/tmp/probe.txt',
-      content: 'ok',
+      path: '/model/chosen.txt',
     });
-  });
-
-  it('captures Cursor stream-json tool_call.started before falling back to text output', async () => {
-    const { logPath } = await fakeCursorBinByOutputFormat({
-      streamJson:
-        JSON.stringify({
-          type: 'tool_call',
-          subtype: 'started',
-          tool_call: {
-            id: 'tc_stream_1',
-            name: 'shellToolCall',
-            args: { command: 'printf stream-ok' },
-          },
-        }) + '\n',
-      text: 'SHOULD_NOT_USE_TEXT_FALLBACK',
-    });
-    const backend = createCursorCliBackend(baseConfig);
-
-    const result = await backend.complete({
-      model: 'composer-2.5',
-      messages: [{ role: 'user', content: 'print stream-ok' }],
-      tools: [
-        {
-          type: 'function',
-          function: {
-            name: 'terminal',
-            description: 'Run shell commands',
-            parameters: { type: 'object', properties: { command: { type: 'string' } } },
-          },
-        },
-      ],
-      tool_choice: 'auto',
-    });
-
-    expect(result.content).toBeNull();
-    expect(result.tool_calls?.[0]?.id).toBe('tc_stream_1');
-    expect(result.tool_calls?.[0]?.function.name).toBe('terminal');
-    expect(JSON.parse(result.tool_calls?.[0]?.function.arguments ?? '{}')).toEqual({
-      command: 'printf stream-ok',
-    });
+    expect(result.tool_calls?.[0]?.id).toMatch(/^call_bridge_[0-9a-f-]{36}$/);
+    expect(result.usage).toEqual({ prompt_tokens: 88, completion_tokens: 12, total_tokens: 100 });
     const invocations = await readInvocations(logPath);
     expect(invocations).toHaveLength(1);
-    expect(invocations[0]?.argv).toEqual(
-      expect.arrayContaining(['--output-format', 'stream-json']),
-    );
+    expect(invocations[0]?.argv).toEqual(expect.arrayContaining(['--output-format', 'json']));
   });
 
-  it('falls back to parsing [TOOL_CALLS] from text output when stream-json has no allowed call', async () => {
-    const { logPath } = await fakeCursorBinByOutputFormat({
-      streamJson: JSON.stringify({ type: 'assistant', message: 'no tool here' }) + '\n',
-      text: '[TOOL_CALLS: [{"function":{"name":"terminal","arguments":{"command":"printf fallback-ok"}}}]]',
+  it('retries schema-invalid marker arguments once in the same JSON mode', async () => {
+    const invocations: Array<{ args: string[]; stdin?: string }> = [];
+    const backend = createCursorCliBackend(baseConfig, {
+      commandRunner: async (_command, args, _cwd, _timeoutMs, stdin) => {
+        invocations.push({ args, stdin });
+        return invocations.length === 1
+          ? cursorResult(
+              '[TOOL_CALLS: [{"function":{"name":"terminal","arguments":{"command":42}}}]]',
+            )
+          : cursorResult(
+              '[TOOL_CALLS: [{"function":{"name":"terminal","arguments":{"command":"printf corrected"}}}]]',
+              { inputTokens: 31, outputTokens: 9 },
+            );
+      },
     });
+
+    const result = await backend.complete({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'print corrected' }],
+      tools: [terminalTool],
+      tool_choice: 'auto',
+    });
+
+    expect(invocations).toHaveLength(2);
+    expect(invocations[0]?.args).toEqual(expect.arrayContaining(['--output-format', 'json']));
+    expect(invocations[1]?.args).toEqual(expect.arrayContaining(['--output-format', 'json']));
+    expect(invocations[1]?.stdin).toContain('TOOL ARGUMENT VALIDATION FEEDBACK');
+    expect(result.tool_calls?.[0]?.function.arguments).toBe('{"command":"printf corrected"}');
+    expect(result.usage).toEqual({ prompt_tokens: 31, completion_tokens: 9, total_tokens: 40 });
+  });
+
+  it('falls back to malformed JSON stdout as plain text with estimated usage', async () => {
+    const malformed = 'not-json assistant output';
+    const { logPath } = await fakeCursorBin(malformed);
     const backend = createCursorCliBackend(baseConfig);
 
     const result = await backend.complete({
       model: 'composer-2.5',
-      messages: [{ role: 'user', content: 'print fallback-ok' }],
-      tools: [
-        {
-          type: 'function',
-          function: {
-            name: 'terminal',
-            description: 'Run shell commands',
-            parameters: { type: 'object', properties: { command: { type: 'string' } } },
-          },
-        },
-      ],
-      tool_choice: 'auto',
+      messages: [{ role: 'user', content: 'fallback please' }],
     });
 
-    expect(result.content).toBeNull();
-    expect(result.tool_calls?.[0]?.function.name).toBe('terminal');
-    expect(JSON.parse(result.tool_calls?.[0]?.function.arguments ?? '{}')).toEqual({
-      command: 'printf fallback-ok',
-    });
-    const invocations = await readInvocations(logPath);
-    expect(invocations).toHaveLength(2);
-    expect(invocations[0]?.argv).toEqual(
-      expect.arrayContaining(['--output-format', 'stream-json']),
+    expect(result.content).toBe(malformed);
+    expect(result.usage?.prompt_tokens).toBeGreaterThan(0);
+    expect(result.usage?.completion_tokens).toBe(Math.ceil(malformed.length / 4));
+    expect(result.usage?.total_tokens).toBe(
+      (result.usage?.prompt_tokens ?? 0) + (result.usage?.completion_tokens ?? 0),
     );
-    expect(invocations[1]?.argv).toEqual(expect.arrayContaining(['--output-format', 'text']));
+    expect(await readInvocations(logPath)).toHaveLength(1);
   });
 
-  it('does not redelegate tool_choice=auto after tool results are present in history', async () => {
-    const { logPath } = await fakeCursorBinByOutputFormat({
-      streamJson:
-        JSON.stringify({
-          type: 'tool_call',
-          subtype: 'started',
-          tool_call: { name: 'shellToolCall', args: { command: 'printf SHOULD_NOT_REPEAT' } },
-        }) + '\n',
-      text: 'Final answer from tool result',
+  it('falls back to estimated usage when an aggregate result omits usage', async () => {
+    await fakeCursorBin(cursorResult('aggregate without usage', null));
+    const backend = createCursorCliBackend(baseConfig);
+
+    const result = await backend.complete({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'estimate usage' }],
     });
+
+    expect(result.content).toBe('aggregate without usage');
+    expect(result.usage?.prompt_tokens).toBeGreaterThan(0);
+    expect(result.usage?.completion_tokens).toBe(Math.ceil('aggregate without usage'.length / 4));
+  });
+
+  it('raises the Cursor result message when aggregate JSON reports is_error', async () => {
+    const output = JSON.stringify({
+      type: 'result',
+      subtype: 'error',
+      is_error: true,
+      result: 'Cursor upstream quota exhausted',
+    });
+    const { logPath } = await fakeCursorBin(output);
+    const backend = createCursorCliBackend(baseConfig);
+
+    await expect(
+      backend.complete({
+        model: 'composer-2.5',
+        messages: [{ role: 'user', content: 'hello' }],
+      }),
+    ).rejects.toThrow('Cursor upstream quota exhausted');
+    expect(await readInvocations(logPath)).toHaveLength(1);
+  });
+
+  it('uses one invocation for a tool-history follow-up that returns final text', async () => {
+    const { logPath } = await fakeCursorBin(cursorResult('Final answer from tool result'));
     const backend = createCursorCliBackend(baseConfig);
 
     const result = await backend.complete({
@@ -295,16 +356,7 @@ process.stdout.write(format === 'stream-json' ? ${JSON.stringify(outputs.streamJ
         },
         { role: 'tool', tool_call_id: 'call_terminal_1', content: 'once' },
       ],
-      tools: [
-        {
-          type: 'function',
-          function: {
-            name: 'terminal',
-            description: 'Run shell commands',
-            parameters: { type: 'object', properties: { command: { type: 'string' } } },
-          },
-        },
-      ],
+      tools: [terminalTool],
       tool_choice: 'auto',
     });
 
@@ -312,103 +364,195 @@ process.stdout.write(format === 'stream-json' ? ${JSON.stringify(outputs.streamJ
     expect(result.tool_calls).toBeUndefined();
     const invocations = await readInvocations(logPath);
     expect(invocations).toHaveLength(1);
-    expect(invocations[0]?.argv).toEqual(expect.arrayContaining(['--output-format', 'text']));
-    expect(invocations[0]?.argv).not.toContain('stream-json');
+    expect(invocations[0]?.stdin).toContain('TOOL RESULT (call_id=call_terminal_1): once');
+    expect(invocations[0]?.argv).toEqual(expect.arrayContaining(['--output-format', 'json']));
   });
 
-  it('synthesizes OpenAI tool_calls for required tool_choice without invoking Cursor CLI', async () => {
-    const { logPath } = await fakeCursorBin('SHOULD_NOT_RUN');
-    const backend = createCursorCliBackend(baseConfig);
+  it('uses one invocation for a sequential follow-up that emits the next tool marker', async () => {
+    const secondMarker =
+      '[TOOL_CALLS: [{"function":{"name":"terminal","arguments":{"command":"printf second"}}}]]';
+    const invocations: string[] = [];
+    const backend = createCursorCliBackend(baseConfig, {
+      commandRunner: async (_command, _args, _cwd, _timeoutMs, stdin) => {
+        invocations.push(stdin ?? '');
+        return cursorResult(secondMarker);
+      },
+    });
 
     const result = await backend.complete({
       model: 'composer-2.5',
-      messages: [{ role: 'user', content: 'read /tmp/test.txt' }],
-      tools: [
+      messages: [
+        { role: 'user', content: 'run first, then second' },
         {
-          type: 'function',
-          function: {
-            name: 'read_file',
-            description: 'Read a file from disk',
-            parameters: { type: 'object', properties: { path: { type: 'string' } } },
-          },
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'call_first',
+              type: 'function',
+              function: { name: 'terminal', arguments: '{"command":"printf first"}' },
+            },
+          ],
         },
+        { role: 'tool', tool_call_id: 'call_first', content: 'first' },
       ],
-      tool_choice: 'required',
+      tools: [terminalTool],
+      tool_choice: 'auto',
     });
 
-    expect(result.content).toBeNull();
-    expect(result.tool_calls?.[0]?.type).toBe('function');
-    expect(result.tool_calls?.[0]?.function.name).toBe('read_file');
-    expect(JSON.parse(result.tool_calls?.[0]?.function.arguments ?? '{}')).toEqual({
-      path: '/tmp/test.txt',
-    });
-    await expect(readFile(logPath, 'utf8')).rejects.toThrow();
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0]).toContain('TOOL RESULT (call_id=call_first): first');
+    expect(result.tool_calls).toHaveLength(1);
+    expect(result.tool_calls?.[0]?.function.arguments).toBe('{"command":"printf second"}');
   });
 
-  it('synthesizes OpenAI tool_calls for forced function tool_choice', async () => {
-    await fakeCursorBin('SHOULD_NOT_RUN');
+  it('enforces required and forced function choices on model-produced marker calls', async () => {
+    const marker =
+      '[TOOL_CALLS: [{"function":{"name":"terminal","arguments":{"command":"ignored"}}},{"function":{"name":"read_file","arguments":{"path":"forced.txt"}}}]]';
+    await fakeCursorBin(cursorResult(marker));
     const backend = createCursorCliBackend(baseConfig);
 
     const result = await backend.complete({
       model: 'composer-2.5',
       messages: [{ role: 'user', content: 'read the file' }],
-      tools: [
-        {
-          type: 'function',
-          function: {
-            name: 'read_file',
-            description: 'Read a file from disk',
-            parameters: { type: 'object', properties: { path: { type: 'string' } } },
-          },
-        },
-      ],
+      tools: [terminalTool, readFileTool],
       tool_choice: { type: 'function', function: { name: 'read_file' } },
     });
 
-    expect(result.content).toBeNull();
+    expect(result.tool_calls).toHaveLength(1);
     expect(result.tool_calls?.[0]?.function.name).toBe('read_file');
+    expect(JSON.parse(result.tool_calls?.[0]?.function.arguments ?? '{}')).toEqual({
+      path: 'forced.txt',
+    });
   });
 
-  it('includes tool_call_id in prompt for tool result messages', async () => {
-    const { logPath } = await fakeCursorBin('BRIDGE_OK');
+  it('fails when a required choice returns no marker', async () => {
+    await fakeCursorBin(cursorResult('No tool call'));
+    const backend = createCursorCliBackend(baseConfig);
+
+    await expect(
+      backend.complete({
+        model: 'composer-2.5',
+        messages: [{ role: 'user', content: 'read something' }],
+        tools: [readFileTool],
+        tool_choice: 'required',
+      }),
+    ).rejects.toThrow('Cursor did not return the required tool call');
+  });
+
+  it('treats tool_choice=none markers as plain content and omits tool instructions', async () => {
+    const marker =
+      '[TOOL_CALLS: [{"function":{"name":"read_file","arguments":{"path":"ignored"}}}]]';
+    const { logPath } = await fakeCursorBin(cursorResult(marker));
+    const backend = createCursorCliBackend(baseConfig);
+
+    const result = await backend.complete({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'answer without tools' }],
+      tools: [readFileTool],
+      tool_choice: 'none',
+    });
+
+    expect(result.content).toBe(marker);
+    expect(result.tool_calls).toBeUndefined();
+    const [invocation] = await readInvocations(logPath);
+    expect(invocation?.stdin).not.toContain('AVAILABLE TOOLS');
+    expect(invocation?.stdin).not.toContain('Tool choice mode');
+  });
+
+  it('returns at most one marker call when parallel_tool_calls=false', async () => {
+    const marker =
+      '[TOOL_CALLS: [{"function":{"name":"read_file","arguments":{"path":"one"}}},{"function":{"name":"read_file","arguments":{"path":"two"}}}]]';
+    await fakeCursorBin(cursorResult(marker));
+    const backend = createCursorCliBackend(baseConfig);
+
+    const result = await backend.complete({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'read two files' }],
+      tools: [readFileTool],
+      tool_choice: 'required',
+      parallel_tool_calls: false,
+    });
+
+    expect(result.tool_calls).toHaveLength(1);
+    expect(JSON.parse(result.tool_calls?.[0]?.function.arguments ?? '{}')).toEqual({ path: 'one' });
+  });
+
+  it('generates unique UUID-based ids for multiple marker calls', async () => {
+    const marker =
+      '[TOOL_CALLS: [{"function":{"name":"read_file","arguments":{"path":"one"}}},{"function":{"name":"read_file","arguments":{"path":"two"}}}]]';
+    await fakeCursorBin(cursorResult(marker));
+    const backend = createCursorCliBackend(baseConfig);
+
+    const result = await backend.complete({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'read two files' }],
+      tools: [readFileTool],
+      tool_choice: 'required',
+    });
+
+    const ids = result.tool_calls?.map((call) => call.id) ?? [];
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    expect(ids.every((id) => /^call_bridge_[0-9a-f-]{36}$/.test(id))).toBe(true);
+  });
+
+  it('maps developer messages to the same prompt role as system messages', async () => {
+    const { logPath } = await fakeCursorBin();
     const backend = createCursorCliBackend(baseConfig);
 
     await backend.complete({
       model: 'composer-2.5',
       messages: [
-        { role: 'user', content: 'read the file' },
-        {
-          role: 'tool',
-          content: 'file contents here',
-          tool_call_id: 'call_abc123',
-        },
+        { role: 'developer', content: 'follow developer policy' },
+        { role: 'user', content: 'hello' },
       ],
     });
 
     const [invocation] = await readInvocations(logPath);
-    expect(invocation).toBeDefined();
-    expect(invocation.stdin).toContain('TOOL RESULT (call_id=call_abc123): file contents here');
+    expect(invocation?.stdin).toContain('SYSTEM: follow developer policy');
+    expect(invocation?.stdin).not.toContain('DEVELOPER:');
   });
 
-  it('exposes the configured default model in model discovery', async () => {
+  it('parses model ids with and without current markers and caches discovery', async () => {
+    const { logPath } = await fakeCursorBin(
+      [
+        'composer-2.5 - Composer 2.5 (current)',
+        'auto - Auto',
+        'gpt-5.3-codex - GPT-5.3 Codex',
+      ].join('\n'),
+      'cursor-agent',
+    );
+    const backend = createCursorCliBackend(baseConfig);
+
+    const first = await backend.listModels();
+    const second = await backend.listModels();
+
+    expect(first.map((model) => model.id)).toEqual(['composer-2.5', 'auto', 'gpt-5.3-codex']);
+    expect(first.every((model) => model.object === 'model' && model.owned_by === 'cursor')).toBe(
+      true,
+    );
+    expect(second).toEqual(first);
+    const invocations = await readInvocations(logPath);
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0]?.argv).toEqual(['models']);
+  });
+
+  it('falls back to realistic static models when model output is empty', async () => {
+    await fakeCursorBin(' \n', 'cursor-agent');
     const backend = createCursorCliBackend(baseConfig);
 
     const models = await backend.listModels();
 
-    expect(models.map((model) => model.id)).toContain('composer-2.5');
+    expect(models.map((model) => model.id)).toEqual(['composer-2.5', 'auto']);
   });
 
-  it('returns non-zero estimated token usage when Cursor CLI does not report usage', async () => {
-    await fakeCursorBin('BRIDGE_OK');
-    const backend = createCursorCliBackend(baseConfig);
+  it('falls back after model CLI failure and prepends a missing configured default', async () => {
+    await failingCursorBin();
+    const backend = createCursorCliBackend({ ...baseConfig, defaultModel: 'gpt-5.3-codex' });
 
-    const result = await backend.complete({
-      model: 'composer-2.5',
-      messages: [{ role: 'user', content: 'hello bridge' }],
-    });
+    const models = await backend.listModels();
 
-    expect(result.usage?.prompt_tokens).toBeGreaterThan(0);
-    expect(result.usage?.completion_tokens).toBeGreaterThan(0);
-    expect(result.usage?.total_tokens).toBeGreaterThan(0);
+    expect(models.map((model) => model.id)).toEqual(['gpt-5.3-codex', 'composer-2.5', 'auto']);
   });
 });

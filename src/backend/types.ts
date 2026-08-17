@@ -1,4 +1,9 @@
-export type ChatRole = 'system' | 'user' | 'assistant' | 'tool';
+import type {
+  CursorApiCredential,
+  CursorApiCredentialStateView,
+} from './cursor-api/credentials.js';
+
+export type ChatRole = 'system' | 'developer' | 'user' | 'assistant' | 'tool';
 
 export interface ToolFunction {
   name: string;
@@ -37,10 +42,12 @@ export interface ChatCompletionRequest {
   model: string;
   messages: ChatMessage[];
   stream?: boolean;
+  stream_options?: { include_usage?: boolean };
   temperature?: number;
   max_tokens?: number;
   tools?: Tool[];
   tool_choice?: ToolChoice;
+  parallel_tool_calls?: boolean;
 }
 
 export interface BridgeModel {
@@ -55,22 +62,49 @@ export interface BackendHealth {
   type: string;
   authConfigured: boolean;
   detail?: string;
+  configuredMode?: string;
+  activeBackend?: string;
+  fallbackAvailable?: boolean;
+  flipState?: {
+    consecutiveFatal: number;
+    cooldownUntil?: number;
+    reason?: string;
+  };
+}
+
+export interface CompletionUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
 }
 
 export interface CompletionResult {
   content: string | null;
   model: string;
   tool_calls?: ToolCall[];
-  usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-  };
+  usage?: CompletionUsage;
 }
+
+export type CompletionStreamEvent =
+  | { type: 'thinking'; text: string }
+  | { type: 'content'; text: string }
+  | {
+      type: 'done';
+      usage: CompletionUsage;
+      is_error: boolean;
+      message?: string;
+    };
 
 export interface CursorBackend {
   readonly type: string;
   health(): Promise<BackendHealth>;
   listModels(): Promise<BridgeModel[]>;
-  complete(request: ChatCompletionRequest): Promise<CompletionResult>;
+  complete(request: ChatCompletionRequest, signal?: AbortSignal): Promise<CompletionResult>;
+  completeStream(
+    request: ChatCompletionRequest,
+    signal?: AbortSignal,
+  ): AsyncIterable<CompletionStreamEvent>;
+  shutdown?(): Promise<void>;
+  credentialStates?(): CursorApiCredentialStateView[];
+  updateCredentials?(credentials: CursorApiCredential[]): void;
 }

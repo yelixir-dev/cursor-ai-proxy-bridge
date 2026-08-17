@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   filterToolCallsToAllowed,
-  mapCursorStreamToolCall,
   parseToolCallsFromText,
   toolDelegationPromptSuffix,
 } from '../src/backend/tool-call-parse.js';
@@ -36,58 +35,31 @@ describe('tool-call parsing', () => {
     expect(JSON.parse(parsed[0]?.function.arguments ?? '{}')).toEqual({ command: 'printf ok' });
   });
 
-  it('maps Cursor stream-json shell tool_call.started events to OpenAI terminal tool_calls', () => {
-    const mapped = mapCursorStreamToolCall({
-      type: 'tool_call',
-      subtype: 'started',
-      tool_call: {
-        id: 'tc_1',
-        name: 'shellToolCall',
-        args: { command: 'python3 -c "print(123)"' },
-      },
-    });
+  it('generates unique UUID-based ids for marker calls without ids', () => {
+    const parsed = parseToolCallsFromText(
+      '[TOOL_CALLS: [{"function":{"name":"terminal","arguments":{}}},{"function":{"name":"terminal","arguments":{}}}]]',
+    );
 
-    expect(mapped).toEqual({
-      id: 'tc_1',
-      type: 'function',
-      function: {
-        name: 'terminal',
-        arguments: JSON.stringify({ command: 'python3 -c "print(123)"' }),
-      },
-    });
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]?.id).toMatch(/^call_bridge_[0-9a-f-]{36}$/);
+    expect(parsed[1]?.id).toMatch(/^call_bridge_[0-9a-f-]{36}$/);
+    expect(parsed[0]?.id).not.toBe(parsed[1]?.id);
   });
 
-  it('maps common Cursor stream tool names to Hermes/OpenAI-compatible tool names', () => {
-    expect(
-      mapCursorStreamToolCall({
-        subtype: 'started',
-        tool_call: { name: 'readToolCall', args: { path: 'a' } },
-      })?.function.name,
-    ).toBe('read_file');
-    expect(
-      mapCursorStreamToolCall({
-        subtype: 'started',
-        tool_call: { name: 'writeToolCall', args: { path: 'a', content: 'b' } },
-      })?.function.name,
-    ).toBe('write_file');
-    expect(
-      mapCursorStreamToolCall({
-        subtype: 'started',
-        tool_call: { name: 'searchReplaceToolCall', args: { path: 'a' } },
-      })?.function.name,
-    ).toBe('patch');
-    expect(
-      mapCursorStreamToolCall({
-        subtype: 'started',
-        tool_call: { name: 'grepToolCall', args: { pattern: 'x' } },
-      })?.function.name,
-    ).toBe('search_files');
-    expect(
-      mapCursorStreamToolCall({
-        subtype: 'started',
-        tool_call: { name: 'listDirToolCall', args: { path: '.' } },
-      })?.function.name,
-    ).toBe('search_files');
+  it('preserves a client-declared custom name ending in ToolCall', () => {
+    const parsed = parseToolCallsFromText(
+      '[TOOL_CALLS: [{"function":{"name":"myToolCall","arguments":{"value":"kept"}}}]]',
+    );
+    const allowed = filterToolCallsToAllowed(parsed, [
+      {
+        type: 'function',
+        function: { name: 'myToolCall', parameters: { type: 'object' } },
+      },
+    ]);
+
+    expect(allowed).toHaveLength(1);
+    expect(allowed[0]?.function.name).toBe('myToolCall');
+    expect(JSON.parse(allowed[0]?.function.arguments ?? '{}')).toEqual({ value: 'kept' });
   });
 
   it('filters parsed tool calls to tools allowed by the OpenAI request', () => {
