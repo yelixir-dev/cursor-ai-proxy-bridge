@@ -740,6 +740,7 @@ describe('cursor-ai-bridge server', () => {
           function: { name: 'read_file', parameters: { type: 'object' } },
         },
       ],
+      parallel_tool_calls: true,
     });
 
     await markerYielded.promise;
@@ -1101,6 +1102,83 @@ describe('cursor-ai-bridge server', () => {
     expect(res.json().choices[0].message.content).toContain('LONG_TOOL_DESC_OK');
     expect(observedDescription.length).toBeLessThanOrEqual(2_000);
     expect(observedDescription).toContain('[description truncated by cursor composer bridge]');
+  });
+
+  it('defaults Composer tool rounds to one call when parallel mode is omitted', async () => {
+    let observedParallelToolCalls: boolean | undefined;
+    const backend: CursorBackend = {
+      ...createMockBackend(),
+      async complete(request) {
+        observedParallelToolCalls = request.parallel_tool_calls;
+        return { content: 'COMPOSER_DEFAULT_OK', model: request.model };
+      },
+    };
+    const server = await buildServer({
+      config: { ...baseConfig, apiKey: 'test-bridge-key' },
+      backend,
+    });
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-bridge-key' },
+      payload: {
+        model: 'composer-2.5',
+        messages: [{ role: 'user', content: 'Call the tool.' }],
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'step',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(observedParallelToolCalls).toBe(false);
+    await server.close();
+  });
+
+  it('preserves explicitly enabled Composer parallel tool calls', async () => {
+    let observedParallelToolCalls: boolean | undefined;
+    const backend: CursorBackend = {
+      ...createMockBackend(),
+      async complete(request) {
+        observedParallelToolCalls = request.parallel_tool_calls;
+        return { content: 'COMPOSER_PARALLEL_OK', model: request.model };
+      },
+    };
+    const server = await buildServer({
+      config: { ...baseConfig, apiKey: 'test-bridge-key' },
+      backend,
+    });
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-bridge-key' },
+      payload: {
+        model: 'composer-2.5',
+        messages: [{ role: 'user', content: 'Call both tools.' }],
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'step',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        ],
+        parallel_tool_calls: true,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(observedParallelToolCalls).toBe(true);
+    await server.close();
   });
 
   it('retries invalid tool arguments once, then returns a detailed 502', async () => {

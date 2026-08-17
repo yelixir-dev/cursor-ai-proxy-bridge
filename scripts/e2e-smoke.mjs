@@ -173,6 +173,20 @@ const lookupTool = {
   },
 };
 
+const stepTool = {
+  type: 'function',
+  function: {
+    name: 'record_step',
+    description: 'Record exactly one sequential round after the preceding round result.',
+    parameters: {
+      type: 'object',
+      properties: { round: { type: 'integer', minimum: 1, maximum: 10 } },
+      required: ['round'],
+      additionalProperties: false,
+    },
+  },
+};
+
 const chainTools = ['chain_alpha', 'chain_beta', 'chain_gamma'].map((name) => ({
   type: 'function',
   function: {
@@ -407,6 +421,7 @@ async function main() {
       ],
       tools: [echoTool],
       tool_choice: 'auto',
+      parallel_tool_calls: true,
     });
     assert(response.status === 200, `expected 200, got ${response.status}`);
     const calls = callsFrom(body);
@@ -455,6 +470,39 @@ async function main() {
     );
   });
 
+  await scenario('Composer defaults to ten single-call rounds', async () => {
+    const history = [
+      {
+        role: 'user',
+        content:
+          'Run ten sequential rounds. In each response call record_step exactly once with the next round number, starting at 1. Wait for each tool result before requesting the next round. Do not answer directly.',
+      },
+    ];
+
+    for (let round = 1; round <= 10; round += 1) {
+      const result = await chat(baseUrl, {
+        messages: history,
+        tools: [stepTool],
+        tool_choice: 'auto',
+      });
+      assert(result.response.status === 200, `round ${round} returned ${result.response.status}`);
+      const roundCalls = callsFrom(result.body);
+      assert(roundCalls.length === 1, `round ${round} expected one call, got ${roundCalls.length}`);
+      assert(
+        parseArguments(roundCalls[0]).round === round,
+        `round ${round} returned different arguments`,
+      );
+      history.push(
+        { role: 'assistant', content: null, tool_calls: roundCalls },
+        {
+          role: 'tool',
+          tool_call_id: roundCalls[0].id,
+          content: `Round ${round} accepted.`,
+        },
+      );
+    }
+  });
+
   await scenario('dependent 3-2-2 multi-tool conversation', async () => {
     const history = [
       {
@@ -467,6 +515,7 @@ async function main() {
       messages: history,
       tools: chainTools,
       tool_choice: 'required',
+      parallel_tool_calls: true,
     });
     assert(first.response.status === 200, `round 1 returned ${first.response.status}`);
     const firstCalls = callsFrom(first.body);
@@ -505,6 +554,7 @@ async function main() {
       messages: history,
       tools: chainTools,
       tool_choice: 'required',
+      parallel_tool_calls: true,
     });
     assert(second.response.status === 200, `round 2 returned ${second.response.status}`);
     const secondCalls = callsFrom(second.body);
@@ -537,6 +587,7 @@ async function main() {
       messages: history,
       tools: chainTools,
       tool_choice: 'required',
+      parallel_tool_calls: true,
     });
     assert(third.response.status === 200, `round 3 returned ${third.response.status}`);
     const thirdCalls = callsFrom(third.body);

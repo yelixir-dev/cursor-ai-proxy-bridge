@@ -177,6 +177,19 @@ const chatCompletionSchema = z.object({
   parallel_tool_calls: z.boolean().optional(),
 });
 
+type ParsedChatCompletionRequest = z.infer<typeof chatCompletionSchema>;
+
+function withStableToolDefaults(request: ParsedChatCompletionRequest): ParsedChatCompletionRequest {
+  if (
+    request.model !== 'composer-2.5' ||
+    !request.tools?.length ||
+    request.parallel_tool_calls !== undefined
+  ) {
+    return request;
+  }
+  return { ...request, parallel_tool_calls: false };
+}
+
 export interface BuildServerOptions {
   config: BridgeConfig;
   backend: CursorBackend;
@@ -762,23 +775,24 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     if (!parsed.success) {
       return reply.code(400).send(openAiError(z.prettifyError(parsed.error)));
     }
-    let modelDisabled = !modelPolicy.enabled(parsed.data.model);
-    if (!modelDisabled && parsed.data.model !== config.defaultModel) {
+    const completionRequest = withStableToolDefaults(parsed.data);
+    let modelDisabled = !modelPolicy.enabled(completionRequest.model);
+    if (!modelDisabled && completionRequest.model !== config.defaultModel) {
       const liveModels = await backend.listModels();
-      modelDisabled = !liveModels.some((model) => model.id === parsed.data.model);
+      modelDisabled = !liveModels.some((model) => model.id === completionRequest.model);
     }
     if (modelDisabled) {
-      return reply.code(400).send(openAiError(`model '${parsed.data.model}' is disabled`));
+      return reply.code(400).send(openAiError(`model '${completionRequest.model}' is disabled`));
     }
     try {
-      assertValidToolHistory(parsed.data.messages);
+      assertValidToolHistory(completionRequest.messages);
     } catch (error) {
       if (error instanceof ToolHistoryValidationError) {
         return reply.code(400).send(openAiError(error.message));
       }
       throw error;
     }
-    const configurationError = toolConfigurationError(parsed.data);
+    const configurationError = toolConfigurationError(completionRequest);
     if (configurationError) {
       return reply.code(400).send(openAiError(configurationError));
     }
@@ -794,17 +808,17 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     try {
       const now = Math.floor(Date.now() / 1000);
       const id = `chatcmpl-${randomUUID()}`;
-      if (parsed.data.stream) {
+      if (completionRequest.stream) {
         return await streamChatCompletion(
           backend,
-          parsed.data,
+          completionRequest,
           reply,
           requestAbort.signal,
           id,
           now,
         );
       }
-      const result = await backend.complete(parsed.data, requestAbort.signal);
+      const result = await backend.complete(completionRequest, requestAbort.signal);
       return chatCompletionPayload(result, id, now);
     } catch (error) {
       if (requestAbort.signal.aborted) return reply;
