@@ -49,7 +49,9 @@ npm start
 
 ### Headless 호스트용 descriptor snapshot
 
-`cursor-api`는 Cursor service에 직접 연결하며 descriptor snapshot이 필요합니다. `cursor-agent`가 설치된 머신에서 snapshot을 추출하고 build한 뒤 direct backend를 시작합니다.
+`cursor-api`는 Cursor service에 직접 연결하며 descriptor snapshot이 필요합니다. Private repository에 현재 snapshot을 포함하므로 headless 호스트는 `cursor-agent` 설치 없이 clone, build, 실행할 수 있습니다.
+
+Cursor가 protocol을 변경하면 `cursor-agent`가 설치된 머신에서 추적 중인 snapshot을 갱신합니다.
 
 ```bash
 CURSOR_BRIDGE_CURSOR_BIN="$HOME/.local/bin/cursor-agent" npm run extract-protos
@@ -57,7 +59,7 @@ npm run build
 CURSOR_BRIDGE_BACKEND=cursor-api npm start
 ```
 
-생성된 `src/backend/cursor-api/proto-descriptors.json`은 gitignore되며 build 때 `dist`로 복사됩니다. CLI가 없는 호스트에서는 `npm run extract-protos`를 `cursor-agent`가 있는 머신에서 실행하고 생성된 `proto-descriptors.json`을 복사한 다음 `CURSOR_BRIDGE_CURSOR_API_DESCRIPTORS`를 그 경로로 설정하세요. Headless 인증에는 Cursor Dashboard -> API Keys에서 발급한 `CURSOR_API_KEY`를 설정합니다. `CURSOR_AUTH_TOKEN`도 사용할 수 있으며, env 또는 dashboard credential이 없으면 system credential이 macOS Keychain을 사용할 수 있습니다.
+추적 중인 `src/backend/cursor-api/proto-descriptors.json`은 build 때 `dist`로 복사됩니다. `CURSOR_BRIDGE_CURSOR_API_DESCRIPTORS`로 외부 snapshot을 지정하는 override도 유지됩니다. Headless 인증에는 Cursor Dashboard -> API Keys에서 발급한 `CURSOR_API_KEY`를 설정합니다. `CURSOR_AUTH_TOKEN`도 사용할 수 있으며, env 또는 dashboard credential이 없으면 system credential이 macOS Keychain을 사용할 수 있습니다.
 
 ### npm scripts
 

@@ -8,4 +8,3 @@ dist/
 .cursor-token
 .vitest-tmp/
 .omo/
-src/backend/cursor-api/proto-descriptors.json

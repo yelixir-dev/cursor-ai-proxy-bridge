@@ -49,7 +49,9 @@ The default address is `http://127.0.0.1:9996`. Set `CURSOR_BRIDGE_API_KEY` befo
 
 ### Descriptor snapshot for headless hosts
 
-`cursor-api` connects directly to Cursor's service and needs a descriptor snapshot. On a machine with `cursor-agent` installed, extract the snapshot, build, and start the direct backend:
+`cursor-api` connects directly to Cursor's service and needs a descriptor snapshot. The private repository includes the current snapshot, so a headless host can clone, build, and run without installing `cursor-agent`.
+
+When Cursor changes its protocol, refresh the committed snapshot on a machine with `cursor-agent` installed:
 
 ```bash
 CURSOR_BRIDGE_CURSOR_BIN="$HOME/.local/bin/cursor-agent" npm run extract-protos
@@ -57,7 +59,7 @@ npm run build
 CURSOR_BRIDGE_BACKEND=cursor-api npm start
 ```
 
-The generated `src/backend/cursor-api/proto-descriptors.json` is gitignored and copied into `dist` by the build. For a host without the CLI, run `npm run extract-protos` on a machine that has `cursor-agent`, copy the generated `proto-descriptors.json`, and set `CURSOR_BRIDGE_CURSOR_API_DESCRIPTORS` to its path. Set `CURSOR_API_KEY` from Cursor Dashboard -> API Keys for headless authentication. `CURSOR_AUTH_TOKEN` is also accepted, and a system credential can use the macOS Keychain when no env or dashboard credential is present.
+The tracked `src/backend/cursor-api/proto-descriptors.json` is copied into `dist` by the build. `CURSOR_BRIDGE_CURSOR_API_DESCRIPTORS` remains available for overriding it with an external snapshot. Set `CURSOR_API_KEY` from Cursor Dashboard -> API Keys for headless authentication. `CURSOR_AUTH_TOKEN` is also accepted, and a system credential can use the macOS Keychain when no env or dashboard credential is present.
 
 ### npm scripts
 

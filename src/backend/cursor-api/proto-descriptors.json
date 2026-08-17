@@ -1,0 +1,3943 @@
+{
+  "format": 1,
+  "extractedAt": "2026-08-17T11:06:52.990Z",
+  "bundleVersion": "2026.08.11-e8db854",
+  "clientVersion": "cli-2026.08.11-e8db854",
+  "roots": [
+    "aiserver.v1.GetMeRequest",
+    "aiserver.v1.GetMeResponse",
+    "aiserver.v1.GetServerConfigRequest",
+    "aiserver.v1.GetServerConfigResponse",
+    "aiserver.v1.AvailableModelsRequest",
+    "aiserver.v1.AvailableModelsResponse",
+    "agent.v1.GetUsableModelsRequest",
+    "agent.v1.GetUsableModelsResponse",
+    "agent.v1.GetDefaultModelForCliRequest",
+    "agent.v1.GetDefaultModelForCliResponse",
+    "agent.v1.AgentClientMessage",
+    "agent.v1.AgentServerMessage"
+  ],
+  "services": [
+    {
+      "service": "aiserver.v1.DashboardService",
+      "method": "GetMe",
+      "input": "aiserver.v1.GetMeRequest",
+      "output": "aiserver.v1.GetMeResponse",
+      "kind": "unary"
+    },
+    {
+      "service": "aiserver.v1.AiService",
+      "method": "AvailableModels",
+      "input": "aiserver.v1.AvailableModelsRequest",
+      "output": "aiserver.v1.AvailableModelsResponse",
+      "kind": "unary"
+    },
+    {
+      "service": "aiserver.v1.ServerConfigService",
+      "method": "GetServerConfig",
+      "input": "aiserver.v1.GetServerConfigRequest",
+      "output": "aiserver.v1.GetServerConfigResponse",
+      "kind": "unary"
+    },
+    {
+      "service": "aiserver.v1.AiService",
+      "method": "GetUsableModels",
+      "input": "agent.v1.GetUsableModelsRequest",
+      "output": "agent.v1.GetUsableModelsResponse",
+      "kind": "unary"
+    },
+    {
+      "service": "aiserver.v1.AiService",
+      "method": "GetDefaultModelForCli",
+      "input": "agent.v1.GetDefaultModelForCliRequest",
+      "output": "agent.v1.GetDefaultModelForCliResponse",
+      "kind": "unary"
+    },
+    {
+      "service": "agent.v1.AgentService",
+      "method": "Run",
+      "input": "agent.v1.AgentClientMessage",
+      "output": "agent.v1.AgentServerMessage",
+      "kind": "bidi_streaming"
+    }
+  ],
+  "messages": {
+    "agent.v1.AgentClientMessage": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "run_request",
+          "localName": "runRequest",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.AgentRunRequest"
+        },
+        {
+          "no": 2,
+          "name": "exec_client_message",
+          "localName": "execClientMessage",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ExecClientMessage"
+        },
+        {
+          "no": 3,
+          "name": "kv_client_message",
+          "localName": "kvClientMessage",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.KvClientMessage"
+        },
+        {
+          "no": 7,
+          "name": "client_heartbeat",
+          "localName": "clientHeartbeat",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ClientHeartbeat"
+        }
+      ]
+    },
+    "agent.v1.AgentRunRequest": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "conversation_state",
+          "localName": "conversationState",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.ConversationStateStructure"
+        },
+        {
+          "no": 2,
+          "name": "action",
+          "localName": "action",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.ConversationAction"
+        },
+        {
+          "no": 9,
+          "name": "requested_model",
+          "localName": "requestedModel",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.RequestedModel"
+        },
+        {
+          "no": 4,
+          "name": "mcp_tools",
+          "localName": "mcpTools",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.McpTools"
+        },
+        {
+          "no": 5,
+          "name": "conversation_id",
+          "localName": "conversationId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 12,
+          "name": "exclude_workspace_context",
+          "localName": "excludeWorkspaceContext",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 14,
+          "name": "selected_subagent_models",
+          "localName": "selectedSubagentModels",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.RequestedModel"
+        },
+        {
+          "no": 16,
+          "name": "conversation_group_id",
+          "localName": "conversationGroupId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 25,
+          "name": "run_id",
+          "localName": "runId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.AgentServerMessage": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "interaction_update",
+          "localName": "interactionUpdate",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.InteractionUpdate"
+        },
+        {
+          "no": 2,
+          "name": "exec_server_message",
+          "localName": "execServerMessage",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ExecServerMessage"
+        },
+        {
+          "no": 4,
+          "name": "kv_server_message",
+          "localName": "kvServerMessage",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.KvServerMessage"
+        }
+      ]
+    },
+    "agent.v1.AgentStoreConflictError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.AgentStoreConflictResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.AgentStoreConflictError"
+        }
+      ]
+    },
+    "agent.v1.BackgroundShellSpawnError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "command",
+          "localName": "command",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "working_directory",
+          "localName": "workingDirectory",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.BackgroundShellSpawnResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.BackgroundShellSpawnError"
+        }
+      ]
+    },
+    "agent.v1.CanvasDiagnosticsError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "path",
+          "localName": "path",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.CanvasDiagnosticsResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.CanvasDiagnosticsError"
+        }
+      ]
+    },
+    "agent.v1.ClientHeartbeat": {
+      "fields": []
+    },
+    "agent.v1.ComputerUseError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "action_count",
+          "localName": "actionCount",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 3,
+          "name": "duration_ms",
+          "localName": "durationMs",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 4,
+          "name": "log",
+          "localName": "log",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "screenshot",
+          "localName": "screenshot",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 6,
+          "name": "screenshot_path",
+          "localName": "screenshotPath",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.ComputerUseResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.ComputerUseError"
+        }
+      ]
+    },
+    "agent.v1.ConversationAction": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "user_message_action",
+          "localName": "userMessageAction",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "action",
+          "message": "agent.v1.UserMessageAction"
+        }
+      ]
+    },
+    "agent.v1.ConversationSearchError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.ConversationSearchResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.ConversationSearchError"
+        }
+      ]
+    },
+    "agent.v1.DeletePermissionDenied": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "path",
+          "localName": "path",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "client_visible_error",
+          "localName": "clientVisibleError",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "is_readonly",
+          "localName": "isReadonly",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        }
+      ]
+    },
+    "agent.v1.DeleteResult": {
+      "fields": [
+        {
+          "no": 4,
+          "name": "permission_denied",
+          "localName": "permissionDenied",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.DeletePermissionDenied"
+        }
+      ]
+    },
+    "agent.v1.DiagnosticsError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "path",
+          "localName": "path",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.DiagnosticsResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.DiagnosticsError"
+        }
+      ]
+    },
+    "agent.v1.ExecClientMessage": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "id",
+          "localName": "id",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 13
+        },
+        {
+          "no": 15,
+          "name": "exec_id",
+          "localName": "execId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 39,
+          "name": "local_execution_time_ms",
+          "localName": "localExecutionTimeMs",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 45,
+          "name": "hook_additional_contexts",
+          "localName": "hookAdditionalContexts",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.HookAdditionalContext"
+        },
+        {
+          "no": 2,
+          "name": "shell_result",
+          "localName": "shellResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ShellResult"
+        },
+        {
+          "no": 3,
+          "name": "write_result",
+          "localName": "writeResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.WriteResult"
+        },
+        {
+          "no": 4,
+          "name": "delete_result",
+          "localName": "deleteResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.DeleteResult"
+        },
+        {
+          "no": 5,
+          "name": "grep_result",
+          "localName": "grepResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.GrepResult"
+        },
+        {
+          "no": 7,
+          "name": "read_result",
+          "localName": "readResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ReadResult"
+        },
+        {
+          "no": 29,
+          "name": "redacted_read_result",
+          "localName": "redactedReadResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ReadResult"
+        },
+        {
+          "no": 8,
+          "name": "ls_result",
+          "localName": "lsResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.LsResult"
+        },
+        {
+          "no": 9,
+          "name": "diagnostics_result",
+          "localName": "diagnosticsResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.DiagnosticsResult"
+        },
+        {
+          "no": 10,
+          "name": "request_context_result",
+          "localName": "requestContextResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.RequestContextResult"
+        },
+        {
+          "no": 11,
+          "name": "mcp_result",
+          "localName": "mcpResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.McpResult"
+        },
+        {
+          "no": 14,
+          "name": "shell_stream",
+          "localName": "shellStream",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ShellStream"
+        },
+        {
+          "no": 16,
+          "name": "background_shell_spawn_result",
+          "localName": "backgroundShellSpawnResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.BackgroundShellSpawnResult"
+        },
+        {
+          "no": 17,
+          "name": "list_mcp_resources_exec_result",
+          "localName": "listMcpResourcesExecResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ListMcpResourcesExecResult"
+        },
+        {
+          "no": 18,
+          "name": "read_mcp_resource_exec_result",
+          "localName": "readMcpResourceExecResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ReadMcpResourceExecResult"
+        },
+        {
+          "no": 36,
+          "name": "mcp_state_exec_result",
+          "localName": "mcpStateExecResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.McpStateExecResult"
+        },
+        {
+          "no": 20,
+          "name": "fetch_result",
+          "localName": "fetchResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.FetchResult"
+        },
+        {
+          "no": 21,
+          "name": "record_screen_result",
+          "localName": "recordScreenResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.RecordScreenResult"
+        },
+        {
+          "no": 22,
+          "name": "computer_use_result",
+          "localName": "computerUseResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ComputerUseResult"
+        },
+        {
+          "no": 23,
+          "name": "write_shell_stdin_result",
+          "localName": "writeShellStdinResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.WriteShellStdinResult"
+        },
+        {
+          "no": 27,
+          "name": "execute_hook_result",
+          "localName": "executeHookResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ExecuteHookResult"
+        },
+        {
+          "no": 28,
+          "name": "subagent_result",
+          "localName": "subagentResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.SubagentResult"
+        },
+        {
+          "no": 30,
+          "name": "force_background_shell_result",
+          "localName": "forceBackgroundShellResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ForceBackgroundShellResult"
+        },
+        {
+          "no": 31,
+          "name": "force_background_subagent_result",
+          "localName": "forceBackgroundSubagentResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ForceBackgroundSubagentResult"
+        },
+        {
+          "no": 37,
+          "name": "subagent_await_result",
+          "localName": "subagentAwaitResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.SubagentAwaitResult"
+        },
+        {
+          "no": 38,
+          "name": "smart_mode_classifier_result",
+          "localName": "smartModeClassifierResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.SmartModeClassifierResult"
+        },
+        {
+          "no": 40,
+          "name": "canvas_diagnostics_result",
+          "localName": "canvasDiagnosticsResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.CanvasDiagnosticsResult"
+        },
+        {
+          "no": 41,
+          "name": "shell_allowlist_precheck_result",
+          "localName": "shellAllowlistPrecheckResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ShellAllowlistPrecheckResult"
+        },
+        {
+          "no": 42,
+          "name": "mcp_allowlist_precheck_result",
+          "localName": "mcpAllowlistPrecheckResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.McpAllowlistPrecheckResult"
+        },
+        {
+          "no": 43,
+          "name": "web_fetch_allowlist_precheck_result",
+          "localName": "webFetchAllowlistPrecheckResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.WebFetchAllowlistPrecheckResult"
+        },
+        {
+          "no": 44,
+          "name": "git_diff_response",
+          "localName": "gitDiffResponse",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "aiserver.v1.GetDiffResponse"
+        },
+        {
+          "no": 46,
+          "name": "pi_read_result",
+          "localName": "piReadResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PiReadExecResult"
+        },
+        {
+          "no": 47,
+          "name": "pi_bash_result",
+          "localName": "piBashResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PiBashExecResult"
+        },
+        {
+          "no": 48,
+          "name": "pi_edit_result",
+          "localName": "piEditResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PiEditExecResult"
+        },
+        {
+          "no": 49,
+          "name": "pi_write_result",
+          "localName": "piWriteResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PiWriteExecResult"
+        },
+        {
+          "no": 50,
+          "name": "pi_grep_result",
+          "localName": "piGrepResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PiGrepExecResult"
+        },
+        {
+          "no": 51,
+          "name": "pi_find_result",
+          "localName": "piFindResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PiFindExecResult"
+        },
+        {
+          "no": 52,
+          "name": "pi_ls_result",
+          "localName": "piLsResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PiLsExecResult"
+        },
+        {
+          "no": 53,
+          "name": "conversation_search_result",
+          "localName": "conversationSearchResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ConversationSearchResult"
+        },
+        {
+          "no": 54,
+          "name": "agent_store_conflict_result",
+          "localName": "agentStoreConflictResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.AgentStoreConflictResult"
+        },
+        {
+          "no": 55,
+          "name": "mini_swe_agent_bash_result",
+          "localName": "miniSweAgentBashResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ShellResult"
+        },
+        {
+          "no": 56,
+          "name": "adopt_result",
+          "localName": "adoptResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.AdoptResult"
+        }
+      ]
+    },
+    "agent.v1.ExecServerMessage": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "id",
+          "localName": "id",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 13
+        },
+        {
+          "no": 15,
+          "name": "exec_id",
+          "localName": "execId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "shell_args",
+          "localName": "shellArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ShellArgs"
+        },
+        {
+          "no": 3,
+          "name": "write_args",
+          "localName": "writeArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.WriteArgs"
+        },
+        {
+          "no": 4,
+          "name": "delete_args",
+          "localName": "deleteArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.DeleteArgs"
+        },
+        {
+          "no": 5,
+          "name": "grep_args",
+          "localName": "grepArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.GrepArgs"
+        },
+        {
+          "no": 7,
+          "name": "read_args",
+          "localName": "readArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ReadArgs"
+        },
+        {
+          "no": 29,
+          "name": "redacted_read_args",
+          "localName": "redactedReadArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ReadArgs"
+        },
+        {
+          "no": 8,
+          "name": "ls_args",
+          "localName": "lsArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.LsArgs"
+        },
+        {
+          "no": 9,
+          "name": "diagnostics_args",
+          "localName": "diagnosticsArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.DiagnosticsArgs"
+        },
+        {
+          "no": 10,
+          "name": "request_context_args",
+          "localName": "requestContextArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.RequestContextArgs"
+        },
+        {
+          "no": 11,
+          "name": "mcp_args",
+          "localName": "mcpArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.McpArgs"
+        },
+        {
+          "no": 14,
+          "name": "shell_stream_args",
+          "localName": "shellStreamArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ShellArgs"
+        },
+        {
+          "no": 16,
+          "name": "background_shell_spawn_args",
+          "localName": "backgroundShellSpawnArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.BackgroundShellSpawnArgs"
+        },
+        {
+          "no": 17,
+          "name": "list_mcp_resources_exec_args",
+          "localName": "listMcpResourcesExecArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ListMcpResourcesExecArgs"
+        },
+        {
+          "no": 18,
+          "name": "read_mcp_resource_exec_args",
+          "localName": "readMcpResourceExecArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ReadMcpResourceExecArgs"
+        },
+        {
+          "no": 36,
+          "name": "mcp_state_exec_args",
+          "localName": "mcpStateExecArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.McpStateExecArgs"
+        },
+        {
+          "no": 20,
+          "name": "fetch_args",
+          "localName": "fetchArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.FetchArgs"
+        },
+        {
+          "no": 21,
+          "name": "record_screen_args",
+          "localName": "recordScreenArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.RecordScreenArgs"
+        },
+        {
+          "no": 22,
+          "name": "computer_use_args",
+          "localName": "computerUseArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ComputerUseArgs"
+        },
+        {
+          "no": 23,
+          "name": "write_shell_stdin_args",
+          "localName": "writeShellStdinArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.WriteShellStdinArgs"
+        },
+        {
+          "no": 27,
+          "name": "execute_hook_args",
+          "localName": "executeHookArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ExecuteHookArgs"
+        },
+        {
+          "no": 28,
+          "name": "subagent_args",
+          "localName": "subagentArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.SubagentArgs"
+        },
+        {
+          "no": 30,
+          "name": "force_background_shell_args",
+          "localName": "forceBackgroundShellArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ForceBackgroundShellArgs"
+        },
+        {
+          "no": 31,
+          "name": "force_background_subagent_args",
+          "localName": "forceBackgroundSubagentArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ForceBackgroundSubagentArgs"
+        },
+        {
+          "no": 37,
+          "name": "subagent_await_args",
+          "localName": "subagentAwaitArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.SubagentAwaitArgs"
+        },
+        {
+          "no": 38,
+          "name": "smart_mode_classifier_args",
+          "localName": "smartModeClassifierArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.SmartModeClassifierArgs"
+        },
+        {
+          "no": 40,
+          "name": "canvas_diagnostics_args",
+          "localName": "canvasDiagnosticsArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.CanvasDiagnosticsArgs"
+        },
+        {
+          "no": 41,
+          "name": "shell_allowlist_precheck_args",
+          "localName": "shellAllowlistPrecheckArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ShellAllowlistPrecheckArgs"
+        },
+        {
+          "no": 42,
+          "name": "mcp_allowlist_precheck_args",
+          "localName": "mcpAllowlistPrecheckArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.McpAllowlistPrecheckArgs"
+        },
+        {
+          "no": 43,
+          "name": "web_fetch_allowlist_precheck_args",
+          "localName": "webFetchAllowlistPrecheckArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.WebFetchAllowlistPrecheckArgs"
+        },
+        {
+          "no": 44,
+          "name": "git_diff_request",
+          "localName": "gitDiffRequest",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "aiserver.v1.GetDiffRequest"
+        },
+        {
+          "no": 45,
+          "name": "pi_read_args",
+          "localName": "piReadArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PiReadExecArgs"
+        },
+        {
+          "no": 46,
+          "name": "pi_bash_args",
+          "localName": "piBashArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PiBashExecArgs"
+        },
+        {
+          "no": 47,
+          "name": "pi_edit_args",
+          "localName": "piEditArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PiEditExecArgs"
+        },
+        {
+          "no": 48,
+          "name": "pi_write_args",
+          "localName": "piWriteArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PiWriteExecArgs"
+        },
+        {
+          "no": 49,
+          "name": "pi_grep_args",
+          "localName": "piGrepArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PiGrepExecArgs"
+        },
+        {
+          "no": 50,
+          "name": "pi_find_args",
+          "localName": "piFindArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PiFindExecArgs"
+        },
+        {
+          "no": 51,
+          "name": "pi_ls_args",
+          "localName": "piLsArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PiLsExecArgs"
+        },
+        {
+          "no": 52,
+          "name": "mini_swe_agent_bash_args",
+          "localName": "miniSweAgentBashArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ShellArgs"
+        },
+        {
+          "no": 53,
+          "name": "conversation_search_args",
+          "localName": "conversationSearchArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ConversationSearchArgs"
+        },
+        {
+          "no": 54,
+          "name": "agent_store_conflict_args",
+          "localName": "agentStoreConflictArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.AgentStoreConflictArgs"
+        },
+        {
+          "no": 56,
+          "name": "adopt_args",
+          "localName": "adoptArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.AdoptArgs"
+        },
+        {
+          "no": 19,
+          "name": "span_context",
+          "localName": "spanContext",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.SpanContext"
+        },
+        {
+          "no": 55,
+          "name": "accept_hook_additional_contexts",
+          "localName": "acceptHookAdditionalContexts",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        }
+      ]
+    },
+    "agent.v1.FetchError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "url",
+          "localName": "url",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.FetchResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.FetchError"
+        }
+      ]
+    },
+    "agent.v1.GetBlobArgs": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "blob_id",
+          "localName": "blobId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 12
+        }
+      ]
+    },
+    "agent.v1.GetBlobResult": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "blob_data",
+          "localName": "blobData",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 12
+        }
+      ]
+    },
+    "agent.v1.GetDefaultModelForCliRequest": {
+      "fields": []
+    },
+    "agent.v1.GetDefaultModelForCliResponse": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "model",
+          "localName": "model",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.ModelDetails"
+        }
+      ]
+    },
+    "agent.v1.GetUsableModelsRequest": {
+      "fields": []
+    },
+    "agent.v1.GetUsableModelsResponse": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "models",
+          "localName": "models",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.ModelDetails"
+        }
+      ]
+    },
+    "agent.v1.GrepError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.GrepResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.GrepError"
+        }
+      ]
+    },
+    "agent.v1.InteractionUpdate": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "text_delta",
+          "localName": "textDelta",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.TextDeltaUpdate"
+        },
+        {
+          "no": 7,
+          "name": "partial_tool_call",
+          "localName": "partialToolCall",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PartialToolCallUpdate"
+        },
+        {
+          "no": 2,
+          "name": "tool_call_started",
+          "localName": "toolCallStarted",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ToolCallStartedUpdate"
+        },
+        {
+          "no": 4,
+          "name": "thinking_delta",
+          "localName": "thinkingDelta",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ThinkingDeltaUpdate"
+        },
+        {
+          "no": 8,
+          "name": "token_delta",
+          "localName": "tokenDelta",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.TokenDeltaUpdate"
+        },
+        {
+          "no": 14,
+          "name": "turn_ended",
+          "localName": "turnEnded",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.TurnEndedUpdate"
+        }
+      ]
+    },
+    "agent.v1.KvClientMessage": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "id",
+          "localName": "id",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 13
+        },
+        {
+          "no": 2,
+          "name": "get_blob_result",
+          "localName": "getBlobResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.GetBlobResult"
+        },
+        {
+          "no": 3,
+          "name": "set_blob_result",
+          "localName": "setBlobResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.SetBlobResult"
+        }
+      ]
+    },
+    "agent.v1.KvServerMessage": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "id",
+          "localName": "id",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 13
+        },
+        {
+          "no": 2,
+          "name": "get_blob_args",
+          "localName": "getBlobArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.GetBlobArgs"
+        },
+        {
+          "no": 3,
+          "name": "set_blob_args",
+          "localName": "setBlobArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.SetBlobArgs"
+        }
+      ]
+    },
+    "agent.v1.ListMcpResourcesExecResult": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "success",
+          "localName": "success",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.ListMcpResourcesSuccess"
+        }
+      ]
+    },
+    "agent.v1.ListMcpResourcesSuccess": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "resources",
+          "localName": "resources",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.ListMcpResourcesExecResult.McpResource"
+        }
+      ]
+    },
+    "agent.v1.LsError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "path",
+          "localName": "path",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.LsResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.LsError"
+        }
+      ]
+    },
+    "agent.v1.McpAllowlistPrecheckResult": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "allowlisted",
+          "localName": "allowlisted",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        }
+      ]
+    },
+    "agent.v1.McpArgs": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "name",
+          "localName": "name",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "args",
+          "localName": "args",
+          "kind": "map",
+          "repeated": false,
+          "map": {
+            "keyScalar": 9,
+            "valueKind": "message",
+            "valueMessage": "google.protobuf.Value"
+          }
+        },
+        {
+          "no": 3,
+          "name": "tool_call_id",
+          "localName": "toolCallId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "provider_identifier",
+          "localName": "providerIdentifier",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "tool_name",
+          "localName": "toolName",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.McpError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.McpResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.McpError"
+        }
+      ]
+    },
+    "agent.v1.McpStateExecResult": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "success",
+          "localName": "success",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.McpStateSuccess"
+        }
+      ]
+    },
+    "agent.v1.McpStateServer": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "server_name",
+          "localName": "serverName",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "server_identifier",
+          "localName": "serverIdentifier",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "tools",
+          "localName": "tools",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.McpToolDefinition"
+        },
+        {
+          "no": 7,
+          "name": "status",
+          "localName": "status",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.McpStateSuccess": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "servers",
+          "localName": "servers",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.McpStateServer"
+        }
+      ]
+    },
+    "agent.v1.McpToolDefinition": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "name",
+          "localName": "name",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "provider_identifier",
+          "localName": "providerIdentifier",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "tool_name",
+          "localName": "toolName",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "description",
+          "localName": "description",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "input_schema",
+          "localName": "inputSchema",
+          "kind": "message",
+          "repeated": false,
+          "message": "google.protobuf.Value"
+        },
+        {
+          "no": 6,
+          "name": "input_schema_json",
+          "localName": "inputSchemaJson",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.McpTools": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "mcp_tools",
+          "localName": "mcpTools",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.McpToolDefinition"
+        }
+      ]
+    },
+    "agent.v1.ModelDetails": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "model_id",
+          "localName": "modelId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "display_model_id",
+          "localName": "displayModelId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "display_name",
+          "localName": "displayName",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 6,
+          "name": "aliases",
+          "localName": "aliases",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        },
+        {
+          "no": 7,
+          "name": "max_mode",
+          "localName": "maxMode",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        }
+      ]
+    },
+    "agent.v1.PartialToolCallUpdate": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "call_id",
+          "localName": "callId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.PiBashExecError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "truncation",
+          "localName": "truncation",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.PiTruncation"
+        },
+        {
+          "no": 3,
+          "name": "full_output_path",
+          "localName": "fullOutputPath",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.PiBashExecResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.PiBashExecError"
+        }
+      ]
+    },
+    "agent.v1.PiEditExecError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.PiEditExecResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.PiEditExecError"
+        }
+      ]
+    },
+    "agent.v1.PiFindExecError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.PiFindExecResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.PiFindExecError"
+        }
+      ]
+    },
+    "agent.v1.PiGrepExecError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.PiGrepExecResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.PiGrepExecError"
+        }
+      ]
+    },
+    "agent.v1.PiLsExecError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.PiLsExecResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.PiLsExecError"
+        }
+      ]
+    },
+    "agent.v1.PiReadExecError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.PiReadExecResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.PiReadExecError"
+        }
+      ]
+    },
+    "agent.v1.PiWriteExecError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.PiWriteExecResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.PiWriteExecError"
+        }
+      ]
+    },
+    "agent.v1.ReadError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "path",
+          "localName": "path",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.ReadMcpResourceError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "uri",
+          "localName": "uri",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.ReadMcpResourceExecResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.ReadMcpResourceError"
+        }
+      ]
+    },
+    "agent.v1.ReadResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.ReadError"
+        }
+      ]
+    },
+    "agent.v1.RecordScreenFailure": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.RecordScreenResult": {
+      "fields": [
+        {
+          "no": 4,
+          "name": "failure",
+          "localName": "failure",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.RecordScreenFailure"
+        }
+      ]
+    },
+    "agent.v1.RequestContext": {
+      "fields": [
+        {
+          "no": 4,
+          "name": "env",
+          "localName": "env",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.RequestContextEnv"
+        },
+        {
+          "no": 7,
+          "name": "tools",
+          "localName": "tools",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.McpToolDefinition"
+        },
+        {
+          "no": 17,
+          "name": "web_search_enabled",
+          "localName": "webSearchEnabled",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 24,
+          "name": "web_fetch_enabled",
+          "localName": "webFetchEnabled",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 32,
+          "name": "supports_mcp_auth",
+          "localName": "supportsMcpAuth",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 33,
+          "name": "git_repo_info_complete",
+          "localName": "gitRepoInfoComplete",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 36,
+          "name": "mcp_info_complete",
+          "localName": "mcpInfoComplete",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 39,
+          "name": "rules_info_complete",
+          "localName": "rulesInfoComplete",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 40,
+          "name": "env_info_complete",
+          "localName": "envInfoComplete",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 41,
+          "name": "repository_info_complete",
+          "localName": "repositoryInfoComplete",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 42,
+          "name": "custom_subagents_info_complete",
+          "localName": "customSubagentsInfoComplete",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 43,
+          "name": "agent_skills_info_complete",
+          "localName": "agentSkillsInfoComplete",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 44,
+          "name": "mcp_file_system_info_complete",
+          "localName": "mcpFileSystemInfoComplete",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 45,
+          "name": "git_status_info_complete",
+          "localName": "gitStatusInfoComplete",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 50,
+          "name": "search_conversations_enabled",
+          "localName": "searchConversationsEnabled",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 51,
+          "name": "send_message_enabled",
+          "localName": "sendMessageEnabled",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        }
+      ]
+    },
+    "agent.v1.RequestContextEnv": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "os_version",
+          "localName": "osVersion",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "workspace_paths",
+          "localName": "workspacePaths",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "shell",
+          "localName": "shell",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "sandbox_enabled",
+          "localName": "sandboxEnabled",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 7,
+          "name": "terminals_folder",
+          "localName": "terminalsFolder",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 8,
+          "name": "agent_shared_notes_folder",
+          "localName": "agentSharedNotesFolder",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 9,
+          "name": "agent_conversation_notes_folder",
+          "localName": "agentConversationNotesFolder",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 10,
+          "name": "time_zone",
+          "localName": "timeZone",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 11,
+          "name": "project_folder",
+          "localName": "projectFolder",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 12,
+          "name": "agent_transcripts_folder",
+          "localName": "agentTranscriptsFolder",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 13,
+          "name": "artifacts_folder",
+          "localName": "artifactsFolder",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 14,
+          "name": "sandbox_supported",
+          "localName": "sandboxSupported",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 16,
+          "name": "sandbox_network_has_defaults",
+          "localName": "sandboxNetworkHasDefaults",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 17,
+          "name": "sandbox_network_explicit_allowlist",
+          "localName": "sandboxNetworkExplicitAllowlist",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        },
+        {
+          "no": 18,
+          "name": "secret_redaction_enabled",
+          "localName": "secretRedactionEnabled",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 19,
+          "name": "computer_use_supported",
+          "localName": "computerUseSupported",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 20,
+          "name": "is_working_dir_home_dir",
+          "localName": "isWorkingDirHomeDir",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 21,
+          "name": "process_working_directory",
+          "localName": "processWorkingDirectory",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 22,
+          "name": "smart_mode_classifier_auto_mode_enabled",
+          "localName": "smartModeClassifierAutoModeEnabled",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 23,
+          "name": "dev_force_next_smart_mode_classifier_block_token",
+          "localName": "devForceNextSmartModeClassifierBlockToken",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 24,
+          "name": "dev_delay_next_smart_mode_classifier_token",
+          "localName": "devDelayNextSmartModeClassifierToken",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 25,
+          "name": "mounted_agent_stores",
+          "localName": "mountedAgentStores",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.MountedAgentStore"
+        }
+      ]
+    },
+    "agent.v1.RequestContextResult": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "success",
+          "localName": "success",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.RequestContextSuccess"
+        }
+      ]
+    },
+    "agent.v1.RequestContextSuccess": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "request_context",
+          "localName": "requestContext",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.RequestContext"
+        }
+      ]
+    },
+    "agent.v1.RequestedModel": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "model_id",
+          "localName": "modelId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "max_mode",
+          "localName": "maxMode",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 3,
+          "name": "parameters",
+          "localName": "parameters",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.RequestedModel.ModelParameterValue"
+        },
+        {
+          "no": 7,
+          "name": "built_in_model",
+          "localName": "builtInModel",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 8,
+          "name": "is_variant_string_representation",
+          "localName": "isVariantStringRepresentation",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        }
+      ]
+    },
+    "agent.v1.RequestedModel.ModelParameterValue": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "id",
+          "localName": "id",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "value",
+          "localName": "value",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.SelectedContext": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "selected_images",
+          "localName": "selectedImages",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedImage"
+        },
+        {
+          "no": 2,
+          "name": "invocation_context",
+          "localName": "invocationContext",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.InvocationContext"
+        },
+        {
+          "no": 3,
+          "name": "extra_context",
+          "localName": "extraContext",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        },
+        {
+          "no": 16,
+          "name": "extra_context_entries",
+          "localName": "extraContextEntries",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.ExtraContextEntry"
+        },
+        {
+          "no": 4,
+          "name": "files",
+          "localName": "files",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedFile"
+        },
+        {
+          "no": 5,
+          "name": "code_selections",
+          "localName": "codeSelections",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedCodeSelection"
+        },
+        {
+          "no": 6,
+          "name": "terminals",
+          "localName": "terminals",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedTerminal"
+        },
+        {
+          "no": 7,
+          "name": "terminal_selections",
+          "localName": "terminalSelections",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedTerminalSelection"
+        },
+        {
+          "no": 8,
+          "name": "folders",
+          "localName": "folders",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedFolder"
+        },
+        {
+          "no": 9,
+          "name": "external_links",
+          "localName": "externalLinks",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedExternalLink"
+        },
+        {
+          "no": 10,
+          "name": "cursor_rules",
+          "localName": "cursorRules",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedCursorRule"
+        },
+        {
+          "no": 18,
+          "name": "git_diff",
+          "localName": "gitDiff",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.SelectedGitDiff"
+        },
+        {
+          "no": 11,
+          "name": "git_diff_from_branch_to_main",
+          "localName": "gitDiffFromBranchToMain",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.SelectedGitDiffFromBranchToMain"
+        },
+        {
+          "no": 12,
+          "name": "cursor_commands",
+          "localName": "cursorCommands",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedCursorCommand"
+        },
+        {
+          "no": 13,
+          "name": "documentations",
+          "localName": "documentations",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedDocumentation"
+        },
+        {
+          "no": 14,
+          "name": "ui_elements",
+          "localName": "uiElements",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedUIElement"
+        },
+        {
+          "no": 15,
+          "name": "console_logs",
+          "localName": "consoleLogs",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedConsoleLog"
+        },
+        {
+          "no": 17,
+          "name": "git_commits",
+          "localName": "gitCommits",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedGitCommit"
+        },
+        {
+          "no": 19,
+          "name": "past_chats",
+          "localName": "pastChats",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedPastChat"
+        },
+        {
+          "no": 20,
+          "name": "git_pr_diff_selections",
+          "localName": "gitPrDiffSelections",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedGitPRDiffSelection"
+        },
+        {
+          "no": 21,
+          "name": "selected_pull_requests",
+          "localName": "selectedPullRequests",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedPullRequest"
+        },
+        {
+          "no": 22,
+          "name": "selected_subagents",
+          "localName": "selectedSubagents",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedSubagent"
+        },
+        {
+          "no": 23,
+          "name": "selected_videos",
+          "localName": "selectedVideos",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedVideo"
+        },
+        {
+          "no": 24,
+          "name": "selected_browsers",
+          "localName": "selectedBrowsers",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedBrowser"
+        },
+        {
+          "no": 25,
+          "name": "selected_documents",
+          "localName": "selectedDocuments",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.SelectedDocument"
+        },
+        {
+          "no": 26,
+          "name": "selected_skills",
+          "localName": "selectedSkills",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.AgentSkill"
+        },
+        {
+          "no": 27,
+          "name": "recent_agents_context",
+          "localName": "recentAgentsContext",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.RecentAgentsContext"
+        },
+        {
+          "no": 34,
+          "name": "selected_agentic_git_action",
+          "localName": "selectedAgenticGitAction",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.SelectedAgenticGitAction"
+        }
+      ]
+    },
+    "agent.v1.SetBlobArgs": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "blob_id",
+          "localName": "blobId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 12
+        },
+        {
+          "no": 2,
+          "name": "blob_data",
+          "localName": "blobData",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 12
+        }
+      ]
+    },
+    "agent.v1.SetBlobResult": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.Error"
+        }
+      ]
+    },
+    "agent.v1.ShellFailure": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "command",
+          "localName": "command",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "working_directory",
+          "localName": "workingDirectory",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "exit_code",
+          "localName": "exitCode",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 4,
+          "name": "signal",
+          "localName": "signal",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "stdout",
+          "localName": "stdout",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 6,
+          "name": "stderr",
+          "localName": "stderr",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 7,
+          "name": "execution_time",
+          "localName": "executionTime",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 8,
+          "name": "output_location",
+          "localName": "outputLocation",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.OutputLocation"
+        },
+        {
+          "no": 9,
+          "name": "interleaved_output",
+          "localName": "interleavedOutput",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 10,
+          "name": "abort_reason",
+          "localName": "abortReason",
+          "kind": "enum",
+          "repeated": false,
+          "enum": "agent.v1.ShellAbortReason"
+        },
+        {
+          "no": 11,
+          "name": "aborted",
+          "localName": "aborted",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 12,
+          "name": "local_execution_time_ms",
+          "localName": "localExecutionTimeMs",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 13,
+          "name": "output_head",
+          "localName": "outputHead",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 14,
+          "name": "output_tail",
+          "localName": "outputTail",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 15,
+          "name": "elided_chars",
+          "localName": "elidedChars",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 13
+        }
+      ]
+    },
+    "agent.v1.ShellRejected": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "command",
+          "localName": "command",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "working_directory",
+          "localName": "workingDirectory",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "reason",
+          "localName": "reason",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "is_readonly",
+          "localName": "isReadonly",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        }
+      ]
+    },
+    "agent.v1.ShellResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "failure",
+          "localName": "failure",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.ShellFailure"
+        }
+      ]
+    },
+    "agent.v1.ShellStream": {
+      "fields": [
+        {
+          "no": 5,
+          "name": "rejected",
+          "localName": "rejected",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "event",
+          "message": "agent.v1.ShellRejected"
+        }
+      ]
+    },
+    "agent.v1.SmartModeClassifierError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.SmartModeClassifierResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.SmartModeClassifierError"
+        }
+      ]
+    },
+    "agent.v1.SubagentAwaitError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "agent_id",
+          "localName": "agentId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.SubagentAwaitResult": {
+      "fields": [
+        {
+          "no": 4,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.SubagentAwaitError"
+        }
+      ]
+    },
+    "agent.v1.SubagentError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "agent_id",
+          "localName": "agentId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.SubagentResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.SubagentError"
+        }
+      ]
+    },
+    "agent.v1.TextDeltaUpdate": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "text",
+          "localName": "text",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.ThinkingDeltaUpdate": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "text",
+          "localName": "text",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.TokenDeltaUpdate": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "tokens",
+          "localName": "tokens",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        }
+      ]
+    },
+    "agent.v1.ToolCallStartedUpdate": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "call_id",
+          "localName": "callId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.TurnEndedUpdate": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "input_tokens",
+          "localName": "inputTokens",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 3
+        },
+        {
+          "no": 2,
+          "name": "output_tokens",
+          "localName": "outputTokens",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 3
+        },
+        {
+          "no": 3,
+          "name": "cache_read_tokens",
+          "localName": "cacheReadTokens",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 3
+        },
+        {
+          "no": 4,
+          "name": "cache_write_tokens",
+          "localName": "cacheWriteTokens",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 3
+        },
+        {
+          "no": 5,
+          "name": "reasoning_tokens",
+          "localName": "reasoningTokens",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 3
+        }
+      ]
+    },
+    "agent.v1.UserMessage": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "text",
+          "localName": "text",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "message_id",
+          "localName": "messageId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "selected_context",
+          "localName": "selectedContext",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.SelectedContext"
+        },
+        {
+          "no": 4,
+          "name": "mode",
+          "localName": "mode",
+          "kind": "enum",
+          "repeated": false,
+          "enum": "agent.v1.AgentMode"
+        },
+        {
+          "no": 10,
+          "name": "conversation_state_blob_id",
+          "localName": "conversationStateBlobId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 12
+        }
+      ]
+    },
+    "agent.v1.UserMessageAction": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "user_message",
+          "localName": "userMessage",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.UserMessage"
+        }
+      ]
+    },
+    "agent.v1.WritePermissionDenied": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "path",
+          "localName": "path",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "directory",
+          "localName": "directory",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "operation",
+          "localName": "operation",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "is_readonly",
+          "localName": "isReadonly",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        }
+      ]
+    },
+    "agent.v1.WriteResult": {
+      "fields": [
+        {
+          "no": 3,
+          "name": "permission_denied",
+          "localName": "permissionDenied",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.WritePermissionDenied"
+        }
+      ]
+    },
+    "agent.v1.WriteShellStdinError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.WriteShellStdinResult": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.WriteShellStdinError"
+        }
+      ]
+    },
+    "aiserver.v1.AgentUrlConfig": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "agent_url",
+          "localName": "agentUrl",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "agentn_url",
+          "localName": "agentnUrl",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "aiserver.v1.AvailableModelsRequest": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "is_nightly",
+          "localName": "isNightly",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 2,
+          "name": "include_long_context_models",
+          "localName": "includeLongContextModels",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 3,
+          "name": "exclude_max_named_models",
+          "localName": "excludeMaxNamedModels",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 4,
+          "name": "additional_model_names",
+          "localName": "additionalModelNames",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "use_model_parameters",
+          "localName": "useModelParameters",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 6,
+          "name": "include_hidden_models",
+          "localName": "includeHiddenModels",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 7,
+          "name": "do_not_use_markdown",
+          "localName": "doNotUseMarkdown",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 8,
+          "name": "variants_will_be_shown_in_exploded_list",
+          "localName": "variantsWillBeShownInExplodedList",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 9,
+          "name": "for_automations",
+          "localName": "forAutomations",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 10,
+          "name": "scope",
+          "localName": "scope",
+          "kind": "enum",
+          "repeated": false,
+          "enum": "aiserver.v1.AvailableModelsScope"
+        },
+        {
+          "no": 14,
+          "name": "byok_enabled",
+          "localName": "byokEnabled",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 11,
+          "name": "use_react_model_picker",
+          "localName": "useReactModelPicker",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 12,
+          "name": "use_cloud_agent_effort_modes",
+          "localName": "useCloudAgentEffortModes",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 13,
+          "name": "admin_settings_group_public_id",
+          "localName": "adminSettingsGroupPublicId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "aiserver.v1.AvailableModelsResponse": {
+      "fields": [
+        {
+          "no": 2,
+          "name": "models",
+          "localName": "models",
+          "kind": "message",
+          "repeated": true,
+          "message": "aiserver.v1.AvailableModelsResponse.AvailableModel"
+        },
+        {
+          "no": 1,
+          "name": "model_names",
+          "localName": "modelNames",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "composer_model_config",
+          "localName": "composerModelConfig",
+          "kind": "message",
+          "repeated": false,
+          "message": "aiserver.v1.AvailableModelsResponse.FeatureModelConfig"
+        },
+        {
+          "no": 5,
+          "name": "cmd_k_model_config",
+          "localName": "cmdKModelConfig",
+          "kind": "message",
+          "repeated": false,
+          "message": "aiserver.v1.AvailableModelsResponse.FeatureModelConfig"
+        },
+        {
+          "no": 6,
+          "name": "background_composer_model_config",
+          "localName": "backgroundComposerModelConfig",
+          "kind": "message",
+          "repeated": false,
+          "message": "aiserver.v1.AvailableModelsResponse.FeatureModelConfig"
+        },
+        {
+          "no": 7,
+          "name": "plan_execution_model_config",
+          "localName": "planExecutionModelConfig",
+          "kind": "message",
+          "repeated": false,
+          "message": "aiserver.v1.AvailableModelsResponse.FeatureModelConfig"
+        },
+        {
+          "no": 8,
+          "name": "spec_model_config",
+          "localName": "specModelConfig",
+          "kind": "message",
+          "repeated": false,
+          "message": "aiserver.v1.AvailableModelsResponse.FeatureModelConfig"
+        },
+        {
+          "no": 9,
+          "name": "deep_search_model_config",
+          "localName": "deepSearchModelConfig",
+          "kind": "message",
+          "repeated": false,
+          "message": "aiserver.v1.AvailableModelsResponse.FeatureModelConfig"
+        },
+        {
+          "no": 10,
+          "name": "quick_agent_model_config",
+          "localName": "quickAgentModelConfig",
+          "kind": "message",
+          "repeated": false,
+          "message": "aiserver.v1.AvailableModelsResponse.FeatureModelConfig"
+        },
+        {
+          "no": 16,
+          "name": "subagent_model_configs",
+          "localName": "subagentModelConfigs",
+          "kind": "map",
+          "repeated": false,
+          "map": {
+            "keyScalar": 9,
+            "valueKind": "message",
+            "valueMessage": "aiserver.v1.AvailableModelsResponse.FeatureModelConfig"
+          }
+        },
+        {
+          "no": 11,
+          "name": "use_model_parameters",
+          "localName": "useModelParameters",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 12,
+          "name": "disable_unused_models_after_n_hours",
+          "localName": "disableUnusedModelsAfterNHours",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 13,
+          "name": "upgrade_unchanged_models_after_n_hours",
+          "localName": "upgradeUnchangedModelsAfterNHours",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 15,
+          "name": "display_configuration",
+          "localName": "displayConfiguration",
+          "kind": "message",
+          "repeated": false,
+          "message": "aiserver.v1.AvailableModelsResponse.ModelPickerDisplayConfiguration"
+        },
+        {
+          "no": 19,
+          "name": "experimental_model_id",
+          "localName": "experimentalModelId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 20,
+          "name": "experimental_model_display_name",
+          "localName": "experimentalModelDisplayName",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 21,
+          "name": "nudge_new_chats_to_auto_optimize_for",
+          "localName": "nudgeNewChatsToAutoOptimizeFor",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "aiserver.v1.AvailableModelsResponse.AvailableModel": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "name",
+          "localName": "name",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 18,
+          "name": "server_model_name",
+          "localName": "serverModelName",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 30,
+          "name": "variants",
+          "localName": "variants",
+          "kind": "message",
+          "repeated": true,
+          "message": "aiserver.v1.AvailableModelsResponse.ModelVariantConfig"
+        }
+      ]
+    },
+    "aiserver.v1.AvailableModelsResponse.ModelVariantConfig": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "parameter_values",
+          "localName": "parameterValues",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.RequestedModel.ModelParameterValue"
+        },
+        {
+          "no": 3,
+          "name": "is_max_mode",
+          "localName": "isMaxMode",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 4,
+          "name": "is_default_max_config",
+          "localName": "isDefaultMaxConfig",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 5,
+          "name": "is_default_non_max_config",
+          "localName": "isDefaultNonMaxConfig",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 9,
+          "name": "variant_string_representation",
+          "localName": "variantStringRepresentation",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 11,
+          "name": "legacy_slug",
+          "localName": "legacySlug",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "aiserver.v1.GetMeRequest": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "team_id",
+          "localName": "teamId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 2,
+          "name": "source_site_hostname",
+          "localName": "sourceSiteHostname",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "include_mobile_app_status",
+          "localName": "includeMobileAppStatus",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        }
+      ]
+    },
+    "aiserver.v1.GetMeResponse": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "auth_id",
+          "localName": "authId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "user_id",
+          "localName": "userId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 3,
+          "name": "email",
+          "localName": "email",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "first_name",
+          "localName": "firstName",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "last_name",
+          "localName": "lastName",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 6,
+          "name": "workos_id",
+          "localName": "workosId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 7,
+          "name": "team_id",
+          "localName": "teamId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 8,
+          "name": "created_at",
+          "localName": "createdAt",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 9,
+          "name": "is_enterprise_user",
+          "localName": "isEnterpriseUser",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 10,
+          "name": "team_name",
+          "localName": "teamName",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 11,
+          "name": "email_domain_type",
+          "localName": "emailDomainType",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 12,
+          "name": "country",
+          "localName": "country",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 13,
+          "name": "profile_picture_url",
+          "localName": "profilePictureUrl",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 14,
+          "name": "cursor_review_onboarding_use_cursor_github_app",
+          "localName": "cursorReviewOnboardingUseCursorGithubApp",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 15,
+          "name": "organization_id",
+          "localName": "organizationId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 3
+        },
+        {
+          "no": 16,
+          "name": "organization_public_id",
+          "localName": "organizationPublicId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 17,
+          "name": "is_team_admin",
+          "localName": "isTeamAdmin",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 18,
+          "name": "has_active_mobile_session",
+          "localName": "hasActiveMobileSession",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        }
+      ]
+    },
+    "aiserver.v1.GetServerConfigRequest": {
+      "fields": []
+    },
+    "aiserver.v1.GetServerConfigResponse": {
+      "fields": [
+        {
+          "no": 27,
+          "name": "agent_url_config",
+          "localName": "agentUrlConfig",
+          "kind": "message",
+          "repeated": false,
+          "message": "aiserver.v1.AgentUrlConfig"
+        }
+      ]
+    },
+    "google.protobuf.ListValue": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "values",
+          "localName": "values",
+          "kind": "message",
+          "repeated": true,
+          "message": "google.protobuf.Value"
+        }
+      ]
+    },
+    "google.protobuf.Struct": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "fields",
+          "localName": "fields",
+          "kind": "map",
+          "repeated": false,
+          "map": {
+            "keyScalar": 9,
+            "valueKind": "message",
+            "valueMessage": "google.protobuf.Value"
+          }
+        }
+      ]
+    },
+    "google.protobuf.Value": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "null_value",
+          "localName": "nullValue",
+          "kind": "enum",
+          "repeated": false,
+          "oneof": "kind",
+          "enum": "google.protobuf.NullValue"
+        },
+        {
+          "no": 2,
+          "name": "number_value",
+          "localName": "numberValue",
+          "kind": "scalar",
+          "repeated": false,
+          "oneof": "kind",
+          "scalar": 1
+        },
+        {
+          "no": 3,
+          "name": "string_value",
+          "localName": "stringValue",
+          "kind": "scalar",
+          "repeated": false,
+          "oneof": "kind",
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "bool_value",
+          "localName": "boolValue",
+          "kind": "scalar",
+          "repeated": false,
+          "oneof": "kind",
+          "scalar": 8
+        },
+        {
+          "no": 5,
+          "name": "struct_value",
+          "localName": "structValue",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "kind",
+          "message": "google.protobuf.Struct"
+        },
+        {
+          "no": 6,
+          "name": "list_value",
+          "localName": "listValue",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "kind",
+          "message": "google.protobuf.ListValue"
+        }
+      ]
+    }
+  }
+}
