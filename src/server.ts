@@ -26,6 +26,7 @@ import { ToolHistoryValidationError, assertValidToolHistory } from './backend/to
 import { ToolArgumentValidationError } from './backend/tool-arguments.js';
 import { CursorBackendError } from './backend/cursor-cli.js';
 import { filterToolCallsToAllowed, parseToolCallsFromText } from './backend/tool-call-parse.js';
+import { TOOL_CALL_MARKER, ToolTextStreamFilter } from './backend/tool-call-stream.js';
 import {
   dashboardConfigPath,
   redactedCredentials,
@@ -295,44 +296,6 @@ function sseData(payload: unknown): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
 
-const TOOL_CALL_MARKER = '[TOOL_CALLS:';
-
-class ToolMarkerSuppressor {
-  private pending = '';
-  private suppressed = false;
-
-  push(text: string): string {
-    if (this.suppressed) return '';
-    this.pending += text;
-    const markerIndex = this.pending.indexOf(TOOL_CALL_MARKER);
-    if (markerIndex >= 0) {
-      this.suppressed = true;
-      const safe = this.pending.slice(0, markerIndex);
-      this.pending = '';
-      return safe;
-    }
-
-    let held = 0;
-    const maximum = Math.min(this.pending.length, TOOL_CALL_MARKER.length - 1);
-    for (let length = maximum; length > 0; length -= 1) {
-      if (TOOL_CALL_MARKER.startsWith(this.pending.slice(-length))) {
-        held = length;
-        break;
-      }
-    }
-    const safe = this.pending.slice(0, this.pending.length - held);
-    this.pending = this.pending.slice(this.pending.length - held);
-    return safe;
-  }
-
-  finish(): string {
-    if (this.suppressed) return '';
-    const safe = this.pending;
-    this.pending = '';
-    return safe;
-  }
-}
-
 function streamedToolCalls(request: ChatCompletionRequest, text: string): ToolCall[] {
   if (request.tool_choice === 'none') return [];
   let calls = filterToolCallsToAllowed(parseToolCallsFromText(text), request.tools);
@@ -378,8 +341,11 @@ async function streamChatCompletion(
   let completed = false;
   let usage: CompletionUsage | undefined;
   let bufferedText = '';
+  let streamedContent = false;
   const toolsDeclared = Boolean(request.tools?.length);
-  const markerSuppressor = new ToolMarkerSuppressor();
+  const markerSuppressor = new ToolTextStreamFilter(
+    toolsDeclared && request.tool_choice !== 'none',
+  );
 
   const writeContent = async (text: string) => {
     if (!text) return;
@@ -396,7 +362,11 @@ async function streamChatCompletion(
     if (event.type === 'thinking') return;
     if (event.type === 'content') {
       if (toolsDeclared) bufferedText += event.text;
-      else await writeContent(markerSuppressor.push(event.text));
+      const safe = markerSuppressor.push(event.text);
+      if (safe) {
+        streamedContent = true;
+        await writeContent(safe);
+      }
       return;
     }
     if (event.is_error) throw new CursorBackendError(event.message ?? 'Cursor returned an error');
@@ -452,8 +422,18 @@ async function streamChatCompletion(
           ),
         );
       } else {
-        const safeText = markerSuppressor.push(bufferedText) + markerSuppressor.finish();
-        for (const chunk of splitSseContent(safeText)) await writeContent(chunk);
+        const trailing = markerSuppressor.finish();
+        if (trailing) {
+          streamedContent = true;
+          await writeContent(trailing);
+        } else if (
+          !streamedContent &&
+          bufferedText &&
+          !markerSuppressor.suppressedToolPayload &&
+          !bufferedText.includes(TOOL_CALL_MARKER)
+        ) {
+          for (const chunk of splitSseContent(bufferedText)) await writeContent(chunk);
+        }
       }
     } else {
       await writeContent(markerSuppressor.finish());

@@ -56,11 +56,13 @@ function normalizeToolCall(raw: unknown): ToolCall | undefined {
 function parseToolCallsPayload(payload: unknown): ToolCall[] {
   if (!payload || typeof payload !== 'object') return [];
   const asObject = payload as { tool_calls?: unknown; function_call?: unknown };
-  const rawCalls = Array.isArray(asObject.tool_calls)
-    ? asObject.tool_calls
-    : asObject.function_call
-      ? [asObject.function_call]
-      : [];
+  const firstKey = Object.keys(asObject)[0];
+  const rawCalls =
+    firstKey === 'tool_calls' && Array.isArray(asObject.tool_calls)
+      ? asObject.tool_calls
+      : firstKey === 'function_call' && asObject.function_call
+        ? [asObject.function_call]
+        : [];
   return rawCalls.flatMap((raw) => {
     const normalized = normalizeToolCall(raw);
     return normalized ? [normalized] : [];

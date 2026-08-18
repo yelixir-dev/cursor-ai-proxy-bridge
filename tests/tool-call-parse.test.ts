@@ -83,6 +83,14 @@ describe('tool-call parsing', () => {
     expect(allowed[0]?.function.name).toBe('terminal');
   });
 
+  it('treats JSON with metadata before tool_calls as ordinary content', () => {
+    const parsed = parseToolCallsFromText(
+      '{"meta":"ordinary","tool_calls":[{"function":{"name":"terminal","arguments":{}}}]}',
+    );
+
+    expect(parsed).toEqual([]);
+  });
+
   it('generates an explicit [TOOL_CALLS] delegation suffix for Cursor text fallback', () => {
     const suffix = toolDelegationPromptSuffix([terminalTool, readFileTool]);
 

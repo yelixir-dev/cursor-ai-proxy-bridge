@@ -845,6 +845,31 @@ async function main() {
     return `TTFB ${(stream.ttfbMs / 1000).toFixed(2)}s < total ${(stream.totalMs / 1000).toFixed(2)}s`;
   });
 
+  await scenario('tool-declared text streams before completion', async () => {
+    const stream = await readSse(baseUrl, {
+      messages: [
+        {
+          role: 'user',
+          content:
+            'Do not call any tool. Write exactly 80 short numbered lines, from 1 to 80, one line at a time.',
+        },
+      ],
+      tools: [echoTool],
+      tool_choice: 'auto',
+    });
+    assert(
+      stream.ttfbMs + 100 < stream.totalMs,
+      `tool-declared TTFB ${stream.ttfbMs}ms was not meaningfully below total ${stream.totalMs}ms`,
+    );
+    const toolDeltas = stream.frames.flatMap(
+      (frame) => frame.choices?.[0]?.delta?.tool_calls || [],
+    );
+    assert(toolDeltas.length === 0, 'ordinary streaming response unexpectedly called a tool');
+    const content = stream.frames.map((frame) => frame.choices?.[0]?.delta?.content || '').join('');
+    assert(content.includes('80'), 'ordinary streaming response was incomplete');
+    return `TTFB ${(stream.ttfbMs / 1000).toFixed(2)}s < total ${(stream.totalMs / 1000).toFixed(2)}s`;
+  });
+
   await scenario('streaming indexed tool calls', async () => {
     const stream = await readSse(baseUrl, {
       stream_options: { include_usage: true },

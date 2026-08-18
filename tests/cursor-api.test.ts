@@ -252,7 +252,7 @@ class FakeRunStream extends EventEmitter implements CursorRunStream {
 class FakeTransport implements CursorApiTransport {
   readonly codec = new ProtoCodec(descriptors);
   stream?: FakeRunStream;
-  constructor(private readonly script: Array<Record<string, unknown>> | 'stall') {}
+  constructor(private readonly script: Array<Record<string, unknown>> | 'manual' | 'stall') {}
   async unary(path: string): Promise<Buffer> {
     if (path.includes('GetServerConfig')) {
       return this.codec.encode('aiserver.v1.GetServerConfigResponse', {
@@ -264,7 +264,7 @@ class FakeTransport implements CursorApiTransport {
   async openRun(): Promise<CursorRunStream> {
     this.stream = new FakeRunStream((stream) => {
       stream.emit('response', { ':status': 200 });
-      if (this.script === 'stall') return;
+      if (this.script === 'manual' || this.script === 'stall') return;
       const frames = this.script.map((messageValue) =>
         encodeConnectFrame(this.codec.encode('agent.v1.AgentServerMessage', messageValue)),
       );
@@ -783,6 +783,123 @@ describe('Cursor API mapping and Run lifecycle', () => {
       },
     ]);
     expect(toolTransport.stream?.writableEnded || toolTransport.stream?.destroyed).toBe(true);
+  });
+
+  it('streams ordinary text before a tool-bearing Run finishes', async () => {
+    const transport = new FakeTransport('manual');
+    const iterable = backendWith(transport).completeStream({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'answer without a tool' }],
+      tools: [
+        {
+          type: 'function',
+          function: { name: 'unused', parameters: { type: 'object' } },
+        },
+      ],
+      tool_choice: 'auto',
+    });
+    const iterator = iterable[Symbol.asyncIterator]();
+    let firstResolved = false;
+    const firstEvent = iterator.next().then((result) => {
+      firstResolved = true;
+      return result;
+    });
+    await new Promise<void>((resolve) => {
+      const check = () => {
+        if (transport.stream?.writes.length) resolve();
+        else queueMicrotask(check);
+      };
+      check();
+    });
+
+    transport.stream!.emit(
+      'data',
+      encodeConnectFrame(
+        transport.codec.encode(
+          'agent.v1.AgentServerMessage',
+          update('textDelta', { text: 'streamed answer' }),
+        ),
+      ),
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const resolvedBeforeTurnEnd = firstResolved;
+
+    transport.stream!.emit(
+      'data',
+      Buffer.concat([
+        encodeConnectFrame(
+          transport.codec.encode(
+            'agent.v1.AgentServerMessage',
+            update('turnEnded', { inputTokens: 2, outputTokens: 2 }),
+          ),
+        ),
+        encodeConnectFrame(Buffer.from('{}'), { trailer: true }),
+      ]),
+    );
+    expect(await firstEvent).toEqual({
+      done: false,
+      value: { type: 'content', text: 'streamed answer' },
+    });
+    expect(resolvedBeforeTurnEnd).toBe(true);
+    await iterator.return?.();
+  });
+
+  it('does not replay disallowed raw JSON tool payloads into streamed content', async () => {
+    const transport = new FakeTransport([
+      update('textDelta', {
+        text: '{"tool_calls":[{"function":{"name":"unknown_tool","arguments":{}}}]}',
+      }),
+      update('turnEnded', { inputTokens: 2, outputTokens: 2 }),
+    ]);
+    const events = [];
+    for await (const event of backendWith(transport).completeStream({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'answer or call allowed_tool' }],
+      tools: [
+        {
+          type: 'function',
+          function: { name: 'allowed_tool', parameters: { type: 'object' } },
+        },
+      ],
+      tool_choice: 'auto',
+    }))
+      events.push(event);
+
+    expect(
+      events
+        .filter((event) => event.type === 'content')
+        .map((event) => event.text)
+        .join(''),
+    ).toBe('');
+  });
+
+  it('streams raw JSON as ordinary content when tool choice is none', async () => {
+    const rawJson =
+      '{"tool_calls":[{"function":{"name":"disabled_tool","arguments":{"value":"text"}}}]}';
+    const transport = new FakeTransport([
+      update('textDelta', { text: rawJson }),
+      update('turnEnded', { inputTokens: 2, outputTokens: 2 }),
+    ]);
+    const events = [];
+    for await (const event of backendWith(transport).completeStream({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'return JSON as text' }],
+      tools: [
+        {
+          type: 'function',
+          function: { name: 'disabled_tool', parameters: { type: 'object' } },
+        },
+      ],
+      tool_choice: 'none',
+    }))
+      events.push(event);
+
+    expect(
+      events
+        .filter((event) => event.type === 'content')
+        .map((event) => event.text)
+        .join(''),
+    ).toBe(rawJson);
   });
 
   it('recovers valid text markers as native OpenAI tool calls', async () => {

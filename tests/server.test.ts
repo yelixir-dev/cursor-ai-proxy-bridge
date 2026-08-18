@@ -784,14 +784,81 @@ describe('cursor-ai-bridge server', () => {
     await server.close();
   });
 
-  it('buffers ordinary content whenever tools are declared', async () => {
+  it('does not replay disallowed raw JSON tool payloads into SSE content', async () => {
+    const backend: CursorBackend = {
+      ...createMockBackend(),
+      async *completeStream() {
+        yield {
+          type: 'content' as const,
+          text: '{"tool_calls":[{"function":{"name":"unknown_tool","arguments":{}}}]}',
+        };
+        yield {
+          type: 'done' as const,
+          usage: { prompt_tokens: 2, completion_tokens: 2, total_tokens: 4 },
+          is_error: false,
+        };
+      },
+    };
+    const server = await buildServer({ config: baseConfig, backend });
+    const response = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer ***' },
+      payload: {
+        stream: true,
+        messages: [{ role: 'user', content: 'answer or call allowed_tool' }],
+        tools: [{ type: 'function', function: { name: 'allowed_tool', parameters: {} } }],
+        tool_choice: 'auto',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).not.toContain('unknown_tool');
+    await server.close();
+  });
+
+  it('streams raw JSON as ordinary SSE content when tool choice is none', async () => {
+    const rawJson =
+      '{"tool_calls":[{"function":{"name":"disabled_tool","arguments":{"value":"text"}}}]}';
+    const backend: CursorBackend = {
+      ...createMockBackend(),
+      async *completeStream() {
+        yield { type: 'content' as const, text: rawJson };
+        yield {
+          type: 'done' as const,
+          usage: { prompt_tokens: 2, completion_tokens: 2, total_tokens: 4 },
+          is_error: false,
+        };
+      },
+    };
+    const server = await buildServer({ config: baseConfig, backend });
+    const response = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer ***' },
+      payload: {
+        stream: true,
+        messages: [{ role: 'user', content: 'return JSON as text' }],
+        tools: [{ type: 'function', function: { name: 'disabled_tool', parameters: {} } }],
+        tool_choice: 'none',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('disabled_tool');
+    await server.close();
+  });
+
+  it('streams ordinary content before completion when tools are declared', async () => {
     const contentYielded = deferred();
+    const waitingForRelease = deferred();
     const release = deferred();
     const backend: CursorBackend = {
       ...createMockBackend(),
       async *completeStream() {
         contentYielded.resolve();
-        yield { type: 'content' as const, text: 'buffered answer' };
+        yield { type: 'content' as const, text: 'streamed answer' };
+        waitingForRelease.resolve();
         await release.promise;
         yield {
           type: 'done' as const,
@@ -811,17 +878,16 @@ describe('cursor-ai-bridge server', () => {
 
     await contentYielded.promise;
     const { response } = await clientPromise;
-    const firstByte = deferred();
     const chunks: Buffer[] = [];
     const ended = deferred();
-    response.on('data', (chunk: Buffer) => {
-      chunks.push(chunk);
-      firstByte.resolve();
-    });
+    response.on('data', (chunk: Buffer) => chunks.push(chunk));
     response.once('end', () => ended.resolve());
     response.resume();
-    await firstByte.promise;
-    expect(Buffer.concat(chunks).toString('utf8')).not.toContain('buffered answer');
+    await waitingForRelease.promise;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const streamedBeforeCompletion = Buffer.concat(chunks)
+      .toString('utf8')
+      .includes('streamed answer');
     release.resolve();
     await ended.promise;
     const body = Buffer.concat(chunks).toString('utf8');
@@ -834,7 +900,8 @@ describe('cursor-ai-bridge server', () => {
       )
       .map((frame) => frame.choices[0]?.delta.content ?? '')
       .join('');
-    expect(text).toBe('buffered answer');
+    expect(text).toBe('streamed answer');
+    expect(streamedBeforeCompletion).toBe(true);
     await server.close();
   });
 

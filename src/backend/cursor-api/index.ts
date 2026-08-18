@@ -16,6 +16,7 @@ import {
   type ToolArgumentValidationFailure,
 } from '../tool-arguments.js';
 import { parseToolCallsFromText } from '../tool-call-parse.js';
+import { TOOL_CALL_MARKER, ToolTextStreamFilter } from '../tool-call-stream.js';
 import type { BridgeConfig } from '../../config.js';
 import { CursorAuthProvider } from './auth.js';
 import { ConnectFrameDecoder, encodeConnectFrame } from './connect-frame.js';
@@ -390,7 +391,7 @@ export class CursorApiBackend implements CursorBackend {
     request: ChatCompletionRequest,
     signal?: AbortSignal,
   ): AsyncIterable<CompletionStreamEvent> {
-    if (request.tools?.length) {
+    if (request.tools?.length && choiceRequiresTool(request)) {
       const outcome = await this.validatedRun(request, signal);
       if (outcome.toolCalls.length) {
         yield { type: 'content', text: `[TOOL_CALLS: ${JSON.stringify(outcome.toolCalls)}]` };
@@ -402,8 +403,43 @@ export class CursorApiBackend implements CursorBackend {
     }
 
     const queue = new AsyncQueue<CompletionStreamEvent>();
-    const execution = this.run(request, signal, (event) => queue.push(event))
+    const filter = request.tools?.length
+      ? new ToolTextStreamFilter(request.tool_choice !== 'none')
+      : undefined;
+    let streamedContent = false;
+    const emit = (event: CompletionStreamEvent) => {
+      if (event.type !== 'content' || !filter) {
+        queue.push(event);
+        return;
+      }
+      const safe = filter.push(event.text);
+      if (!safe) return;
+      streamedContent = true;
+      queue.push({ type: 'content', text: safe });
+    };
+    const execution = (
+      filter ? this.validatedRun(request, signal, emit) : this.run(request, signal, emit)
+    )
       .then((outcome) => {
+        const trailing = filter?.finish() ?? '';
+        if (trailing) {
+          streamedContent = true;
+          queue.push({ type: 'content', text: trailing });
+        }
+        if (outcome.toolCalls.length) {
+          queue.push({
+            type: 'content',
+            text: `${TOOL_CALL_MARKER} ${JSON.stringify(outcome.toolCalls)}]`,
+          });
+        } else if (
+          filter &&
+          outcome.text &&
+          !streamedContent &&
+          !filter.suppressedToolPayload &&
+          !outcome.text.includes(TOOL_CALL_MARKER)
+        ) {
+          queue.push({ type: 'content', text: outcome.text });
+        }
         queue.push({ type: 'done', usage: outcome.usage, is_error: false });
         queue.end();
       })
@@ -424,10 +460,11 @@ export class CursorApiBackend implements CursorBackend {
   private async validatedRun(
     request: ChatCompletionRequest,
     signal?: AbortSignal,
+    emit?: (event: CompletionStreamEvent) => void,
   ): Promise<RunOutcome> {
     const runMapped = async (candidateRequest: ChatCompletionRequest): Promise<RunOutcome> => {
       const mapped = mapCursorApiToolRequest(candidateRequest);
-      const candidate = await this.run(mapped.request, signal);
+      const candidate = await this.run(mapped.request, signal, emit);
       if (candidate.toolCalls.length) {
         return { ...candidate, toolCalls: mapped.restoreToolCalls(candidate.toolCalls) };
       }
