@@ -12,6 +12,17 @@ function isolateClientAuthEnv(): void {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('bridge client auth config', () => {
+  it('defaults to sixteen-way completion capacity', () => {
+    isolateClientAuthEnv();
+    vi.stubEnv('CURSOR_BRIDGE_MAX_CONCURRENCY', undefined);
+    vi.stubEnv('CURSOR_BRIDGE_MAX_CONCURRENCY_PER_KEY', undefined);
+
+    const config = loadConfig(join(tmpdir(), 'missing-cursor-env'));
+
+    expect(config.maxConcurrency).toBe(16);
+    expect(config.maxConcurrencyPerKey).toBe(16);
+  });
+
   it('defaults to off without a client API key and on with one', () => {
     isolateClientAuthEnv();
     expect(loadConfig(join(tmpdir(), 'missing-cursor-env')).clientAuth).toBe('off');

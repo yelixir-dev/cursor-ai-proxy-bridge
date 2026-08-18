@@ -18,8 +18,8 @@ import {
 import { parseToolCallsFromText } from '../tool-call-parse.js';
 import { TOOL_CALL_MARKER, ToolTextStreamFilter } from '../tool-call-stream.js';
 import type { BridgeConfig } from '../../config.js';
-import { CursorAuthProvider } from './auth.js';
-import { ConnectFrameDecoder, encodeConnectFrame } from './connect-frame.js';
+import { awaitWithAbort, CursorAuthProvider } from './auth.js';
+import { ConnectFrameDecoder, ConnectRpcError, encodeConnectFrame } from './connect-frame.js';
 import {
   CursorCredentialRouter,
   cursorCredentialsFromConfig,
@@ -52,6 +52,114 @@ const MODEL_TTL_MS = 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 8_388_608;
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
+const DEFAULT_RETRY_BASE_MS = 1_000;
+const MAX_RETRY_DELAY_MS = 60_000;
+const MAX_SERVER_RETRIES = 3;
+const MAX_TRANSPORT_RETRIES = 10;
+const RETRYABLE_TRANSPORT_CODES = new Set([
+  'EAI_AGAIN',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EPIPE',
+  'ERR_CURSOR_RUN_NO_TRAILER',
+  'ERR_HTTP2_GOAWAY_SESSION',
+  'ERR_HTTP2_INVALID_SESSION',
+  'ERR_HTTP2_SESSION_ERROR',
+  'ERR_HTTP2_STREAM_CANCEL',
+  'ERR_STREAM_PREMATURE_CLOSE',
+  'ETIMEDOUT',
+]);
+const RETRYABLE_SERVER_CODES = new Set(['internal', 'resource_exhausted', 'unknown']);
+const RETRYABLE_CONNECT_TRANSPORT_CODES = new Set(['deadline_exceeded', 'unavailable']);
+const NON_RETRYABLE_CURSOR_ERROR_TYPES = new Set([
+  'FREE_USER_RATE_LIMIT_EXCEEDED',
+  'FREE_USER_USAGE_LIMIT',
+  'GENERIC_RATE_LIMIT_EXCEEDED',
+  'PRO_USER_ONLY',
+  'PRO_USER_RATE_LIMIT_EXCEEDED',
+  'PRO_USER_USAGE_LIMIT',
+  'RATE_LIMITED',
+  'RATE_LIMITED_CHANGEABLE',
+]);
+type RetryFailureKind = 'server' | 'transport';
+
+function errorCode(error: unknown): string {
+  return error && typeof error === 'object' && 'code' in error
+    ? String((error as { code?: unknown }).code ?? '')
+    : '';
+}
+
+function hasNonRetryableConnectDetails(details: unknown): boolean {
+  const pending: unknown[] = [details];
+  const seen = new Set<unknown>();
+  while (pending.length) {
+    const value = pending.pop();
+    if (value === null || value === undefined || seen.has(value)) continue;
+    seen.add(value);
+    if (typeof value === 'string') {
+      if ([...NON_RETRYABLE_CURSOR_ERROR_TYPES].some((type) => value.includes(type))) return true;
+      continue;
+    }
+    if (Array.isArray(value)) {
+      pending.push(...value);
+      continue;
+    }
+    if (typeof value !== 'object') continue;
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'isRetryable' && child === false) return true;
+      if (
+        ['errorType', 'reason', 'type'].includes(key) &&
+        typeof child === 'string' &&
+        NON_RETRYABLE_CURSOR_ERROR_TYPES.has(child)
+      ) {
+        return true;
+      }
+      pending.push(child);
+    }
+  }
+  return false;
+}
+
+export function cursorRetryFailureKind(error: unknown): RetryFailureKind | undefined {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  for (let depth = 0; current !== undefined && current !== null && depth < 10; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (current instanceof CursorApiHttpError) {
+      return current.status >= 500 && current.status <= 599 ? 'server' : undefined;
+    }
+    if (current instanceof ConnectRpcError && hasNonRetryableConnectDetails(current.details)) {
+      return undefined;
+    }
+    const code = errorCode(current);
+    const message = current instanceof Error ? current.message : String(current);
+    if (
+      RETRYABLE_TRANSPORT_CODES.has(code) ||
+      /http\/?2|NGHTTP2|socket|stream closed|truncated connect|invalid gzip/i.test(message)
+    ) {
+      return 'transport';
+    }
+    if (current instanceof ConnectRpcError) {
+      if (RETRYABLE_CONNECT_TRANSPORT_CODES.has(current.code ?? '')) return 'transport';
+      if (!current.code || RETRYABLE_SERVER_CODES.has(current.code)) return 'server';
+      return undefined;
+    }
+    if (current && typeof current === 'object' && 'cause' in current) {
+      current = (current as { cause?: unknown }).cause;
+      continue;
+    }
+    break;
+  }
+  return undefined;
+}
+
+export function isRetryableCursorTransportError(error: unknown): boolean {
+  return cursorRetryFailureKind(error) !== undefined;
+}
 
 export const CURSOR_API_STARTUP_SEQUENCE = [
   '/aiserver.v1.DashboardService/GetMe',
@@ -78,6 +186,11 @@ interface RunOutcome {
   usage: CompletionUsage;
 }
 
+interface RunEmitter {
+  (event: CompletionStreamEvent): boolean | void;
+  reset?(): void;
+}
+
 export interface CursorApiBackendDependencies {
   descriptors?: ProtoDescriptorSet;
   descriptorPath?: string;
@@ -88,6 +201,7 @@ export interface CursorApiBackendDependencies {
   clearInterval?: typeof globalThis.clearInterval;
   setTimeout?: typeof globalThis.setTimeout;
   clearTimeout?: typeof globalThis.clearTimeout;
+  wait?: (delayMs: number, signal?: AbortSignal) => Promise<void>;
   credentialRouter?: CursorCredentialRouter;
   now?: () => number;
 }
@@ -146,6 +260,7 @@ export class CursorApiBackend implements CursorBackend {
   private readonly environment: NodeJS.ProcessEnv;
   private readonly intervals: Pick<typeof globalThis, 'setInterval' | 'clearInterval'>;
   private readonly timers: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout'>;
+  private readonly wait: (delayMs: number, signal?: AbortSignal) => Promise<void>;
   private readonly activeStreams = new Set<CursorRunStream>();
   private discoveryCache?: { url: string; expiresAt: number };
   private discoveryRefresh?: Promise<string>;
@@ -211,6 +326,24 @@ export class CursorApiBackend implements CursorBackend {
       setTimeout: dependencies.setTimeout ?? globalThis.setTimeout,
       clearTimeout: dependencies.clearTimeout ?? globalThis.clearTimeout,
     };
+    this.wait =
+      dependencies.wait ??
+      ((delayMs, signal) =>
+        new Promise<void>((resolve, reject) => {
+          if (signal?.aborted) {
+            reject(signal.reason);
+            return;
+          }
+          const onAbort = () => {
+            this.timers.clearTimeout(timer);
+            reject(signal?.reason);
+          };
+          const timer = this.timers.setTimeout(() => {
+            signal?.removeEventListener('abort', onAbort);
+            resolve();
+          }, delayMs);
+          signal?.addEventListener('abort', onAbort, { once: true });
+        }));
   }
 
   async initialize(timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): Promise<void> {
@@ -407,16 +540,18 @@ export class CursorApiBackend implements CursorBackend {
       ? new ToolTextStreamFilter(request.tool_choice !== 'none')
       : undefined;
     let streamedContent = false;
-    const emit = (event: CompletionStreamEvent) => {
+    const emit: RunEmitter = (event: CompletionStreamEvent) => {
       if (event.type !== 'content' || !filter) {
         queue.push(event);
-        return;
+        return event.type === 'content';
       }
       const safe = filter.push(event.text);
-      if (!safe) return;
+      if (!safe) return false;
       streamedContent = true;
       queue.push({ type: 'content', text: safe });
+      return true;
     };
+    emit.reset = () => filter?.reset();
     const execution = (
       filter ? this.validatedRun(request, signal, emit) : this.run(request, signal, emit)
     )
@@ -460,7 +595,7 @@ export class CursorApiBackend implements CursorBackend {
   private async validatedRun(
     request: ChatCompletionRequest,
     signal?: AbortSignal,
-    emit?: (event: CompletionStreamEvent) => void,
+    emit?: RunEmitter,
   ): Promise<RunOutcome> {
     const runMapped = async (candidateRequest: ChatCompletionRequest): Promise<RunOutcome> => {
       const mapped = mapCursorApiToolRequest(candidateRequest);
@@ -550,15 +685,16 @@ export class CursorApiBackend implements CursorBackend {
 
   private async withCredential<T>(
     operation: (credential: CursorApiCredential, accessToken: string) => Promise<T>,
+    signal?: AbortSignal,
   ): Promise<T> {
     return this.credentialRouter.route(async (credential) =>
-      operation(credential, await this.auth.getToken(credential)),
+      operation(credential, await this.auth.getToken(credential, signal)),
     );
   }
 
-  private async agentUrl(accessToken: string): Promise<string> {
+  private async agentUrl(accessToken: string, signal?: AbortSignal): Promise<string> {
     if (this.discoveryCache && this.discoveryCache.expiresAt > Date.now()) {
-      return this.discoveryCache.url;
+      return awaitWithAbort(Promise.resolve(this.discoveryCache.url), signal);
     }
     if (!this.discoveryRefresh) {
       this.discoveryRefresh = (async () => {
@@ -574,29 +710,63 @@ export class CursorApiBackend implements CursorBackend {
         this.discoveryRefresh = undefined;
       });
     }
-    return this.discoveryRefresh;
+    return awaitWithAbort(this.discoveryRefresh, signal);
   }
 
   private async run(
     request: ChatCompletionRequest,
     signal?: AbortSignal,
-    emit?: (event: CompletionStreamEvent) => void,
+    emit?: RunEmitter,
   ): Promise<RunOutcome> {
-    return this.withCredential(async (_credential, accessToken) =>
-      this.runWithCredential(request, accessToken, signal, emit),
+    let emittedContent = false;
+    const trackedEmit: RunEmitter | undefined = emit
+      ? Object.assign(
+          (event: CompletionStreamEvent) => {
+            const delivered = emit(event);
+            if (event.type === 'content' && delivered !== false) emittedContent = true;
+            return delivered;
+          },
+          { reset: emit.reset },
+        )
+      : undefined;
+    let serverRetries = 0;
+    let transportRetries = 0;
+    const retryBaseMs = boundedInteger(
+      this.environment.CURSOR_BRIDGE_CURSOR_RETRY_BASE_MS,
+      DEFAULT_RETRY_BASE_MS,
     );
+    for (;;) {
+      try {
+        return await this.withCredential(
+          async (_credential, accessToken) =>
+            this.runWithCredential(request, accessToken, signal, trackedEmit),
+          signal,
+        );
+      } catch (error) {
+        const kind = cursorRetryFailureKind(error);
+        if (!kind || emittedContent || signal?.aborted) throw error;
+        const retries = kind === 'server' ? serverRetries : transportRetries;
+        const limit = kind === 'server' ? MAX_SERVER_RETRIES : MAX_TRANSPORT_RETRIES;
+        if (retries >= limit) throw error;
+        if (kind === 'server') serverRetries += 1;
+        else transportRetries += 1;
+        trackedEmit?.reset?.();
+        const nextRetry = kind === 'server' ? serverRetries : transportRetries;
+        await this.wait(Math.min(retryBaseMs * 2 ** nextRetry, MAX_RETRY_DELAY_MS), signal);
+      }
+    }
   }
 
   private async runWithCredential(
     request: ChatCompletionRequest,
     accessToken: string,
     signal?: AbortSignal,
-    emit?: (event: CompletionStreamEvent) => void,
+    emit?: RunEmitter,
   ): Promise<RunOutcome> {
     if (signal?.aborted) throw new CursorCommandAbortedError();
     const requestId = randomUUID();
     const stream = await this.transport.openRun(
-      await this.agentUrl(accessToken),
+      await this.agentUrl(accessToken, signal),
       requestId,
       accessToken,
     );
@@ -861,8 +1031,14 @@ export class CursorApiBackend implements CursorBackend {
       });
       stream.once('error', (error: Error) => finish(error));
       stream.once('close', () => {
-        if (!settled)
-          finish(new CursorBackendError('Cursor Agent Run stream closed without a trailer'));
+        if (!settled) {
+          finish(
+            Object.assign(
+              new CursorBackendError('Cursor Agent Run stream closed without a trailer'),
+              { code: 'ERR_CURSOR_RUN_NO_TRAILER' },
+            ),
+          );
+        }
       });
       writeMessage(runRequestMessage(request, requestId, this.requestedModels), false);
       if (signal?.aborted) onAbort();

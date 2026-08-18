@@ -2,14 +2,18 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CursorAuthProvider } from '../src/backend/cursor-api/auth.js';
 import {
   ConnectFrameDecoder,
   ConnectRpcError,
   encodeConnectFrame,
 } from '../src/backend/cursor-api/connect-frame.js';
-import { CURSOR_API_STARTUP_SEQUENCE, CursorApiBackend } from '../src/backend/cursor-api/index.js';
+import {
+  CURSOR_API_STARTUP_SEQUENCE,
+  CursorApiBackend,
+  isRetryableCursorTransportError,
+} from '../src/backend/cursor-api/index.js';
 import {
   cursorApiPrompt,
   mapRequestedModels,
@@ -216,6 +220,16 @@ const descriptors: ProtoDescriptorSet = {
   },
 };
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 const config: BridgeConfig = {
   host: '127.0.0.1',
   port: 9997,
@@ -230,12 +244,16 @@ class FakeRunStream extends EventEmitter implements CursorRunStream {
   destroyed = false;
   writableEnded = false;
   readonly writes: Buffer[] = [];
+  readonly firstWrite = deferred();
   constructor(private readonly onFirstWrite: (stream: FakeRunStream) => void) {
     super();
   }
   write(chunk: Uint8Array): boolean {
     this.writes.push(Buffer.from(chunk));
-    if (this.writes.length === 1) queueMicrotask(() => this.onFirstWrite(this));
+    if (this.writes.length === 1) {
+      this.firstWrite.resolve();
+      queueMicrotask(() => this.onFirstWrite(this));
+    }
     return true;
   }
   destroy(error?: Error): void {
@@ -251,6 +269,7 @@ class FakeRunStream extends EventEmitter implements CursorRunStream {
 
 class FakeTransport implements CursorApiTransport {
   readonly codec = new ProtoCodec(descriptors);
+  readonly streamOpened = deferred<FakeRunStream>();
   stream?: FakeRunStream;
   constructor(private readonly script: Array<Record<string, unknown>> | 'manual' | 'stall') {}
   async unary(path: string): Promise<Buffer> {
@@ -271,6 +290,7 @@ class FakeTransport implements CursorApiTransport {
       frames.push(encodeConnectFrame(Buffer.from('{}'), { trailer: true }));
       stream.emit('data', Buffer.concat(frames));
     });
+    this.streamOpened.resolve(this.stream);
     return this.stream;
   }
 }
@@ -286,6 +306,7 @@ function backendWith(transport: FakeTransport) {
     descriptors,
     transport,
     auth: new CursorAuthProvider({ environment: { CURSOR_AUTH_TOKEN: 'token' } }),
+    wait: async () => undefined,
   });
 }
 
@@ -313,6 +334,32 @@ describe('Cursor API Connect framing', () => {
       ),
     ).toThrowError(ConnectRpcError);
     expect(() => failed.finish()).not.toThrow();
+
+    const structured = new ConnectFrameDecoder();
+    let structuredError: unknown;
+    try {
+      structured.push(
+        encodeConnectFrame(
+          Buffer.from(
+            JSON.stringify({
+              error: {
+                code: 'resource_exhausted',
+                message: 'quota',
+                details: [{ value: { errorType: 'PRO_USER_RATE_LIMIT_EXCEEDED' } }],
+              },
+            }),
+          ),
+          { trailer: true },
+        ),
+      );
+    } catch (error) {
+      structuredError = error;
+    }
+    expect(structuredError).toMatchObject({
+      code: 'resource_exhausted',
+      details: [{ value: { errorType: 'PRO_USER_RATE_LIMIT_EXCEEDED' } }],
+    });
+    expect(isRetryableCursorTransportError(structuredError)).toBe(false);
   });
 });
 
@@ -352,6 +399,43 @@ describe('Cursor API authentication and descriptors', () => {
     expect(await auth.getToken()).toBe(fresh);
     expect(await auth.getToken()).toBe(fresh);
     expect(exchanges).toBe(1);
+  });
+
+  it('stops waiting for a shared token refresh when the caller aborts', async () => {
+    const exchangeStarted = deferred();
+    const exchange = deferred<Response>();
+    const fresh = jwt(9_999);
+    const auth = new CursorAuthProvider({
+      environment: { CURSOR_API_KEY: 'api-key' },
+      fetch: async () => {
+        exchangeStarted.resolve();
+        return exchange.promise;
+      },
+    });
+    const controller = new AbortController();
+    const token = auth.getToken(undefined, controller.signal);
+    await exchangeStarted.promise;
+
+    controller.abort();
+    const deadline = AbortSignal.timeout(100);
+    const outcome = await Promise.race([
+      token.then(
+        () => 'resolved',
+        (error: unknown) => (error instanceof Error ? error.name : 'rejected'),
+      ),
+      new Promise<string>((resolve) => {
+        deadline.addEventListener('abort', () => resolve('pending'), { once: true });
+      }),
+    ]);
+    exchange.resolve(
+      new Response(JSON.stringify({ accessToken: fresh }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    expect(outcome).toBe('AbortError');
+    await expect(auth.getToken()).resolves.toBe(fresh);
   });
 
   it('reports an actionable descriptor loading failure', () => {
@@ -427,6 +511,29 @@ describe('Cursor API startup and wire parity', () => {
     ).toEqual([...CURSOR_RUN_HEADER_NAMES].sort());
     expect(runHeaders['x-blob-encryption-key']).toMatch(/^[0-9a-f]{64}$/);
     stream.close();
+  });
+
+  it('closes the HTTP/2 session when opening a Run throws synchronously', async () => {
+    const close = vi.fn();
+    const failure = Object.assign(new Error('session unavailable'), {
+      code: 'ERR_HTTP2_GOAWAY_SESSION',
+    });
+    const session = Object.assign(new EventEmitter(), {
+      closed: false,
+      destroyed: false,
+      close,
+      request() {
+        throw failure;
+      },
+    });
+    const transport = new NodeCursorApiTransport({
+      auth: new CursorAuthProvider({ environment: { CURSOR_AUTH_TOKEN: 'token' } }),
+      clientVersion: 'cli-2026.08.11-e8db854',
+      connect: (() => session) as unknown as typeof import('node:http2').connect,
+    });
+
+    await expect(transport.openRun('https://agent.test', 'request-id')).rejects.toBe(failure);
+    expect(close).toHaveBeenCalledOnce();
   });
 
   it('performs the captured AI startup sequence and minimal telemetry flushes', async () => {
@@ -799,20 +906,11 @@ describe('Cursor API mapping and Run lifecycle', () => {
       tool_choice: 'auto',
     });
     const iterator = iterable[Symbol.asyncIterator]();
-    let firstResolved = false;
-    const firstEvent = iterator.next().then((result) => {
-      firstResolved = true;
-      return result;
-    });
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        if (transport.stream?.writes.length) resolve();
-        else queueMicrotask(check);
-      };
-      check();
-    });
+    const firstEvent = iterator.next();
+    const stream = await transport.streamOpened.promise;
+    await stream.firstWrite.promise;
 
-    transport.stream!.emit(
+    stream.emit(
       'data',
       encodeConnectFrame(
         transport.codec.encode(
@@ -821,10 +919,15 @@ describe('Cursor API mapping and Run lifecycle', () => {
         ),
       ),
     );
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    const resolvedBeforeTurnEnd = firstResolved;
+    const deadline = AbortSignal.timeout(500);
+    const earlyEvent = await Promise.race([
+      firstEvent.then((event) => ({ status: 'event' as const, event })),
+      new Promise<{ status: 'timeout' }>((resolve) => {
+        deadline.addEventListener('abort', () => resolve({ status: 'timeout' }), { once: true });
+      }),
+    ]);
 
-    transport.stream!.emit(
+    stream.emit(
       'data',
       Buffer.concat([
         encodeConnectFrame(
@@ -836,11 +939,12 @@ describe('Cursor API mapping and Run lifecycle', () => {
         encodeConnectFrame(Buffer.from('{}'), { trailer: true }),
       ]),
     );
-    expect(await firstEvent).toEqual({
+    const eventualEvent = await firstEvent;
+    expect(eventualEvent).toEqual({
       done: false,
       value: { type: 'content', text: 'streamed answer' },
     });
-    expect(resolvedBeforeTurnEnd).toBe(true);
+    expect(earlyEvent).toEqual({ status: 'event', event: eventualEvent });
     await iterator.return?.();
   });
 
@@ -948,15 +1052,271 @@ describe('Cursor API mapping and Run lifecycle', () => {
       { model: 'composer-2.5', messages: [{ role: 'user', content: 'wait' }] },
       controller.signal,
     );
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        if (transport.stream?.writes.length) resolve();
-        else queueMicrotask(check);
-      };
-      check();
-    });
+    const streamDeadline = AbortSignal.timeout(500);
+    const stream = await Promise.race([
+      transport.streamOpened.promise,
+      new Promise<never>((_, reject) => {
+        streamDeadline.addEventListener(
+          'abort',
+          () => reject(new Error('Run stream did not open before deadline')),
+          { once: true },
+        );
+      }),
+    ]);
+    const writeDeadline = AbortSignal.timeout(500);
+    await Promise.race([
+      stream.firstWrite.promise,
+      new Promise<never>((_, reject) => {
+        writeDeadline.addEventListener(
+          'abort',
+          () => reject(new Error('Run request was not written before deadline')),
+          { once: true },
+        );
+      }),
+    ]);
     controller.abort();
     await expect(completion).rejects.toMatchObject({ name: 'AbortError' });
-    expect(transport.stream?.destroyed).toBe(true);
+    expect(stream.destroyed).toBe(true);
+  });
+
+  it('does not open a Run after the caller aborts during discovery', async () => {
+    const transport = new FakeTransport([]);
+    const discoveryStarted = deferred();
+    const discovery = deferred<Buffer>();
+    vi.spyOn(transport, 'unary').mockImplementation(async (path) => {
+      if (!path.includes('GetServerConfig')) return Buffer.alloc(0);
+      discoveryStarted.resolve();
+      return discovery.promise;
+    });
+    const openRun = vi.spyOn(transport, 'openRun');
+    const backend = backendWith(transport);
+    const controller = new AbortController();
+    const completion = backend.complete(
+      { model: 'composer-2.5', messages: [{ role: 'user', content: 'wait' }] },
+      controller.signal,
+    );
+    await discoveryStarted.promise;
+
+    controller.abort();
+    const deadline = AbortSignal.timeout(100);
+    const outcome = await Promise.race([
+      completion.then(
+        () => 'resolved',
+        (error: unknown) => (error instanceof Error ? error.name : 'rejected'),
+      ),
+      new Promise<string>((resolve) => {
+        deadline.addEventListener('abort', () => resolve('pending'), { once: true });
+      }),
+    ]);
+    discovery.resolve(
+      transport.codec.encode('aiserver.v1.GetServerConfigResponse', {
+        agentUrlConfig: { agentnUrl: 'https://agent.test' },
+      }),
+    );
+    await completion.catch(() => undefined);
+
+    expect(outcome).toBe('AbortError');
+    expect(openRun).not.toHaveBeenCalled();
+  });
+
+  it('retries a transport failure before any response becomes visible', async () => {
+    const transport = new FakeTransport('manual');
+    let attempts = 0;
+    vi.spyOn(transport, 'openRun').mockImplementation(async () => {
+      attempts += 1;
+      const stream = new FakeRunStream((active) => {
+        active.emit('response', { ':status': 200 });
+        if (attempts === 1) {
+          active.destroy(
+            Object.assign(new Error('GOAWAY received'), {
+              code: 'ERR_HTTP2_GOAWAY_SESSION',
+            }),
+          );
+          return;
+        }
+        const frames = [
+          update('textDelta', { text: 'recovered' }),
+          update('turnEnded', { inputTokens: 1, outputTokens: 1 }),
+        ].map((messageValue) =>
+          encodeConnectFrame(transport.codec.encode('agent.v1.AgentServerMessage', messageValue)),
+        );
+        frames.push(encodeConnectFrame(Buffer.from('{}'), { trailer: true }));
+        active.emit('data', Buffer.concat(frames));
+      });
+      transport.stream = stream;
+      return stream;
+    });
+
+    const result = await backendWith(transport).complete({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'recover once' }],
+    });
+
+    expect(result.content).toBe('recovered');
+    expect(attempts).toBe(2);
+  });
+
+  it('retries a clean stream close without a trailer', async () => {
+    const transport = new FakeTransport('manual');
+    let attempts = 0;
+    vi.spyOn(transport, 'openRun').mockImplementation(async () => {
+      attempts += 1;
+      const stream = new FakeRunStream((active) => {
+        active.emit('response', { ':status': 200 });
+        if (attempts === 1) {
+          active.emit('close');
+          return;
+        }
+        active.emit(
+          'data',
+          Buffer.concat([
+            encodeConnectFrame(
+              transport.codec.encode(
+                'agent.v1.AgentServerMessage',
+                update('textDelta', { text: 'closed stream recovered' }),
+              ),
+            ),
+            encodeConnectFrame(
+              transport.codec.encode(
+                'agent.v1.AgentServerMessage',
+                update('turnEnded', { inputTokens: 1, outputTokens: 1 }),
+              ),
+            ),
+            encodeConnectFrame(Buffer.from('{}'), { trailer: true }),
+          ]),
+        );
+      });
+      transport.stream = stream;
+      return stream;
+    });
+
+    const result = await backendWith(transport).complete({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'recover a clean close' }],
+    });
+
+    expect(result.content).toBe('closed stream recovered');
+    expect(attempts).toBe(2);
+  });
+
+  it('retries after filtered content but not after client-visible content', async () => {
+    const hiddenTransport = new FakeTransport('manual');
+    let hiddenAttempts = 0;
+    vi.spyOn(hiddenTransport, 'openRun').mockImplementation(async () => {
+      hiddenAttempts += 1;
+      const stream = new FakeRunStream((active) => {
+        active.emit('response', { ':status': 200 });
+        if (hiddenAttempts === 1) {
+          active.emit(
+            'data',
+            encodeConnectFrame(
+              hiddenTransport.codec.encode(
+                'agent.v1.AgentServerMessage',
+                update('textDelta', { text: '[TOOL_' }),
+              ),
+            ),
+          );
+          active.destroy(Object.assign(new Error('reset'), { code: 'ECONNRESET' }));
+          return;
+        }
+        active.emit(
+          'data',
+          Buffer.concat([
+            encodeConnectFrame(
+              hiddenTransport.codec.encode(
+                'agent.v1.AgentServerMessage',
+                update('textDelta', { text: 'retry visible' }),
+              ),
+            ),
+            encodeConnectFrame(
+              hiddenTransport.codec.encode(
+                'agent.v1.AgentServerMessage',
+                update('turnEnded', { inputTokens: 1, outputTokens: 1 }),
+              ),
+            ),
+            encodeConnectFrame(Buffer.from('{}'), { trailer: true }),
+          ]),
+        );
+      });
+      hiddenTransport.stream = stream;
+      return stream;
+    });
+    const hiddenEvents = [];
+    for await (const event of backendWith(hiddenTransport).completeStream({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'retry hidden marker' }],
+      tools: [{ type: 'function', function: { name: 'unused', parameters: {} } }],
+      tool_choice: 'auto',
+    })) {
+      hiddenEvents.push(event);
+    }
+    expect(hiddenAttempts).toBe(2);
+    expect(hiddenEvents).toContainEqual({ type: 'content', text: 'retry visible' });
+
+    const visibleTransport = new FakeTransport('manual');
+    let visibleAttempts = 0;
+    vi.spyOn(visibleTransport, 'openRun').mockImplementation(async () => {
+      visibleAttempts += 1;
+      const stream = new FakeRunStream((active) => {
+        active.emit('response', { ':status': 200 });
+        active.emit(
+          'data',
+          encodeConnectFrame(
+            visibleTransport.codec.encode(
+              'agent.v1.AgentServerMessage',
+              update('textDelta', { text: 'already visible' }),
+            ),
+          ),
+        );
+        active.destroy(Object.assign(new Error('reset'), { code: 'ECONNRESET' }));
+      });
+      visibleTransport.stream = stream;
+      return stream;
+    });
+    const iterable = backendWith(visibleTransport).completeStream({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'do not replay' }],
+    });
+    const iterator = iterable[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: 'content', text: 'already visible' },
+    });
+    await expect(iterator.next()).rejects.toThrow('reset');
+    expect(visibleAttempts).toBe(1);
+  });
+
+  it('recognizes nested and resource-exhausted retryable failures', () => {
+    expect(
+      isRetryableCursorTransportError(
+        Object.assign(new Error('fetch failed'), {
+          cause: Object.assign(new Error('lookup failed'), { code: 'ENOTFOUND' }),
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isRetryableCursorTransportError(new ConnectRpcError('Error', 'resource_exhausted')),
+    ).toBe(true);
+    expect(
+      isRetryableCursorTransportError(
+        new ConnectRpcError('quota', 'resource_exhausted', [
+          { value: { errorType: 'PRO_USER_USAGE_LIMIT' } },
+        ]),
+      ),
+    ).toBe(false);
+    expect(
+      isRetryableCursorTransportError(
+        Object.assign(new Error('Session closed with error code 2'), {
+          code: 'ERR_HTTP2_SESSION_ERROR',
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isRetryableCursorTransportError(
+        Object.assign(new Error('premature close'), {
+          code: 'ERR_STREAM_PREMATURE_CLOSE',
+        }),
+      ),
+    ).toBe(true);
   });
 });

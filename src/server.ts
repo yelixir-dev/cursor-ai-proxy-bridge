@@ -237,6 +237,12 @@ function openAiError(message: string, type = 'invalid_request_error') {
   return { error: { message, type } };
 }
 
+function backendErrorMessage(error: unknown): string {
+  return error instanceof ToolArgumentValidationError || error instanceof CursorBackendError
+    ? error.message
+    : 'Cursor backend completion failed';
+}
+
 function toolConfigurationError(request: z.infer<typeof chatCompletionSchema>): string | undefined {
   const tools = request.tools ?? [];
   const names = new Set(tools.map((tool) => tool.function.name));
@@ -457,13 +463,7 @@ async function streamChatCompletion(
     if (!started) throw error;
     if (!signal.aborted && !reply.raw.destroyed && !reply.raw.writableEnded) {
       reply.request.log.warn({ err: error }, 'cursor backend stream failed after SSE started');
-      await writeSse(
-        reply,
-        sseData(
-          completionChunk(request, id, created, [{ index: 0, delta: {}, finish_reason: 'stop' }]),
-        ),
-      );
-      await writeSse(reply, 'data: [DONE]\n\n');
+      await writeSse(reply, sseData(openAiError(backendErrorMessage(error), 'backend_error')));
       reply.raw.end();
     }
     return reply;
@@ -558,9 +558,9 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   const modelPolicy = new ModelPolicy(dashboardConfig.modelOverrides);
   const stats: RequestStats = { count: 0, startedAt: Date.now() };
   const completionLimiter = new CompletionLimiter(
-    config.maxConcurrency ?? positiveIntegerFromEnv('CURSOR_BRIDGE_MAX_CONCURRENCY', 8),
+    config.maxConcurrency ?? positiveIntegerFromEnv('CURSOR_BRIDGE_MAX_CONCURRENCY', 16),
     config.maxConcurrencyPerKey ??
-      positiveIntegerFromEnv('CURSOR_BRIDGE_MAX_CONCURRENCY_PER_KEY', 4),
+      positiveIntegerFromEnv('CURSOR_BRIDGE_MAX_CONCURRENCY_PER_KEY', 16),
   );
   let healthCache: { value: BackendHealth; expiresAt: number } | undefined;
   let healthRefresh: Promise<BackendHealth> | undefined;
@@ -803,11 +803,7 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     } catch (error) {
       if (requestAbort.signal.aborted) return reply;
       request.log.warn({ err: error }, 'cursor backend completion failed');
-      const message =
-        error instanceof ToolArgumentValidationError || error instanceof CursorBackendError
-          ? error.message
-          : 'Cursor backend completion failed';
-      return reply.code(502).send(openAiError(message, 'backend_error'));
+      return reply.code(502).send(openAiError(backendErrorMessage(error), 'backend_error'));
     } finally {
       requestAbort.cleanup();
       releaseCapacity();

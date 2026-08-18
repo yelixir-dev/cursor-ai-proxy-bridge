@@ -2,7 +2,11 @@ import { accessSync, constants } from 'node:fs';
 import { delimiter, isAbsolute, join } from 'node:path';
 import type { BridgeConfig } from '../config.js';
 import { createCursorCliBackend } from './cursor-cli.js';
-import { CursorApiBackend, type CursorApiBackendDependencies } from './cursor-api/index.js';
+import {
+  CursorApiBackend,
+  cursorRetryFailureKind,
+  type CursorApiBackendDependencies,
+} from './cursor-api/index.js';
 import { CursorApiHttpError } from './cursor-api/transport.js';
 import type {
   CursorApiCredential,
@@ -92,6 +96,7 @@ function failureKind(error: unknown): 'ordinary' | 'auth' | 'protocol' | 'transp
   const code =
     error && typeof error === 'object' && 'code' in error ? String(error.code) : undefined;
   if (
+    cursorRetryFailureKind(error) === 'transport' ||
     /ECONN|ETIMEDOUT|EPIPE|ENET|EHOST|ENOTFOUND|stream closed|socket|transport|timed out|truncated connect|invalid gzip/i.test(
       `${code ?? ''} ${message}`,
     )

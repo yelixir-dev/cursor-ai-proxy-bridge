@@ -4,6 +4,7 @@ import {
   createConfiguredBackend,
   type ProbeableCursorApiBackend,
 } from '../src/backend/auto.js';
+import { ConnectRpcError } from '../src/backend/cursor-api/connect-frame.js';
 import { CursorApiHttpError } from '../src/backend/cursor-api/transport.js';
 import type {
   BackendHealth,
@@ -154,6 +155,32 @@ describe('automatic backend runtime failover', () => {
     expect((await automatic.complete(request)).content).toBe('api');
     expect(probe).toHaveBeenCalledOnce();
     expect((await automatic.health()).activeBackend).toBe('cursor-api');
+  });
+
+  it.each([
+    ['Connect unavailable', new ConnectRpcError('upstream unavailable', 'unavailable')],
+    [
+      'HTTP/2 GOAWAY',
+      Object.assign(new Error('GOAWAY received'), { code: 'ERR_HTTP2_GOAWAY_SESSION' }),
+    ],
+  ])('flips after repeated canonical %s failures', async (_name, failure) => {
+    const direct = api({
+      complete: async () => Promise.reject(failure),
+    });
+    const automatic = new AutoCursorBackend(direct, backend('cursor-cli'), {
+      now: () => 1_000,
+      warn: vi.fn(),
+      cooldownMs: 100,
+      fatalThreshold: 3,
+      probeTimeoutMs: 10,
+      initial: 'cursor-api',
+    });
+
+    for (let index = 0; index < 3; index += 1) {
+      await expect(automatic.complete(request)).rejects.toBe(failure);
+    }
+
+    expect((await automatic.health()).activeBackend).toBe('cursor-cli');
   });
 
   it.each([

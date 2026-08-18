@@ -83,6 +83,11 @@ export class ToolTextStreamFilter {
     return this.mode === 'suppressed';
   }
 
+  reset(): void {
+    this.pending = '';
+    this.mode = 'undecided';
+  }
+
   push(text: string): string {
     if (this.mode === 'suppressed') return '';
     this.pending += text;

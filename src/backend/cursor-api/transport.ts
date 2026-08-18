@@ -230,27 +230,32 @@ export class NodeCursorApiTransport implements CursorApiTransport {
     accessToken?: string,
   ): Promise<CursorRunStream> {
     const session = this.connectImplementation(this.agentEndpoint ?? baseUrl);
-    const traceId = randomBytes(16).toString('hex');
-    const spanId = randomBytes(8).toString('hex');
-    const traceparent = `00-${traceId}-${spanId}-01`;
-    const stream: ClientHttp2Stream = session.request({
-      ':method': 'POST',
-      ':path': '/agent.v1.AgentService/Run',
-      ...(await this.headers(requestId, false, accessToken)),
-      'backend-traceparent': traceparent,
-      'connect-accept-encoding': 'gzip,br',
-      'connect-content-encoding': 'gzip',
-      'connect-protocol-version': '1',
-      'content-type': 'application/connect+proto',
-      traceparent,
-      'x-blob-encryption-key': randomBytes(32).toString('hex'),
-      'x-original-request-id': requestId,
-    });
     const closeSession = () => {
       if (!session.closed && !session.destroyed) session.close();
     };
-    stream.once('close', closeSession);
-    session.once('error', (error) => stream.destroy(error));
-    return stream;
+    try {
+      const traceId = randomBytes(16).toString('hex');
+      const spanId = randomBytes(8).toString('hex');
+      const traceparent = `00-${traceId}-${spanId}-01`;
+      const stream: ClientHttp2Stream = session.request({
+        ':method': 'POST',
+        ':path': '/agent.v1.AgentService/Run',
+        ...(await this.headers(requestId, false, accessToken)),
+        'backend-traceparent': traceparent,
+        'connect-accept-encoding': 'gzip,br',
+        'connect-content-encoding': 'gzip',
+        'connect-protocol-version': '1',
+        'content-type': 'application/connect+proto',
+        traceparent,
+        'x-blob-encryption-key': randomBytes(32).toString('hex'),
+        'x-original-request-id': requestId,
+      });
+      stream.once('close', closeSession);
+      session.once('error', (error) => stream.destroy(error));
+      return stream;
+    } catch (error) {
+      closeSession();
+      throw error;
+    }
   }
 }

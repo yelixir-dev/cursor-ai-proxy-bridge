@@ -87,8 +87,8 @@ export function loadConfig(envFile = '.env'): BridgeConfig {
     workspaceMode,
     realWorkspacePath:
       workspaceMode === 'real-workspace' ? process.env.CURSOR_BRIDGE_REAL_WORKSPACE : undefined,
-    maxConcurrency: numberFromEnv('CURSOR_BRIDGE_MAX_CONCURRENCY', 8),
-    maxConcurrencyPerKey: numberFromEnv('CURSOR_BRIDGE_MAX_CONCURRENCY_PER_KEY', 4),
+    maxConcurrency: numberFromEnv('CURSOR_BRIDGE_MAX_CONCURRENCY', 16),
+    maxConcurrencyPerKey: numberFromEnv('CURSOR_BRIDGE_MAX_CONCURRENCY_PER_KEY', 16),
     version: packageVersion(),
     dashboardConfigPath: configPath,
     dashboardConfig,

@@ -13,6 +13,7 @@ export class ConnectRpcError extends Error {
   constructor(
     message: string,
     readonly code?: string,
+    readonly details?: unknown,
   ) {
     super(message);
     this.name = 'ConnectRpcError';
@@ -61,11 +62,14 @@ export class ConnectFrameDecoder {
         } catch {
           throw new ConnectRpcError('Invalid Connect end-stream trailer JSON');
         }
-        const rpcError = trailer.error as { code?: unknown; message?: unknown } | undefined;
+        const rpcError = trailer.error as
+          | { code?: unknown; message?: unknown; details?: unknown }
+          | undefined;
         if (rpcError) {
           throw new ConnectRpcError(
             typeof rpcError.message === 'string' ? rpcError.message : 'Cursor Connect RPC failed',
             typeof rpcError.code === 'string' ? rpcError.code : undefined,
+            rpcError.details,
           );
         }
         frames.push({ flags, trailer });

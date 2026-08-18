@@ -880,14 +880,23 @@ describe('cursor-ai-bridge server', () => {
     const { response } = await clientPromise;
     const chunks: Buffer[] = [];
     const ended = deferred();
-    response.on('data', (chunk: Buffer) => chunks.push(chunk));
+    const contentReceived = deferred();
+    response.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+      if (Buffer.concat(chunks).toString('utf8').includes('streamed answer')) {
+        contentReceived.resolve();
+      }
+    });
     response.once('end', () => ended.resolve());
     response.resume();
     await waitingForRelease.promise;
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    const streamedBeforeCompletion = Buffer.concat(chunks)
-      .toString('utf8')
-      .includes('streamed answer');
+    const deadline = AbortSignal.timeout(5_000);
+    const streamedBeforeCompletion = await Promise.race([
+      contentReceived.promise.then(() => true),
+      new Promise<boolean>((resolve) => {
+        deadline.addEventListener('abort', () => resolve(false), { once: true });
+      }),
+    ]);
     release.resolve();
     await ended.promise;
     const body = Buffer.concat(chunks).toString('utf8');
@@ -1421,6 +1430,59 @@ describe('cursor-ai-bridge server', () => {
     expect((await first).statusCode).toBe(200);
   });
 
+  it('admits sixteen same-key completions by default', async () => {
+    let started = 0;
+    const allStarted = deferred();
+    const release = deferred();
+    const backend: CursorBackend = {
+      ...createMockBackend(),
+      async complete(request) {
+        started += 1;
+        if (started === 16) allStarted.resolve();
+        await release.promise;
+        return { content: 'done', model: request.model };
+      },
+    };
+    const server = await buildServer({ config: baseConfig, backend });
+    const requests = Array.from({ length: 16 }, () =>
+      server.inject({
+        method: 'POST',
+        url: '/v1/chat/completions',
+        headers: { authorization: 'Bearer ***' },
+        payload: { messages: [{ role: 'user', content: 'hold capacity' }] },
+      }),
+    );
+    const admissionDeadline = AbortSignal.timeout(1_000);
+    const admission = await Promise.race([
+      allStarted.promise.then(() => 'all-started'),
+      Promise.race(requests).then((response) => `response-${response.statusCode}`),
+      new Promise<string>((resolve) => {
+        admissionDeadline.addEventListener('abort', () => resolve('timeout'), { once: true });
+      }),
+    ]);
+
+    let overflowStatus: number | undefined;
+    try {
+      if (admission === 'all-started') {
+        const overflow = await server.inject({
+          method: 'POST',
+          url: '/v1/chat/completions',
+          headers: { authorization: 'Bearer ***' },
+          payload: { messages: [{ role: 'user', content: 'overflow capacity' }] },
+        });
+        overflowStatus = overflow.statusCode;
+      }
+    } finally {
+      release.resolve();
+    }
+    expect((await Promise.all(requests)).every((response) => response.statusCode === 200)).toBe(
+      true,
+    );
+    expect(admission).toBe('all-started');
+    expect(overflowStatus).toBe(429);
+    await server.close();
+  });
+
   it('maps output-limit failures to an OpenAI-style 502 backend error', async () => {
     const backend: CursorBackend = {
       ...createMockBackend(),
@@ -1443,7 +1505,7 @@ describe('cursor-ai-bridge server', () => {
     });
   });
 
-  it('returns JSON 502 before SSE starts and a terminal stop chunk after a midstream failure', async () => {
+  it('returns JSON 502 before SSE starts and an SSE error after a midstream failure', async () => {
     const beforeBackend: CursorBackend = {
       ...createMockBackend(),
       async *completeStream() {
@@ -1476,8 +1538,14 @@ describe('cursor-ai-bridge server', () => {
       payload: { stream: true, messages: [{ role: 'user', content: 'fail later' }] },
     });
     expect(after.statusCode).toBe(200);
-    expect(after.body).toContain('"finish_reason":"stop"');
-    expect(after.body.trim().endsWith('data: [DONE]')).toBe(true);
+    const errorFrame = after.body
+      .split('\n\n')
+      .find((frame) => frame.startsWith('data: {') && frame.includes('"error"'));
+    expect(JSON.parse(errorFrame?.slice(6) ?? '{}')).toEqual({
+      error: { message: 'failed after content', type: 'backend_error' },
+    });
+    expect(after.body).not.toContain('"finish_reason":"stop"');
+    expect(after.body).not.toContain('data: [DONE]');
   });
 
   it('aborts the streaming Cursor child when the HTTP client disconnects', async () => {

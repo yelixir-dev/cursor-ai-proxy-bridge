@@ -14,6 +14,32 @@ export interface AuthProviderOptions {
   fetch?: typeof globalThis.fetch;
 }
 
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException('The operation was aborted', 'AbortError');
+}
+
+export function awaitWithAbort<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return operation;
+  if (signal.aborted) return Promise.reject(abortReason(signal));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener('abort', onAbort);
+      reject(abortReason(signal));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    operation.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 function jwtExpiration(token: string): number | undefined {
   const payload = token.split('.')[1];
   if (!payload) return undefined;
@@ -83,6 +109,7 @@ export class CursorAuthProvider {
       weight: 1,
       enabled: true,
     },
+    signal?: AbortSignal,
   ): Promise<string> {
     const cached = this.cached.get(credential.id);
     if (cached && !this.needsRefresh(cached.expiration)) return cached.token;
@@ -93,7 +120,7 @@ export class CursorAuthProvider {
       });
       this.refreshes.set(credential.id, refresh);
     }
-    return refresh;
+    return awaitWithAbort(refresh, signal);
   }
 
   invalidate(id?: string): void {
