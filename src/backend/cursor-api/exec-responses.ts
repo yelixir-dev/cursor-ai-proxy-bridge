@@ -19,6 +19,7 @@ interface ExecReply {
   readonly value: Dict;
   readonly compressed?: boolean;
   readonly localExecutionTimeMs?: number;
+  readonly omitExecId?: boolean;
 }
 
 function dict(value: unknown): Dict | undefined {
@@ -28,20 +29,27 @@ function dict(value: unknown): Dict | undefined {
 }
 
 function sendExec(context: ExecResponseContext, reply: ExecReply): void {
+  const execValue: Dict = {
+    id: reply.exec.id,
+    message: { case: reply.messageCase, value: reply.value },
+    localExecutionTimeMs: reply.localExecutionTimeMs,
+  };
+  if (reply.omitExecId !== true) execValue.execId = reply.exec.execId;
   context.writeMessage(
     {
       message: {
         case: 'execClientMessage',
-        value: {
-          id: reply.exec.id,
-          execId: reply.exec.execId,
-          message: { case: reply.messageCase, value: reply.value },
-          localExecutionTimeMs: reply.localExecutionTimeMs,
-        },
+        value: execValue,
       },
     },
     reply.compressed ?? false,
   );
+}
+
+function allowedMcpToolName(request: ChatCompletionRequest, value: Dict): boolean {
+  const name = value.toolName ?? value.name;
+  if (typeof name !== 'string' || name.length === 0) return false;
+  return (request.tools ?? []).some((tool) => tool.function.name === name);
 }
 
 function rejectionValue(
@@ -102,6 +110,15 @@ export function handleExecResponse(context: ExecResponseContext, exec: Dict): vo
   }
   if (execCase === 'mcpArgs') {
     context.completeTool(value);
+    if (allowedMcpToolName(context.request, value)) {
+      sendExec(context, {
+        exec,
+        messageCase: 'mcpResult',
+        value: { result: { case: 'success', value: {} } },
+        omitExecId: true,
+        localExecutionTimeMs: 1,
+      });
+    }
     return;
   }
   if (execCase === 'mcpAllowlistPrecheckArgs') {

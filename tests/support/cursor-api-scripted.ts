@@ -30,13 +30,15 @@ const codec = new ProtoCodec(loadProtoDescriptors());
 export class ScriptedStream extends EventEmitter implements CursorRunStream {
   destroyed = false;
   writableEnded = false;
+  readonly writes: Buffer[] = [];
   #started = false;
 
   constructor(private readonly script: (stream: ScriptedStream) => void) {
     super();
   }
 
-  write(): boolean {
+  write(chunk: Uint8Array): boolean {
+    this.writes.push(Buffer.from(chunk));
     if (!this.#started) {
       this.#started = true;
       queueMicrotask(() => this.script(this));
@@ -111,14 +113,18 @@ export function update(caseName: string, value: Record<string, unknown>): Buffer
   );
 }
 
-function exec(value: Record<string, unknown>): Buffer {
+export function mcpArgsFrame(
+  value: Record<string, unknown>,
+  id = 1,
+  execId = typeof value.toolCallId === 'string' ? value.toolCallId : 'exec',
+): Buffer {
   return encodeConnectFrame(
     codec.encode('agent.v1.AgentServerMessage', {
       message: {
         case: 'execServerMessage',
         value: {
-          id: 1,
-          execId: String(value.toolCallId),
+          id,
+          execId,
           message: { case: 'mcpArgs', value },
         },
       },
@@ -171,7 +177,7 @@ export function callBatch(wireName: string, id: string, value: string): Buffer {
       },
     }),
     update('partialToolCall', { callId: id, argsTextDelta: argumentsJson }),
-    exec(toolCall(wireName, id, value)),
+    mcpArgsFrame(toolCall(wireName, id, value)),
   ]);
 }
 
