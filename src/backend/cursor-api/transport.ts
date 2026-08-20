@@ -26,6 +26,7 @@ export interface CursorRunStream {
   readonly destroyed: boolean;
   readonly writableEnded: boolean;
   write(chunk: Uint8Array): boolean;
+  end(): void;
   destroy(error?: Error): void;
   close(): void;
   on<Event extends keyof CursorRunStreamEvents>(

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { OutgoingHttpHeaders } from 'node:http2';
+import http2, { type ClientHttp2Stream, type OutgoingHttpHeaders } from 'node:http2';
 import type { CursorRunStream } from './transport.js';
 
 const DEFAULT_MAX_SESSIONS = 8;
@@ -44,6 +44,48 @@ export function fingerprintCredential(credential: string): string {
   return createHash('sha256').update(FINGERPRINT_DOMAIN).update(credential).digest('hex');
 }
 
+function isClientHttp2Stream(stream: CursorRunStream): stream is ClientHttp2Stream {
+  return 'session' in stream;
+}
+
+function wrapClientHttp2Stream(inner: ClientHttp2Stream): CursorRunStream {
+  const wrapped: CursorRunStream = {
+    get destroyed() {
+      return inner.destroyed;
+    },
+    get writableEnded() {
+      return inner.writableEnded;
+    },
+    write(chunk) {
+      return inner.write(chunk);
+    },
+    end() {
+      if (!inner.destroyed && !inner.writableEnded) inner.end();
+    },
+    close() {
+      inner.close();
+    },
+    destroy(error) {
+      if (inner.destroyed) return;
+      if (!inner.closed) inner.close(http2.constants.NGHTTP2_CANCEL);
+      if (error && inner.listenerCount('error') > 0) inner.emit('error', error);
+    },
+    on(event, listener) {
+      inner.on(event, listener);
+      return wrapped;
+    },
+    once(event, listener) {
+      inner.once(event, listener);
+      return wrapped;
+    },
+  };
+  return wrapped;
+}
+
+function adaptRunStream(stream: CursorRunStream): CursorRunStream {
+  return isClientHttp2Stream(stream) ? wrapClientHttp2Stream(stream) : stream;
+}
+
 export class H2SessionPool {
   private readonly entries = new Map<string, SessionEntry>();
   private readonly sessions = new Set<SessionEntry>();
@@ -64,7 +106,7 @@ export class H2SessionPool {
     const key = `${endpoint}\0${request.credentialFingerprint}`;
     const entry = this.usableEntry(key) ?? this.createEntry(key, endpoint, request);
     try {
-      const stream = entry.session.request(request.headers);
+      const stream = adaptRunStream(entry.session.request(request.headers));
       entry.streams.add(stream);
       stream.once('close', () => entry.streams.delete(stream));
       request.onStreamOpen?.();

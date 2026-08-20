@@ -323,6 +323,10 @@ class FakeRunStream extends EventEmitter implements CursorRunStream {
     }
     return true;
   }
+  end(): void {
+    if (this.destroyed || this.writableEnded) return;
+    this.writableEnded = true;
+  }
   destroy(error?: Error): void {
     if (this.destroyed) return;
     this.destroyed = true;
@@ -330,7 +334,7 @@ class FakeRunStream extends EventEmitter implements CursorRunStream {
     this.emit('close');
   }
   close(): void {
-    this.writableEnded = true;
+    this.end();
   }
 }
 
@@ -1624,7 +1628,7 @@ describe('Cursor API mapping and Run lifecycle', () => {
     });
   });
 
-  it('destroys a stalled Run stream on abort', async () => {
+  it('half-closes a stalled Run stream on abort', async () => {
     const transport = new FakeTransport('stall');
     const backend = backendWith(transport);
     const controller = new AbortController();
@@ -1656,7 +1660,8 @@ describe('Cursor API mapping and Run lifecycle', () => {
     ]);
     controller.abort();
     await expect(completion).rejects.toMatchObject({ name: 'AbortError' });
-    expect(stream.destroyed).toBe(true);
+    expect(stream.writableEnded).toBe(true);
+    expect(stream.destroyed).toBe(false);
   });
 
   it('does not open a Run after the caller aborts during discovery', async () => {

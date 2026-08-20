@@ -49,6 +49,11 @@ class RunStream extends EventEmitter implements CursorRunStream {
     return true;
   }
 
+  end(): void {
+    if (this.destroyed || this.writableEnded) return;
+    this.writableEnded = true;
+  }
+
   destroy(error?: Error): void {
     if (this.destroyed) return;
     this.destroyed = true;

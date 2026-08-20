@@ -71,7 +71,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       if (settled) return;
       settled = true;
       cleanup();
-      if (!stream.destroyed) stream.close();
+      if (!stream.destroyed && !stream.writableEnded) stream.end();
       if (error) {
         reject(error);
         return;
@@ -88,7 +88,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     };
     const onAbort = () => {
       const error = new CursorCommandAbortedError();
-      stream.destroy(error);
+      if (!stream.destroyed && !stream.writableEnded) stream.end();
       finish(error);
     };
     const writeMessage = (message: Dict, compressed?: boolean) => {

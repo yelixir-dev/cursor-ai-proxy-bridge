@@ -41,7 +41,7 @@ describe('cursor-api Run cleanup', () => {
     expect(transport.attempts).toEqual(['only-token']);
   });
 
-  it('aborts a pending parallel batch, destroys the stream, and surfaces no terminal', async () => {
+  it('aborts a pending parallel batch, half-closes the stream, and surfaces no terminal', async () => {
     // Given: call A completed and call B is announced but incomplete.
     const request = parallelToolRequest();
     const wireName = wireToolName(request);
@@ -79,11 +79,12 @@ describe('cursor-api Run cleanup', () => {
       })(),
     ).rejects.toMatchObject({ name: 'AbortError' });
 
-    // Then: the stream is destroyed, no terminal event is emitted, and a later
+    // Then: the stream is half-closed, no terminal event is emitted, and a later
     // delivery produces no further client event after the abort.
     run.stream.emit('data', callBatch(wireName, 'call-b', 'B'));
     await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
-    expect(run.stream.destroyed).toBe(true);
+    expect(run.stream.writableEnded).toBe(true);
+    expect(run.stream.destroyed).toBe(false);
     expect(lateEvents.map((event) => event.type)).not.toContain('done');
     expect(lateEvents.map((event) => event.type)).not.toContain('tool_call_complete');
     expect(transport.attempts).toEqual(['only-token']);
