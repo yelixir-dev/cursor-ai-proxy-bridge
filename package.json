@@ -6,16 +6,21 @@
   "scripts": {
     "test": "mkdir -p .vitest-tmp && TMPDIR=$PWD/.vitest-tmp vitest run --pool=threads --maxWorkers=1",
     "test:e2e": "npm run build && node scripts/e2e-smoke.mjs",
+    "e2e": "node scripts/e2e-smoke.mjs",
     "extract-protos": "node scripts/extract-protos.mjs",
     "clean": "node -e \"import(\\\"node:fs\\\").then(fs=>fs.rmSync(\\\"dist\\\",{recursive:true,force:true}))\"",
     "build": "npm run clean && tsc -p tsconfig.build.json && node -e \"import(\\\"node:fs\\\").then(fs=>{fs.chmodSync(\\\"dist/index.js\\\",0o755);const p=\\\"src/backend/cursor-api/proto-descriptors.json\\\";if(fs.existsSync(p)){fs.mkdirSync(\\\"dist/backend/cursor-api\\\",{recursive:true});fs.copyFileSync(p,\\\"dist/backend/cursor-api/proto-descriptors.json\\\")}})\"",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
+    "benchmark:composer": "node scripts/benchmark-composer.mjs",
+    "benchmark:materialize-comparator": "tsx src/benchmark/comparator-materializer.ts",
+    "benchmark:composer:smoke": "npm run benchmark:composer -- --profile smoke --seed 20260818",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "verify": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run build"
+    "check:strict": "node scripts/check-strict-assertions.mjs",
+    "verify": "npm run typecheck && npm run lint && npm run format:check && npm run check:strict && npm run test && npm run build"
   },
   "keywords": [],
   "author": "Yorha Workspace",

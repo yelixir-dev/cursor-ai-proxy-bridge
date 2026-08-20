@@ -93,6 +93,43 @@ There are two separate key layers:
 - **Client access.** `CURSOR_BRIDGE_AUTH` accepts `on` or `off`. It defaults to `on` when `CURSOR_BRIDGE_API_KEY` is set, and to `off` with a startup warning when that key is unset. Explicit `CURSOR_BRIDGE_AUTH=on` without `CURSOR_BRIDGE_API_KEY` fails startup. Requests can use `Authorization: Bearer <key>` or `x-api-key: <key>`.
 - **Cursor access.** `CURSOR_API_KEY` is the Cursor Dashboard -> API Keys credential for headless hosts. Additional credentials can be created in `/dashboard`, assigned weights, enabled or disabled, and stored in the mode-0600 dashboard config. Auth failures put only the failed credential into cooldown and trigger one retry on another available credential.
 
+### OMO provider configuration
+
+Merge the `yorha` entry below into the existing `providers` object in `~/.omo/agent/models.json`; keep every unrelated provider and model entry intact. Replace the example client key when bridge authentication is enabled.
+
+```json
+{
+  "providers": {
+    "yorha": {
+      "baseUrl": "http://127.0.0.1:9997/v1",
+      "api": "openai-completions",
+      "apiKey": "replace-with-your-bridge-client-key",
+      "models": [
+        {
+          "id": "composer-2.5",
+          "name": "Composer 2.5",
+          "upstreamModelId": "composer-2.5",
+          "reasoning": false,
+          "input": ["text"],
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 200000,
+          "maxTokens": 64000,
+          "compat": {
+            "supportsStore": false,
+            "supportsDeveloperRole": false
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
 ### API surface
 
 | Endpoint                                     | Use                                                                     |

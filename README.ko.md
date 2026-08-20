@@ -93,6 +93,43 @@ CURSOR_BRIDGE_BACKEND=cursor-api npm start
 - **Client access.** `CURSOR_BRIDGE_AUTH`는 `on` 또는 `off`를 받습니다. 기본값은 `on`이며 `CURSOR_BRIDGE_API_KEY`가 설정된 경우입니다. key가 없으면 startup warning과 함께 `off`가 됩니다. `CURSOR_BRIDGE_AUTH=on`을 `CURSOR_BRIDGE_API_KEY` 없이 명시하면 startup에 실패합니다. 요청은 `Authorization: Bearer <key>` 또는 `x-api-key: <key>`를 사용할 수 있습니다.
 - **Cursor access.** `CURSOR_API_KEY`는 headless host용 Cursor Dashboard -> API Keys credential입니다. `/dashboard`에서 추가 credential을 만들고 weight를 지정하거나 enable, disable할 수 있으며 mode-0600 dashboard config에 저장됩니다. 인증 실패는 해당 credential만 cooldown에 넣고 사용 가능한 다른 credential로 한 번 retry합니다.
 
+### OMO provider 설정
+
+아래 `yorha` entry를 `~/.omo/agent/models.json`의 기존 `providers` object에 병합하고, 관련 없는 provider와 model entry는 그대로 유지하세요. Bridge 인증을 사용한다면 예시 client key를 교체하세요.
+
+```json
+{
+  "providers": {
+    "yorha": {
+      "baseUrl": "http://127.0.0.1:9997/v1",
+      "api": "openai-completions",
+      "apiKey": "replace-with-your-bridge-client-key",
+      "models": [
+        {
+          "id": "composer-2.5",
+          "name": "Composer 2.5",
+          "upstreamModelId": "composer-2.5",
+          "reasoning": false,
+          "input": ["text"],
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 200000,
+          "maxTokens": 64000,
+          "compat": {
+            "supportsStore": false,
+            "supportsDeveloperRole": false
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
 ### API surface
 
 | Endpoint                                       | Use                                                                         |

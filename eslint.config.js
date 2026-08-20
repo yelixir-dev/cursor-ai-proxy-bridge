@@ -12,5 +12,5 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
-  { ignores: ['dist/**', 'node_modules/**', '.vitest-tmp/**'] },
+  { ignores: ['.omo/evidence/**', 'dist/**', 'node_modules/**', '.vitest-tmp/**', '.omo/**'] },
 );
