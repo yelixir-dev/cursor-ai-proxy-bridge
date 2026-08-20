@@ -282,3 +282,41 @@ CLI/OS kill uses CANCEL; bridge timeout/abort uses INTERNAL_ERROR.
 - Frame-only reports:
   `.omo/evidence/wire-capture/task-8-diffs/*-frames-only.json`.
 - Self-check: `.omo/evidence/wire-capture/task-8-happy.json`.
+
+---
+
+## Fix round (plan `wire-parity-fix`, 2026-08-20)
+
+Committed fixes (see `.omo/plans/wire-parity-fix.md` todos 1-8):
+
+- `57189bd` exec-responses: omit finished `execError` channels (was sending
+  `{execId}`-only `{}` payloads, unlike CLI).
+- `2dd5010` proto bridge: bump `bridge_tool_*` execVersion to 2.
+- `71174c7` abort: `stream.destroy(error)` -> graceful `end()` half-close on
+  the signal path (upstream RST INTERNAL_ERROR eliminated).
+- `1d96c2b` run-messages: answer `mcpArgs` with `mcpResult` on the same Run's
+  exec channel; `9d99e84` prunes the companion Run after the answer is
+  observed, so tool turns stay on one Run like the CLI (post-fix capture:
+  mcpResult 3/3 tool cases, single Run, no orphan).
+- `f49fb83` client disconnect / process shutdown: SIGTERM previously left
+  the h2 session and its half-closed Run stream dangling (`index.ts` never
+  called `backend.shutdown()`), so the peer observed RST INTERNAL_ERROR (2)
+  and no GOAWAY. Now `close()` awaits `backend.shutdown()`;
+  `H2SessionPool.shutdown()` destroys lingering settled streams (RST CANCEL,
+  the allowed worst case) and waits for the session `close` event (bounded
+  1 s) instead of the `closed` flag, which flips the moment `close()` is
+  called and let `process.exit(0)` race the RST/GOAWAY flush. Post-fix
+  cancel capture (`task-8-happy.json`): downstream rst CANCEL + GOAWAY
+  NO_ERROR; regression tests `tests/cursor-api-shutdown-graceful.test.ts`
+  (RED before, GREEN after) and `tests/cursor-api-client-disconnect.test.ts`.
+
+Todo 9 (streaming+tools stall: stream+required 0 bytes / stream+auto no
+DONE, socket FIN ~38.6 s) **no longer reproduces** on the current tree:
+curl stream+required x3, stream+auto, and tool round-trip all emit full
+`tool_calls` + `[DONE]`; the e2e suite passes (`streaming indexed tool
+calls`, `tool-declared text streams`, TTFB/usage, abort reap); the OMO
+harness cases `tool_parallel_two` and `tool_sequential_two_round` complete
+with exit 0 and no stall. No code change was made for todo 9; evidence in
+`.omo/evidence/wire-parity-fix/task-9-happy.json`. If the stall resurfaces,
+capture debug-level bridge logs plus the agentn lifecycle for the stalled
+stream id before changing code.
