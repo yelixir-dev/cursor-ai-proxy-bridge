@@ -16,6 +16,7 @@ function mapToolCallName(call: ToolCall, names: ReadonlyMap<string, string>): To
 
 export interface CursorApiToolRequestMapping {
   request: ChatCompletionRequest;
+  restoreToolName(name: string): string;
   restoreToolCalls(calls: readonly ToolCall[]): ToolCall[];
 }
 
@@ -23,7 +24,11 @@ export function mapCursorApiToolRequest(
   request: ChatCompletionRequest,
 ): CursorApiToolRequestMapping {
   if (!request.tools?.length) {
-    return { request, restoreToolCalls: (calls) => [...calls] };
+    return {
+      request,
+      restoreToolName: (name) => name,
+      restoreToolCalls: (calls) => [...calls],
+    };
   }
 
   const toWire = new Map<string, string>();
@@ -70,6 +75,7 @@ export function mapCursorApiToolRequest(
       tools,
       tool_choice: toolChoice,
     },
+    restoreToolName: (name) => toOpenAi.get(name) ?? name,
     restoreToolCalls: (calls) => calls.map((call) => mapToolCallName(call, toOpenAi)),
   };
 }

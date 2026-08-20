@@ -1,5 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
+import type { OutgoingHttpHeaders } from 'node:http2';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -9,13 +11,13 @@ import {
   ConnectRpcError,
   encodeConnectFrame,
 } from '../src/backend/cursor-api/connect-frame.js';
+import { buildCursorHistory, type CursorHistory } from '../src/backend/cursor-api/history.js';
 import {
   CURSOR_API_STARTUP_SEQUENCE,
   CursorApiBackend,
   isRetryableCursorTransportError,
 } from '../src/backend/cursor-api/index.js';
 import {
-  cursorApiPrompt,
   mapRequestedModels,
   mapUsableModels,
   nativeToolBatchComplete,
@@ -34,11 +36,19 @@ import {
   CURSOR_BOOTSTRAP_UNARY_HEADER_NAMES,
   CURSOR_RUN_HEADER_NAMES,
   CURSOR_UNARY_HEADER_NAMES,
-  NodeCursorApiTransport,
   type CursorApiTransport,
   type CursorRunStream,
+  NodeCursorApiTransport,
 } from '../src/backend/cursor-api/transport.js';
+import { ToolHistoryValidationError } from '../src/backend/tool-history.js';
+import type {
+  ChatCompletionRequest,
+  CompletionStreamEvent,
+  CursorBackend,
+  ToolCall,
+} from '../src/backend/types.js';
 import type { BridgeConfig } from '../src/config.js';
+import { buildServer, flattenMessageContent } from '../src/server.js';
 
 const scalar = (
   no: number,
@@ -92,7 +102,7 @@ const descriptors: ProtoDescriptorSet = {
       oneof(7, 'clientHeartbeat', 'agent.v1.ClientHeartbeat'),
     ),
     'agent.v1.AgentRunRequest': fields(
-      message(1, 'conversationState', 'agent.v1.Empty'),
+      message(1, 'conversationState', 'agent.v1.ConversationStateStructure'),
       message(2, 'action', 'agent.v1.ConversationAction'),
       message(9, 'requestedModel', 'agent.v1.RequestedModel'),
       scalar(5, 'conversationId', 9),
@@ -100,8 +110,46 @@ const descriptors: ProtoDescriptorSet = {
       scalar(25, 'runId', 9),
     ),
     'agent.v1.Empty': fields(),
+    'agent.v1.ConversationStateStructure': fields(
+      scalar(1, 'rootPromptMessagesJson', 12, { repeated: true }),
+      scalar(8, 'turns', 12, { repeated: true }),
+    ),
+    'agent.v1.ConversationTurnStructure': fields(
+      oneof(1, 'agentConversationTurn', 'agent.v1.AgentConversationTurnStructure', 'turn'),
+    ),
+    'agent.v1.AgentConversationTurnStructure': fields(
+      scalar(1, 'userMessage', 12),
+      scalar(2, 'steps', 12, { repeated: true }),
+    ),
+    'agent.v1.ConversationStep': fields(
+      oneof(1, 'assistantMessage', 'agent.v1.AssistantMessage', 'message'),
+      oneof(2, 'toolCall', 'agent.v1.ToolCall', 'message'),
+    ),
+    'agent.v1.AssistantMessage': fields(scalar(1, 'text', 9)),
+    'agent.v1.ToolCall': fields(
+      oneof(15, 'mcpToolCall', 'agent.v1.McpToolCall', 'tool'),
+      scalar(57, 'toolCallId', 9),
+    ),
+    'agent.v1.McpToolCall': fields(
+      message(1, 'args', 'agent.v1.McpArgs'),
+      message(2, 'result', 'agent.v1.McpToolResult'),
+    ),
+    'agent.v1.McpToolResult': fields(
+      oneof(1, 'success', 'agent.v1.McpSuccess', 'result'),
+      oneof(2, 'error', 'agent.v1.McpToolError', 'result'),
+    ),
+    'agent.v1.McpSuccess': fields(
+      message(1, 'content', 'agent.v1.McpToolResultContentItem', { repeated: true }),
+    ),
+    'agent.v1.McpToolError': fields(scalar(1, 'error', 9)),
+    'agent.v1.McpToolResultContentItem': fields(
+      oneof(1, 'text', 'agent.v1.McpTextContent', 'content'),
+    ),
+    'agent.v1.McpTextContent': fields(scalar(1, 'text', 9)),
+    'agent.v1.ResumeAction': fields(),
     'agent.v1.ConversationAction': fields(
       oneof(1, 'userMessageAction', 'agent.v1.UserMessageAction', 'action'),
+      oneof(2, 'resumeAction', 'agent.v1.ResumeAction', 'action'),
     ),
     'agent.v1.UserMessageAction': fields(message(1, 'userMessage', 'agent.v1.UserMessage')),
     'agent.v1.UserMessage': fields(
@@ -126,14 +174,26 @@ const descriptors: ProtoDescriptorSet = {
     'agent.v1.InteractionUpdate': fields(
       oneof(1, 'textDelta', 'agent.v1.TextDeltaUpdate'),
       oneof(2, 'toolCallStarted', 'agent.v1.ToolCallStartedUpdate'),
+      oneof(3, 'toolCallCompleted', 'agent.v1.ToolCallCompletedUpdate'),
       oneof(4, 'thinkingDelta', 'agent.v1.ThinkingDeltaUpdate'),
       oneof(7, 'partialToolCall', 'agent.v1.PartialToolCallUpdate'),
       oneof(14, 'turnEnded', 'agent.v1.TurnEndedUpdate'),
     ),
     'agent.v1.TextDeltaUpdate': fields(scalar(1, 'text', 9)),
-    'agent.v1.ToolCallStartedUpdate': fields(scalar(1, 'callId', 9)),
+    'agent.v1.ToolCallStartedUpdate': fields(
+      scalar(1, 'callId', 9),
+      message(2, 'toolCall', 'agent.v1.ToolCall'),
+    ),
+    'agent.v1.ToolCallCompletedUpdate': fields(
+      scalar(1, 'callId', 9),
+      message(2, 'toolCall', 'agent.v1.ToolCall'),
+    ),
     'agent.v1.ThinkingDeltaUpdate': fields(scalar(1, 'text', 9)),
-    'agent.v1.PartialToolCallUpdate': fields(scalar(1, 'callId', 9)),
+    'agent.v1.PartialToolCallUpdate': fields(
+      scalar(1, 'callId', 9),
+      message(2, 'toolCall', 'agent.v1.ToolCall'),
+      scalar(3, 'argsTextDelta', 9),
+    ),
     'agent.v1.TurnEndedUpdate': fields(
       scalar(1, 'inputTokens', 4),
       scalar(2, 'outputTokens', 4),
@@ -221,13 +281,20 @@ const descriptors: ProtoDescriptorSet = {
 };
 
 function deferred<T = void>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
+  const handlers: Array<{
+    readonly resolve: (value: T | PromiseLike<T>) => void;
+    readonly reject: (error: unknown) => void;
+  }> = [];
+  const promise = new Promise<T>((resolve, reject) => handlers.push({ resolve, reject }));
+  return {
+    promise,
+    resolve: (value: T | PromiseLike<T>) => {
+      for (const handler of handlers.splice(0)) handler.resolve(value);
+    },
+    reject: (error: unknown) => {
+      for (const handler of handlers.splice(0)) handler.reject(error);
+    },
+  };
 }
 
 const config: BridgeConfig = {
@@ -270,6 +337,8 @@ class FakeRunStream extends EventEmitter implements CursorRunStream {
 class FakeTransport implements CursorApiTransport {
   readonly codec = new ProtoCodec(descriptors);
   readonly streamOpened = deferred<FakeRunStream>();
+  openRunCount = 0;
+  dataChunkCount = 0;
   stream?: FakeRunStream;
   constructor(private readonly script: Array<Record<string, unknown>> | 'manual' | 'stall') {}
   async unary(path: string): Promise<Buffer> {
@@ -281,6 +350,7 @@ class FakeTransport implements CursorApiTransport {
     return Buffer.alloc(0);
   }
   async openRun(): Promise<CursorRunStream> {
+    this.openRunCount += 1;
     this.stream = new FakeRunStream((stream) => {
       stream.emit('response', { ':status': 200 });
       if (this.script === 'manual' || this.script === 'stall') return;
@@ -288,6 +358,7 @@ class FakeTransport implements CursorApiTransport {
         encodeConnectFrame(this.codec.encode('agent.v1.AgentServerMessage', messageValue)),
       );
       frames.push(encodeConnectFrame(Buffer.from('{}'), { trailer: true }));
+      this.dataChunkCount += 1;
       stream.emit('data', Buffer.concat(frames));
     });
     this.streamOpened.resolve(this.stream);
@@ -300,6 +371,28 @@ const serverMessage = (caseName: string, value: Record<string, unknown>) => ({
 });
 const update = (caseName: string, value: Record<string, unknown>) =>
   serverMessage('interactionUpdate', { message: { case: caseName, value } });
+
+function testRecord(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('expected test object');
+  }
+  return Object.fromEntries(Object.entries(value));
+}
+
+function required<T>(value: T | undefined, label: string): T {
+  if (value === undefined) throw new TypeError(`missing test ${label}`);
+  return value;
+}
+
+function rootPromptEntries(history: CursorHistory): Array<Record<string, unknown>> {
+  return history.conversationState.rootPromptMessagesJson.map((id) =>
+    testRecord(
+      JSON.parse(
+        required(history.blobs.get(id.toString('hex')), 'root prompt blob').toString('utf8'),
+      ),
+    ),
+  );
+}
 
 function backendWith(transport: FakeTransport) {
   return new CursorApiBackend(config, {
@@ -388,8 +481,8 @@ describe('Cursor API authentication and descriptors', () => {
       fetch: async (_input, init) => {
         exchanges += 1;
         expect(init?.body).toBe('{}');
-        const headers = init?.headers as Record<string, string> | undefined;
-        expect(headers?.authorization).toBe('Bearer api-key');
+        const headers = new Headers(init?.headers);
+        expect(headers.get('authorization')).toBe('Bearer api-key');
         return new Response(JSON.stringify({ accessToken: fresh }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -451,9 +544,13 @@ describe('Cursor API authentication and descriptors', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cursor-api-old-descriptors-'));
     const descriptorPath = join(dir, 'proto-descriptors.json');
     const outdated = structuredClone(descriptors);
-    outdated.messages['agent.v1.InteractionUpdate']!.fields = outdated.messages[
-      'agent.v1.InteractionUpdate'
-    ]!.fields.filter((field) => !['partialToolCall', 'toolCallStarted'].includes(field.localName));
+    const interactionUpdate = required(
+      outdated.messages['agent.v1.InteractionUpdate'],
+      'interaction update descriptor',
+    );
+    interactionUpdate.fields = interactionUpdate.fields.filter(
+      (field) => !['partialToolCall', 'toolCallStarted'].includes(field.localName),
+    );
     writeFileSync(descriptorPath, JSON.stringify(outdated));
     expect(() => loadProtoDescriptors(descriptorPath)).toThrow(/outdated.*extract-protos/i);
   });
@@ -474,14 +571,14 @@ describe('Cursor API authentication and descriptors', () => {
 describe('Cursor API startup and wire parity', () => {
   it('uses the captured CLI header-name sets for unary and Run', async () => {
     const unaryHeaderSets: Record<string, string>[] = [];
-    let runHeaders: Record<string, string> = {};
+    let runHeaders: OutgoingHttpHeaders = {};
     const session = Object.assign(new EventEmitter(), {
       closed: false,
       destroyed: false,
       close() {
         this.closed = true;
       },
-      request(headers: Record<string, string>) {
+      request(headers: OutgoingHttpHeaders) {
         runHeaders = headers;
         return new FakeRunStream(() => undefined);
       },
@@ -490,10 +587,10 @@ describe('Cursor API startup and wire parity', () => {
       auth: new CursorAuthProvider({ environment: { CURSOR_AUTH_TOKEN: 'token' } }),
       clientVersion: 'cli-2026.08.11-e8db854',
       fetch: async (_input, init) => {
-        unaryHeaderSets.push(init?.headers as Record<string, string>);
+        unaryHeaderSets.push(Object.fromEntries(new Headers(init?.headers)));
         return new Response(Buffer.alloc(0), { status: 200 });
       },
-      connect: (() => session) as unknown as typeof import('node:http2').connect,
+      connect: () => session,
     });
     await transport.unary('/bootstrap', Buffer.alloc(0), undefined, true);
     await transport.unary('/test', Buffer.alloc(0));
@@ -529,7 +626,7 @@ describe('Cursor API startup and wire parity', () => {
     const transport = new NodeCursorApiTransport({
       auth: new CursorAuthProvider({ environment: { CURSOR_AUTH_TOKEN: 'token' } }),
       clientVersion: 'cli-2026.08.11-e8db854',
-      connect: (() => session) as unknown as typeof import('node:http2').connect,
+      connect: () => session,
     });
 
     await expect(transport.openRun('https://agent.test', 'request-id')).rejects.toBe(failure);
@@ -712,38 +809,122 @@ describe('Cursor API startup and wire parity', () => {
   });
 
   it('does not forbid another tool call after a tool result in auto mode', () => {
-    const prompt = cursorApiPrompt({
-      model: 'composer-2.5',
-      messages: [
-        { role: 'user', content: 'start' },
-        {
-          role: 'assistant',
-          content: '',
-          tool_calls: [
-            {
-              id: 'call_seed',
-              type: 'function',
-              function: { name: 'get_seed', arguments: '{"label":"alpha"}' },
-            },
-          ],
-        },
-        { role: 'tool', tool_call_id: 'call_seed', content: 'alpha=7' },
-      ],
-      tools: [
-        {
-          type: 'function',
-          function: {
-            name: 'multiply',
-            parameters: { type: 'object' },
+    const liveCodec = new ProtoCodec(loadProtoDescriptors());
+    const messages: ChatCompletionRequest['messages'] = [
+      { role: 'user', content: 'start' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            id: 'call_seed',
+            type: 'function',
+            function: { name: 'get_seed', arguments: '{"label":"alpha"}' },
           },
-        },
-      ],
-      tool_choice: 'auto',
-    });
+        ],
+      },
+      { role: 'tool', tool_call_id: 'call_seed', content: 'alpha=7' },
+    ];
+    const tools = [
+      {
+        type: 'function' as const,
+        function: { name: 'multiply', parameters: { type: 'object' } },
+      },
+    ];
+    const guidance = (choice: ChatCompletionRequest['tool_choice']) => {
+      const history = buildCursorHistory(
+        { model: 'composer-2.5', messages, tools, tool_choice: choice },
+        liveCodec,
+      );
+      const entries = rootPromptEntries(history);
+      const trailing = entries.at(-1);
+      expect(trailing?.role).toBe('system');
+      return String(trailing?.content);
+    };
 
-    expect(prompt).not.toContain('Do not call a tool again');
-    expect(prompt).toContain('Use an available tool only when it is needed');
+    expect(guidance('auto')).not.toContain('Do not call');
+    expect(guidance('none')).toContain('Do not call');
   });
+  it('maps the baseline two-round history into structured conversation state', () => {
+    const liveCodec = new ProtoCodec(loadProtoDescriptors());
+    const decodedRun = liveCodec.decode(
+      'agent.v1.AgentClientMessage',
+      liveCodec.encode(
+        'agent.v1.AgentClientMessage',
+        runRequestMessage(
+          {
+            model: 'composer-2.5',
+            messages: [
+              { role: 'user', content: 'look up the seed' },
+              {
+                role: 'assistant',
+                content: '',
+                tool_calls: [
+                  {
+                    id: 'call_seed',
+                    type: 'function',
+                    function: { name: 'lookup_code', arguments: '{"file":"seed.ts"}' },
+                  },
+                ],
+              },
+              { role: 'tool', tool_call_id: 'call_seed', content: 'seed=20260818' },
+            ],
+            tools: [
+              {
+                type: 'function',
+                function: { name: 'lookup_code', parameters: { type: 'object' } },
+              },
+            ],
+          },
+          'request-id',
+        ),
+      ),
+    ).message.value;
+
+    expect(decodedRun.action.action.case).toBe('resumeAction');
+    expect(decodedRun.conversationState.rootPromptMessagesJson.length).toBeGreaterThanOrEqual(3);
+    expect(decodedRun.conversationState.turns.length).toBe(1);
+  });
+
+  it('rejects orphan and duplicate tool results before opening an upstream Run', async () => {
+    const orphanTransport = new FakeTransport('manual');
+    const orphanSpy = vi.spyOn(orphanTransport, 'openRun');
+    await expect(
+      backendWith(orphanTransport).complete({
+        model: 'composer-2.5',
+        messages: [
+          { role: 'user', content: 'start' },
+          { role: 'tool', tool_call_id: 'ghost', content: 'orphan result' },
+        ],
+      }),
+    ).rejects.toThrow(ToolHistoryValidationError);
+    expect(orphanSpy).not.toHaveBeenCalled();
+
+    const duplicateTransport = new FakeTransport('manual');
+    const duplicateSpy = vi.spyOn(duplicateTransport, 'openRun');
+    await expect(
+      backendWith(duplicateTransport).complete({
+        model: 'composer-2.5',
+        messages: [
+          { role: 'user', content: 'start' },
+          {
+            role: 'assistant',
+            content: '',
+            tool_calls: [
+              {
+                id: 'call_dup',
+                type: 'function',
+                function: { name: 'echo_value', arguments: '{}' },
+              },
+            ],
+          },
+          { role: 'tool', tool_call_id: 'call_dup', content: 'first' },
+          { role: 'tool', tool_call_id: 'call_dup', content: 'second' },
+        ],
+      }),
+    ).rejects.toThrow(ToolHistoryValidationError);
+    expect(duplicateSpy).not.toHaveBeenCalled();
+  }, 20_000);
 });
 
 describe('Cursor API mapping and Run lifecycle', () => {
@@ -803,10 +984,15 @@ describe('Cursor API mapping and Run lifecycle', () => {
     expect(result.usage).toEqual({ prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 });
 
     const decoder = new ConnectFrameDecoder();
-    const outbound = transport.stream!.writes.flatMap((write) =>
+    const outbound = required(transport.stream, 'run stream').writes.flatMap((write) =>
       decoder
         .push(write)
-        .map((frame) => transport.codec.decode('agent.v1.AgentClientMessage', frame.payload!)),
+        .map((frame) =>
+          transport.codec.decode(
+            'agent.v1.AgentClientMessage',
+            required(frame.payload, 'outbound frame payload'),
+          ),
+        ),
     );
     expect(outbound.map((item) => item.message.case)).toEqual(
       expect.arrayContaining(['runRequest', 'execClientMessage', 'kvClientMessage']),
@@ -835,6 +1021,7 @@ describe('Cursor API mapping and Run lifecycle', () => {
       {
         type: 'done',
         usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
+        usage_source: 'turnEnded',
         is_error: false,
       },
     ]);
@@ -890,6 +1077,399 @@ describe('Cursor API mapping and Run lifecycle', () => {
       },
     ]);
     expect(toolTransport.stream?.writableEnded || toolTransport.stream?.destroyed).toBe(true);
+  });
+
+  it('emits stable typed tool events from native start, split args, and completion frames', async () => {
+    const request = {
+      model: 'composer-2.5',
+      messages: [{ role: 'user' as const, content: 'call both tools' }],
+      tools: [
+        {
+          type: 'function' as const,
+          function: {
+            name: 'echo_value',
+            parameters: {
+              type: 'object',
+              properties: { value: { type: 'string' } },
+              required: ['value'],
+            },
+          },
+        },
+      ],
+      tool_choice: 'auto' as const,
+      parallel_tool_calls: true,
+    };
+    const wireName = mapCursorApiToolRequest(request).request.tools?.[0]?.function.name;
+    if (!wireName) throw new Error('wire tool name was not created');
+    const toolCall = (id: string, value: string) => ({
+      tool: {
+        case: 'mcpToolCall',
+        value: {
+          args: {
+            name: wireName,
+            toolName: wireName,
+            providerIdentifier: 'bridge',
+            toolCallId: id,
+            args: { value: jsonToProtoValue(value) },
+          },
+        },
+      },
+      toolCallId: id,
+    });
+    const script = [
+      update('toolCallStarted', { callId: 'envelope_a', toolCall: toolCall('call_a', '') }),
+      update('toolCallStarted', { callId: 'envelope_b', toolCall: toolCall('call_b', '') }),
+      update('partialToolCall', { callId: 'envelope_a', argsTextDelta: '{"value":' }),
+      update('partialToolCall', { callId: 'envelope_b', argsTextDelta: '{"value":"B"}' }),
+      update('partialToolCall', { callId: 'envelope_a', argsTextDelta: '{"value":"A"}' }),
+      serverMessage('execServerMessage', {
+        id: 2,
+        execId: 'tool_b',
+        message: {
+          case: 'mcpArgs',
+          value: {
+            name: wireName,
+            toolName: wireName,
+            providerIdentifier: 'bridge',
+            toolCallId: 'call_b',
+            args: { value: jsonToProtoValue('B') },
+          },
+        },
+      }),
+      update('toolCallCompleted', {
+        callId: 'envelope_b',
+        toolCall: toolCall('call_b', 'B'),
+      }),
+      update('turnEnded', { inputTokens: 8, outputTokens: 4 }),
+      update('toolCallCompleted', {
+        callId: 'envelope_a',
+        toolCall: toolCall('call_a', 'A'),
+      }),
+    ];
+    const transport = new FakeTransport(script);
+
+    const events = [];
+    for await (const event of backendWith(transport).completeStream(request)) events.push(event);
+
+    expect(events).toEqual([
+      { type: 'tool_call_start', index: 0, id: 'call_a', name: 'echo_value' },
+      { type: 'tool_call_start', index: 1, id: 'call_b', name: 'echo_value' },
+      { type: 'tool_call_arguments_delta', index: 0, id: 'call_a', delta: '{"value":' },
+      {
+        type: 'tool_call_arguments_delta',
+        index: 1,
+        id: 'call_b',
+        delta: '{"value":"B"}',
+      },
+      { type: 'tool_call_arguments_delta', index: 0, id: 'call_a', delta: '"A"}' },
+      {
+        type: 'tool_call_complete',
+        index: 0,
+        call: {
+          id: 'call_a',
+          type: 'function',
+          function: { name: 'echo_value', arguments: '{"value":"A"}' },
+        },
+      },
+      {
+        type: 'tool_call_complete',
+        index: 1,
+        call: {
+          id: 'call_b',
+          type: 'function',
+          function: { name: 'echo_value', arguments: '{"value":"B"}' },
+        },
+      },
+      {
+        type: 'done',
+        usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 },
+        usage_source: 'turnEnded',
+        is_error: false,
+      },
+    ]);
+    const nonStream = await backendWith(new FakeTransport(script)).complete(request);
+    expect(
+      events.filter((event) => event.type === 'tool_call_complete').map((event) => event.call),
+    ).toEqual(nonStream.tool_calls);
+  });
+
+  it('drains one decoded chunk before settling a staggered parallel tool batch over HTTP SSE', async () => {
+    const request = {
+      model: 'composer-2.5',
+      messages: [{ role: 'user' as const, content: 'call both tools in parallel' }],
+      tools: [
+        {
+          type: 'function' as const,
+          function: {
+            name: 'echo_value',
+            parameters: {
+              type: 'object',
+              properties: { value: { type: 'string' } },
+              required: ['value'],
+            },
+          },
+        },
+      ],
+      tool_choice: 'auto' as const,
+      parallel_tool_calls: true,
+    };
+    const wireName = mapCursorApiToolRequest(request).request.tools?.[0]?.function.name;
+    if (!wireName) throw new Error('wire tool name was not created');
+    const valueA = 'BENCH_TOOL_PARALLEL_TWO_YORHA_AC3818DC1E57';
+    const valueB = `${valueA}_SECOND`;
+    const argsA = JSON.stringify({ value: valueA });
+    const argsB = JSON.stringify({ value: valueB });
+    expect(Buffer.byteLength(argsA)).toBe(54);
+    expect(Buffer.byteLength(argsB)).toBe(61);
+    const toolCall = (id: string, value: string) => ({
+      tool: {
+        case: 'mcpToolCall',
+        value: {
+          args: {
+            name: wireName,
+            toolName: wireName,
+            providerIdentifier: 'bridge',
+            toolCallId: id,
+            args: { value: jsonToProtoValue(value) },
+          },
+        },
+      },
+      toolCallId: id,
+    });
+    const transport = new FakeTransport([
+      update('toolCallStarted', {
+        callId: 'envelope_a',
+        toolCall: toolCall('call_a_start', ''),
+      }),
+      update('partialToolCall', { callId: 'envelope_a', argsTextDelta: argsA }),
+      serverMessage('execServerMessage', {
+        id: 2,
+        execId: 'tool_a',
+        message: {
+          case: 'mcpArgs',
+          value: {
+            name: wireName,
+            toolName: wireName,
+            providerIdentifier: 'bridge',
+            toolCallId: 'call_a_final',
+            args: { value: jsonToProtoValue(valueA) },
+          },
+        },
+      }),
+      update('toolCallStarted', {
+        callId: 'envelope_b',
+        toolCall: toolCall('call_b_start', ''),
+      }),
+      update('partialToolCall', { callId: 'envelope_b', argsTextDelta: argsB }),
+      update('toolCallCompleted', {
+        callId: 'envelope_b',
+        toolCall: toolCall('call_b_final', valueB),
+      }),
+      update('turnEnded', { inputTokens: 8, outputTokens: 4 }),
+    ]);
+    const cursor = backendWith(transport);
+    const typedEvents: CompletionStreamEvent[] = [];
+    const observed: CursorBackend = {
+      type: cursor.type,
+      health: () => cursor.health(),
+      listModels: () => cursor.listModels(),
+      complete: (candidate, signal) => cursor.complete(candidate, signal),
+      completeStream: async function* (candidate, signal) {
+        for await (const event of cursor.completeStream(candidate, signal)) {
+          typedEvents.push(event);
+          yield event;
+        }
+      },
+      shutdown: () => cursor.shutdown(),
+    };
+    const server = await buildServer({
+      config: { ...config, host: '127.0.0.1', port: 0, clientAuth: 'off' },
+      backend: observed,
+    });
+    let body = '';
+    let status: number | undefined;
+    try {
+      await server.listen({ host: '127.0.0.1', port: 0 });
+      const address = server.server.address();
+      if (!address || typeof address === 'string') throw new Error('server address is not TCP');
+      const port = address.port;
+      const response = await new Promise<import('node:http').IncomingMessage>((resolve, reject) => {
+        const outgoing = httpRequest(
+          {
+            host: '127.0.0.1',
+            port,
+            path: '/v1/chat/completions',
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+          },
+          resolve,
+        );
+        outgoing.once('error', reject);
+        outgoing.end(
+          JSON.stringify({ ...request, stream: true, stream_options: { include_usage: true } }),
+        );
+      });
+      status = response.statusCode;
+      for await (const chunk of response) body += chunk;
+    } finally {
+      await server.close();
+    }
+    const frames = body
+      .split('\n\n')
+      .filter((frame) => frame.startsWith('data: {'))
+      .map((frame) => JSON.parse(frame.slice(6)));
+    const calls = new Map<number, ToolCall>();
+    for (const frame of frames) {
+      for (const item of frame.choices?.[0]?.delta?.tool_calls ?? []) {
+        const current = calls.get(item.index);
+        calls.set(item.index, {
+          id: item.id ?? current?.id ?? '',
+          type: 'function',
+          function: {
+            name: item.function?.name ?? current?.function.name ?? '',
+            arguments: `${current?.function.arguments ?? ''}${item.function?.arguments ?? ''}`,
+          },
+        });
+      }
+    }
+
+    expect(status).toBe(200);
+    expect(transport.openRunCount).toBe(1);
+    expect(transport.dataChunkCount).toBe(1);
+    expect(typedEvents.filter((event) => event.type === 'tool_call_start')).toEqual([
+      { type: 'tool_call_start', index: 0, id: 'call_a_start', name: 'echo_value' },
+      { type: 'tool_call_start', index: 1, id: 'call_b_start', name: 'echo_value' },
+    ]);
+    expect([...calls.values()]).toEqual([
+      {
+        id: 'call_a_start',
+        type: 'function',
+        function: { name: 'echo_value', arguments: argsA },
+      },
+      {
+        id: 'call_b_start',
+        type: 'function',
+        function: { name: 'echo_value', arguments: argsB },
+      },
+    ]);
+    expect(
+      typedEvents
+        .filter((event) => event.type === 'tool_call_complete')
+        .map((event) => ({ index: event.index, id: event.call.id })),
+    ).toEqual([
+      { index: 0, id: 'call_a_start' },
+      { index: 1, id: 'call_b_start' },
+    ]);
+    expect(body.match(/"finish_reason":"tool_calls"/g)).toHaveLength(1);
+    expect(frames.find((frame) => frame.choices?.length === 0)?.usage).toEqual({
+      prompt_tokens: 8,
+      completion_tokens: 4,
+      total_tokens: 12,
+    });
+    expect(body.trim().endsWith('data: [DONE]')).toBe(true);
+    expect(body).not.toContain('[TOOL_CALLS:');
+    expect(body).not.toContain('backend_error');
+  });
+
+  it('rejects invalid incremental completion without a successful complete event', async () => {
+    const request = {
+      model: 'composer-2.5',
+      messages: [{ role: 'user' as const, content: 'call echo' }],
+      tools: [
+        {
+          type: 'function' as const,
+          function: {
+            name: 'echo_value',
+            parameters: {
+              type: 'object',
+              properties: { value: { type: 'string' } },
+              required: ['value'],
+            },
+          },
+        },
+      ],
+      tool_choice: 'auto' as const,
+    };
+    const wireName = mapCursorApiToolRequest(request).request.tools?.[0]?.function.name;
+    if (!wireName) throw new Error('wire tool name was not created');
+    const invalidCall = {
+      tool: {
+        case: 'mcpToolCall',
+        value: {
+          args: {
+            name: wireName,
+            toolName: wireName,
+            providerIdentifier: 'bridge',
+            toolCallId: 'call_invalid',
+            args: {},
+          },
+        },
+      },
+      toolCallId: 'call_invalid',
+    };
+    const transport = new FakeTransport([
+      update('toolCallStarted', { callId: 'invalid_envelope', toolCall: invalidCall }),
+      update('partialToolCall', { callId: 'invalid_envelope', argsTextDelta: '{}' }),
+      update('toolCallCompleted', { callId: 'invalid_envelope', toolCall: invalidCall }),
+    ]);
+    const events: CompletionStreamEvent[] = [];
+
+    await expect(
+      (async () => {
+        for await (const event of backendWith(transport).completeStream(request)) {
+          events.push(event);
+        }
+      })(),
+    ).rejects.toThrow('required property');
+    expect(events.some((event) => event.type === 'tool_call_complete')).toBe(false);
+  });
+
+  it('retries one buffered invalid completion once, then returns a validation error', async () => {
+    const request = {
+      model: 'composer-2.5',
+      messages: [{ role: 'user' as const, content: 'required echo' }],
+      tools: [
+        {
+          type: 'function' as const,
+          function: {
+            name: 'echo_value',
+            parameters: {
+              type: 'object',
+              properties: { value: { type: 'string' } },
+              required: ['value'],
+            },
+          },
+        },
+      ],
+      tool_choice: 'required' as const,
+    };
+    const wireName = mapCursorApiToolRequest(request).request.tools?.[0]?.function.name;
+    if (!wireName) throw new Error('wire tool name was not created');
+    const invalidArgs = {
+      name: wireName,
+      toolName: wireName,
+      providerIdentifier: 'bridge',
+      toolCallId: 'call_invalid',
+      args: {},
+    };
+    const transport = new FakeTransport([
+      update('toolCallStarted', { callId: 'call_invalid' }),
+      serverMessage('execServerMessage', {
+        id: 2,
+        execId: 'tool',
+        message: { case: 'mcpArgs', value: invalidArgs },
+      }),
+    ]);
+    const openRun = vi.spyOn(transport, 'openRun');
+
+    await expect(
+      (async () => {
+        for await (const event of backendWith(transport).completeStream(request)) {
+          throw new Error(`Buffered validation path exposed ${event.type}`);
+        }
+      })(),
+    ).rejects.toThrow('required property');
+    expect(openRun).toHaveBeenCalledTimes(2);
   });
 
   it('streams ordinary text before a tool-bearing Run finishes', async () => {
@@ -1318,5 +1898,341 @@ describe('Cursor API mapping and Run lifecycle', () => {
         }),
       ),
     ).toBe(true);
+  });
+});
+
+describe('Cursor API structured history', () => {
+  const liveCodec = new ProtoCodec(loadProtoDescriptors());
+  const lookupTool = {
+    type: 'function' as const,
+    function: { name: 'lookup_code', parameters: { type: 'object' } },
+  };
+  const twoRoundMessages: ChatCompletionRequest['messages'] = [
+    { role: 'system', content: 'You are the oracle keeper.' },
+    { role: 'developer', content: 'Follow the harness contract.' },
+    { role: 'user', content: '  look up the seed  ' },
+    {
+      role: 'assistant',
+      content: 'Checking now.',
+      tool_calls: [
+        {
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'lookup_code', arguments: '{"file":"seed.ts"}' },
+        },
+      ],
+    },
+    { role: 'tool', tool_call_id: 'call_1', content: 'seed=20260818' },
+    { role: 'user', content: 'report the seed' },
+  ];
+
+  function decodedTurn(history: CursorHistory, index: number) {
+    const turnId = required(history.conversationState.turns[index], 'turn id');
+    const turn = liveCodec.decode(
+      'agent.v1.ConversationTurnStructure',
+      required(history.blobs.get(turnId.toString('hex')), 'turn blob'),
+    );
+    const agentTurn = turn.turn.value;
+    return {
+      userMessage: liveCodec.decode(
+        'agent.v1.UserMessage',
+        required(history.blobs.get(agentTurn.userMessage.toString('hex')), 'user message blob'),
+      ),
+      steps: agentTurn.steps.map((stepId: Buffer) =>
+        liveCodec.decode(
+          'agent.v1.ConversationStep',
+          required(history.blobs.get(stepId.toString('hex')), 'conversation step blob'),
+        ),
+      ),
+    };
+  }
+
+  it('round-trips every message role and tool pair through root prompt blobs', () => {
+    const history = buildCursorHistory(
+      { model: 'composer-2.5', messages: twoRoundMessages },
+      liveCodec,
+    );
+
+    expect(rootPromptEntries(history)).toEqual([
+      { role: 'system', content: 'You are the oracle keeper.' },
+      { role: 'system', content: 'Follow the harness contract.' },
+      { role: 'user', content: [{ type: 'text', text: 'look up the seed' }] },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'Checking now.' },
+          {
+            type: 'tool-call',
+            toolCallId: 'call_1',
+            toolName: 'lookup_code',
+            args: { file: 'seed.ts' },
+          },
+        ],
+      },
+      {
+        role: 'tool',
+        id: 'call_1',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'call_1',
+            toolName: 'lookup_code',
+            result: 'seed=20260818',
+          },
+        ],
+      },
+    ]);
+
+    const turn = decodedTurn(history, 0);
+    expect(turn.userMessage).toMatchObject({ text: 'look up the seed' });
+    expect(turn.userMessage.selectedContext).toBeUndefined();
+    expect(turn.steps).toHaveLength(2);
+    expect(turn.steps[0]).toEqual({
+      message: { case: 'assistantMessage', value: { text: 'Checking now.' } },
+    });
+    expect(turn.steps[1]).toEqual({
+      message: {
+        case: 'toolCall',
+        value: {
+          tool: {
+            case: 'mcpToolCall',
+            value: {
+              args: {
+                name: 'lookup_code',
+                args: {
+                  file: { kind: { case: 'stringValue', value: 'seed.ts' } },
+                },
+                toolCallId: 'call_1',
+                providerIdentifier: 'bridge',
+                toolName: 'lookup_code',
+              },
+              result: {
+                result: {
+                  case: 'success',
+                  value: {
+                    content: [{ content: { case: 'text', value: { text: 'seed=20260818' } } }],
+                  },
+                },
+              },
+            },
+          },
+          toolCallId: 'call_1',
+        },
+      },
+    });
+  });
+
+  it('preserves an empty tool result in both structures', () => {
+    const history = buildCursorHistory(
+      {
+        model: 'composer-2.5',
+        messages: [
+          { role: 'user', content: 'run it' },
+          {
+            role: 'assistant',
+            content: '',
+            tool_calls: [
+              {
+                id: 'call_empty',
+                type: 'function',
+                function: { name: 'lookup_code', arguments: '{}' },
+              },
+            ],
+          },
+          { role: 'tool', tool_call_id: 'call_empty', content: '' },
+        ],
+      },
+      liveCodec,
+    );
+
+    const entries = rootPromptEntries(history);
+    expect(entries.at(-1)).toEqual({
+      role: 'tool',
+      id: 'call_empty',
+      content: [
+        { type: 'tool-result', toolCallId: 'call_empty', toolName: 'lookup_code', result: '' },
+      ],
+    });
+    const turn = decodedTurn(history, 0);
+    expect(turn.steps[0].message.value.tool.value.result.result.value.content).toEqual([
+      { content: { case: 'text', value: { text: '' } } },
+    ]);
+  });
+
+  it('omits tagged thinking and reasoning at the HTTP boundary and replays no thinking', () => {
+    const normalizedAssistant = flattenMessageContent([
+      { type: 'text', text: 'VISIBLE_ASSISTANT_TEXT' },
+      { type: 'thinking', text: 'PRIVATE_CHAIN' },
+      { type: 'reasoning', content: 'PRIVATE_CHAIN_REASONING' },
+    ]);
+    expect(normalizedAssistant).not.toContain('PRIVATE_CHAIN');
+    expect(normalizedAssistant).toContain('VISIBLE_ASSISTANT_TEXT');
+
+    const history = buildCursorHistory(
+      {
+        model: 'composer-2.5',
+        messages: [
+          {
+            role: 'user',
+            content: '[image omitted: cursor composer bridge is text-only] describe it',
+          },
+          { role: 'assistant', content: normalizedAssistant },
+          { role: 'user', content: 'now summarize' },
+        ],
+      },
+      liveCodec,
+    );
+    const entries = rootPromptEntries(history);
+    const partTypes = entries.flatMap((entry) =>
+      Array.isArray(entry.content) ? entry.content.map((part) => testRecord(part).type) : [],
+    );
+    expect(partTypes.every((type) => type === 'text' || type === 'tool-call')).toBe(true);
+    expect(entries[1]).toEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: '[image omitted: cursor composer bridge is text-only] describe it',
+        },
+      ],
+    });
+    const action = testRecord(testRecord(testRecord(history.action).action).value);
+    expect(testRecord(action.userMessage).text).toBe('now summarize');
+
+    const assistantEntry = entries.find((entry) => entry.role === 'assistant');
+    expect(assistantEntry?.content).toEqual([{ type: 'text', text: 'VISIBLE_ASSISTANT_TEXT' }]);
+    const serializedBlobs = [...history.blobs.values()].map((blob) => blob.toString('utf8'));
+    expect(serializedBlobs.join('\n')).not.toContain('PRIVATE_CHAIN');
+    const turn = decodedTurn(history, 0);
+    expect(turn.userMessage.text).toContain('image omitted');
+    const firstTurn = required(history.conversationState.turns[0], 'first turn');
+    const turnBlobText = required(
+      history.blobs.get(firstTurn.toString('hex')),
+      'first turn blob',
+    ).toString('hex');
+    expect(turnBlobText).not.toContain(Buffer.from('PRIVATE_CHAIN').toString('hex'));
+    expect(
+      turn.steps.some(
+        (step: Record<string, unknown>) => testRecord(step.message).case === 'assistantMessage',
+      ),
+    ).toBe(true);
+  });
+
+  it('uses the last user message as the action input and resumes after tool results', () => {
+    const withUser = buildCursorHistory(
+      { model: 'composer-2.5', messages: twoRoundMessages },
+      liveCodec,
+    );
+    expect(withUser.action).toMatchObject({
+      action: { case: 'userMessageAction', value: { userMessage: { text: 'report the seed' } } },
+    });
+
+    const resuming = buildCursorHistory(
+      { model: 'composer-2.5', messages: twoRoundMessages.slice(0, -1) },
+      liveCodec,
+    );
+    expect(resuming.action).toEqual({ action: { case: 'resumeAction', value: {} } });
+    expect(resuming.conversationState.turns).toHaveLength(1);
+  });
+
+  it('rebuilds identical structures deterministically per request', () => {
+    const request = { model: 'composer-2.5', messages: twoRoundMessages };
+    const first = buildCursorHistory(request, liveCodec);
+    const second = buildCursorHistory(request, liveCodec);
+    expect(first.conversationState.rootPromptMessagesJson.map((id) => id.toString('hex'))).toEqual(
+      second.conversationState.rootPromptMessagesJson.map((id) => id.toString('hex')),
+    );
+    expect(first.conversationState.turns.map((id) => id.toString('hex'))).toEqual(
+      second.conversationState.turns.map((id) => id.toString('hex')),
+    );
+    expect([...first.blobs.entries()].sort()).toEqual([...second.blobs.entries()].sort());
+
+    const changed = buildCursorHistory(
+      {
+        model: 'composer-2.5',
+        messages: twoRoundMessages.map((message, index) =>
+          index === 4
+            ? { role: 'tool' as const, tool_call_id: 'call_1', content: 'seed=changed' }
+            : message,
+        ),
+      },
+      liveCodec,
+    );
+    expect(changed.conversationState.rootPromptMessagesJson).not.toEqual(
+      first.conversationState.rootPromptMessagesJson,
+    );
+  });
+
+  it('pairs tool results with request-local wire tool names', () => {
+    const mapped = mapCursorApiToolRequest({
+      model: 'composer-2.5',
+      messages: twoRoundMessages.slice(2),
+      tools: [lookupTool],
+    });
+    const history = buildCursorHistory(mapped.request, liveCodec);
+    const entries = rootPromptEntries(history);
+    const toolEntry = entries.find((entry) => entry.role === 'tool');
+    expect(toolEntry).toMatchObject({
+      id: 'call_1',
+      content: [
+        {
+          type: 'tool-result',
+          toolCallId: 'call_1',
+          toolName: 'bridge_tool_0_lookup_code',
+          result: 'seed=20260818',
+        },
+      ],
+    });
+    expect(String(entries[0].content)).toContain('bridge_tool_0_lookup_code');
+  });
+
+  it('serves structured history blobs to Cursor KV requests on the run wire', async () => {
+    const transport = new FakeTransport('manual');
+    const completion = backendWith(transport).complete({
+      model: 'composer-2.5',
+      messages: twoRoundMessages,
+    });
+    await transport.streamOpened.promise;
+    const stream = required(transport.stream, 'history run stream');
+    await stream.firstWrite.promise;
+    const decoder = new ConnectFrameDecoder();
+    const [firstFrame] = decoder.push(required(stream.writes[0], 'first history write'));
+    const run = transport.codec.decode(
+      'agent.v1.AgentClientMessage',
+      required(required(firstFrame, 'first history frame').payload, 'first history frame payload'),
+    ).message.value;
+    expect(run.action.action.case).toBe('userMessageAction');
+    expect(run.action.action.value.userMessage.text).toBe('report the seed');
+    expect(run.conversationState.rootPromptMessagesJson.length).toBeGreaterThanOrEqual(2);
+    expect(run.conversationState.turns.length).toBe(1);
+
+    stream.emit(
+      'data',
+      encodeConnectFrame(
+        transport.codec.encode(
+          'agent.v1.AgentServerMessage',
+          serverMessage('kvServerMessage', {
+            id: 7,
+            message: {
+              case: 'getBlobArgs',
+              value: { blobId: run.conversationState.rootPromptMessagesJson[0] },
+            },
+          }),
+        ),
+      ),
+    );
+    const [replyFrame] = decoder.push(required(stream.writes[1], 'history reply write'));
+    const clientMessage = transport.codec.decode(
+      'agent.v1.AgentClientMessage',
+      required(required(replyFrame, 'history reply frame').payload, 'history reply payload'),
+    ).message;
+    expect(clientMessage.case).toBe('kvClientMessage');
+    const blob = JSON.parse(
+      Buffer.from(clientMessage.value.message.value.blobData).toString('utf8'),
+    );
+    expect(blob.role).toBe('system');
+
+    stream.emit('data', encodeConnectFrame(Buffer.alloc(0), { trailer: true }));
+    await expect(completion).resolves.toMatchObject({ content: null });
   });
 });

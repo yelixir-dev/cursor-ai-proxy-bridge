@@ -1,33 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { homedir, platform, release } from 'node:os';
 import { basename, join } from 'node:path';
-import type {
-  BridgeModel,
-  ChatCompletionRequest,
-  CompletionUsage,
-  Tool,
-  ToolCall,
-} from '../types.js';
-import { promptFromMessages } from '../cursor-cli.js';
-import { protoValueToJson, jsonToProtoValue } from './protobuf.js';
+import type { ChatCompletionRequest, Tool, ToolCall } from '../types.js';
+import { buildCursorHistory, type CursorHistory } from './history.js';
+import { jsonToProtoValue, loadProtoDescriptors, ProtoCodec } from './protobuf.js';
+import { fallbackRequestedModel, type RequestedModelMap } from './requested-models.js';
 
-const MODEL_CREATED = 1_700_000_000;
-
-type RequestedModel = {
-  modelId: string;
-  maxMode: boolean;
-  parameters: Array<{ id: string; value: string }>;
-  builtInModel: boolean;
-  isVariantStringRepresentation: boolean;
-};
-
-export type RequestedModelMap = ReadonlyMap<string, RequestedModel>;
-
-export const AGENT_MODE = {
-  UNSPECIFIED: 0,
-  AGENT: 1,
-  ASK: 2,
-} as const;
+export { mapRequestedModels, mapUsableModels } from './requested-models.js';
+export type { RequestedModelMap } from './requested-models.js';
 
 const SELECTED_SUBAGENT_MODELS = [
   { modelId: 'default' },
@@ -88,99 +68,13 @@ const SELECTED_SUBAGENT_MODELS = [
       { id: 'effort', value: 'high' },
     ],
   },
-];
-
-function nativeToolInstruction(request: ChatCompletionRequest): string {
-  if (!request.tools?.length) return '';
-  if (request.tool_choice === 'none') {
-    return '\n\nDo not call any available tool. Answer directly in ordinary text.';
-  }
-  if (typeof request.tool_choice === 'object') {
-    return `\n\nYou must call exactly the tool ${JSON.stringify(request.tool_choice.function.name)}. Do not answer directly.`;
-  }
-  if (request.tool_choice === 'required') {
-    return '\n\nYou must call at least one available tool. Do not answer directly.';
-  }
-  return '\n\nUse an available tool only when it is needed. Do not pretend to execute tools yourself.';
-}
-
-export function cursorApiPrompt(request: ChatCompletionRequest): string {
-  const flattened = promptFromMessages({
-    ...request,
-    tools: undefined,
-    tool_choice: undefined,
-    parallel_tool_calls: undefined,
-  });
-  const parallel =
-    request.tools?.length && request.parallel_tool_calls === false
-      ? '\nReturn at most one tool call.'
-      : '';
-  return flattened + nativeToolInstruction(request) + parallel;
-}
-
-function agentModeFor(request: ChatCompletionRequest): number {
-  return request.tools?.length && request.tool_choice !== 'none'
-    ? AGENT_MODE.AGENT
-    : AGENT_MODE.ASK;
-}
-
-function fallbackRequestedModel(modelId: string): RequestedModel {
-  return {
-    modelId,
-    maxMode: false,
-    parameters: [{ id: 'fast', value: 'false' }],
-    builtInModel: false,
-    isVariantStringRepresentation: false,
-  };
-}
-
-export function mapRequestedModels(
-  availableModels: Record<string, any>,
-  usableModels: Record<string, any>,
-): Map<string, RequestedModel> {
-  const usableMaxMode = new Map<string, boolean>();
-  for (const model of usableModels.models ?? []) {
-    for (const id of [model.modelId, model.displayModelId, ...(model.aliases ?? [])]) {
-      if (typeof id === 'string' && id) usableMaxMode.set(id, Boolean(model.maxMode));
-    }
-  }
-
-  const requestedModels = new Map<string, RequestedModel>();
-  for (const model of availableModels.models ?? []) {
-    const modelId = model.name || model.serverModelName;
-    if (typeof modelId !== 'string' || !modelId) continue;
-    for (const variant of model.variants ?? []) {
-      const maxMode = Boolean(variant.isMaxMode);
-      const parameters = (variant.parameterValues ?? []).filter(
-        (parameter: Record<string, unknown>) =>
-          typeof parameter.id === 'string' && typeof parameter.value === 'string',
-      );
-      const aliases = [
-        [variant.legacySlug, false],
-        [variant.variantStringRepresentation, true],
-      ] as const;
-      for (const [alias, isVariantStringRepresentation] of aliases) {
-        if (typeof alias !== 'string' || !alias) continue;
-        const expectedMaxMode = usableMaxMode.get(alias);
-        if (expectedMaxMode !== undefined && expectedMaxMode !== maxMode) continue;
-        if (expectedMaxMode === undefined && requestedModels.has(alias) && maxMode) continue;
-        requestedModels.set(alias, {
-          modelId,
-          maxMode,
-          parameters,
-          builtInModel: false,
-          isVariantStringRepresentation,
-        });
-      }
-    }
-  }
-  return requestedModels;
-}
+] as const;
 
 export function runRequestMessage(
   request: ChatCompletionRequest,
   requestId: string,
   requestedModels: RequestedModelMap = new Map(),
+  history: CursorHistory = buildCursorHistory(request, new ProtoCodec(loadProtoDescriptors())),
 ): Record<string, unknown> {
   const conversationId = randomUUID();
   const requestedModel =
@@ -189,21 +83,8 @@ export function runRequestMessage(
     message: {
       case: 'runRequest',
       value: {
-        conversationState: {},
-        action: {
-          action: {
-            case: 'userMessageAction',
-            value: {
-              userMessage: {
-                text: cursorApiPrompt(request),
-                messageId: randomUUID(),
-                selectedContext: {},
-                mode: agentModeFor(request),
-                conversationStateBlobId: Buffer.alloc(0),
-              },
-            },
-          },
-        },
+        conversationState: history.conversationState,
+        action: history.action,
         mcpTools: {},
         requestedModel,
         conversationId,
@@ -271,21 +152,6 @@ export function requestContextResult(
   };
 }
 
-export function mcpArgsToToolCall(args: Record<string, any>): ToolCall {
-  const decoded = Object.fromEntries(
-    Object.entries(args.args ?? {}).map(([key, value]) => [
-      key,
-      protoValueToJson(value as Record<string, any>),
-    ]),
-  );
-  const name = String(args.toolName || args.name || 'unknown_tool');
-  return {
-    id: String(args.toolCallId || `call_bridge_${randomUUID()}`),
-    type: 'function',
-    function: { name, arguments: JSON.stringify(decoded) },
-  };
-}
-
 export function enforceNativeToolChoice(
   calls: ToolCall[],
   request: ChatCompletionRequest,
@@ -308,34 +174,4 @@ export function nativeToolBatchComplete(
   if (!parallelToolCalls) return calls.length > 0;
   if (announcedToolCallIds.size === 0 || calls.length !== announcedToolCallIds.size) return false;
   return calls.every((call) => announcedToolCallIds.has(call.id));
-}
-
-function finiteToken(value: unknown): number {
-  if (typeof value === 'bigint') return Number(value);
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
-}
-
-export function usageFromTurnEnded(value: Record<string, unknown>): CompletionUsage {
-  const prompt = finiteToken(value.inputTokens);
-  const completion = finiteToken(value.outputTokens);
-  return {
-    prompt_tokens: prompt,
-    completion_tokens: completion,
-    total_tokens: prompt + completion,
-  };
-}
-
-export function mapUsableModels(message: Record<string, any>): BridgeModel[] {
-  const ids = new Set<string>();
-  for (const model of message.models ?? []) {
-    const id = model.modelId || model.displayModelId;
-    if (typeof id === 'string' && id) ids.add(id);
-    for (const alias of model.aliases ?? []) if (typeof alias === 'string' && alias) ids.add(alias);
-  }
-  return [...ids].map((id) => ({
-    id,
-    object: 'model',
-    created: MODEL_CREATED,
-    owned_by: 'cursor',
-  }));
 }

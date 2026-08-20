@@ -1,8 +1,26 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import http2, { type ClientHttp2Stream } from 'node:http2';
-import https from 'node:https';
-import { gunzipSync } from 'node:zlib';
+import http2 from 'node:http2';
+import { traceRunOpen, traceStage, type RequestTrace } from '../../trace.js';
 import type { CursorAuthProvider } from './auth.js';
+import { fingerprintCredential, H2SessionPool, type H2Connector } from './h2-session-pool.js';
+import {
+  DEFAULT_MAX_UNARY_COMPRESSED_BYTES,
+  DEFAULT_MAX_UNARY_DECOMPRESSED_BYTES,
+} from './unary-body.js';
+import { sendUnaryRequest } from './unary-transport.js';
+
+export {
+  CURSOR_BOOTSTRAP_UNARY_HEADER_NAMES,
+  CURSOR_RUN_HEADER_NAMES,
+  CURSOR_UNARY_HEADER_NAMES,
+} from './transport-headers.js';
+
+interface CursorRunStreamEvents {
+  readonly response: [headers: Record<string, unknown>];
+  readonly data: [chunk: Buffer];
+  readonly error: [error: Error];
+  readonly close: [];
+}
 
 export interface CursorRunStream {
   readonly destroyed: boolean;
@@ -10,8 +28,14 @@ export interface CursorRunStream {
   write(chunk: Uint8Array): boolean;
   destroy(error?: Error): void;
   close(): void;
-  on(event: string, listener: (...args: any[]) => void): this;
-  once(event: string, listener: (...args: any[]) => void): this;
+  on<Event extends keyof CursorRunStreamEvents>(
+    event: Event,
+    listener: (...args: CursorRunStreamEvents[Event]) => void,
+  ): this;
+  once<Event extends keyof CursorRunStreamEvents>(
+    event: Event,
+    listener: (...args: CursorRunStreamEvents[Event]) => void,
+  ): this;
 }
 
 export interface CursorApiTransport {
@@ -28,7 +52,13 @@ export interface CursorApiTransport {
     signal?: AbortSignal,
     accessToken?: string,
   ): Promise<void>;
-  openRun(baseUrl: string, requestId: string, accessToken?: string): Promise<CursorRunStream>;
+  openRun(
+    baseUrl: string,
+    requestId: string,
+    accessToken?: string,
+    trace?: RequestTrace,
+  ): Promise<CursorRunStream>;
+  shutdown?(): Promise<void>;
 }
 
 export interface NodeCursorApiTransportOptions {
@@ -37,53 +67,20 @@ export interface NodeCursorApiTransportOptions {
   apiEndpoint?: string;
   agentEndpoint?: string;
   fetch?: typeof globalThis.fetch;
-  connect?: typeof http2.connect;
+  connect?: H2Connector;
+  maxSessionPoolEntries?: number;
+  maxUnaryCompressedBytes?: number;
+  maxUnaryDecompressedBytes?: number;
 }
 
-export const CURSOR_BOOTSTRAP_UNARY_HEADER_NAMES = [
-  'accept-encoding',
-  'authorization',
-  'connect-protocol-version',
-  'content-type',
-  'user-agent',
-] as const;
-
-export const CURSOR_UNARY_HEADER_NAMES = [
-  'accept-encoding',
-  'authorization',
-  'connect-protocol-version',
-  'content-type',
-  'user-agent',
-  'x-cursor-client-type',
-  'x-cursor-client-version',
-  'x-ghost-mode',
-  'x-request-id',
-] as const;
-
-export const CURSOR_RUN_HEADER_NAMES = [
-  'authorization',
-  'backend-traceparent',
-  'connect-accept-encoding',
-  'connect-content-encoding',
-  'connect-protocol-version',
-  'content-type',
-  'traceparent',
-  'user-agent',
-  'x-blob-encryption-key',
-  'x-cursor-client-type',
-  'x-cursor-client-version',
-  'x-ghost-mode',
-  'x-original-request-id',
-  'x-request-id',
-] as const;
-
 export class CursorApiHttpError extends Error {
+  readonly name = 'CursorApiHttpError';
+
   constructor(
     readonly status: number,
     message: string,
   ) {
     super(message);
-    this.name = 'CursorApiHttpError';
   }
 }
 
@@ -91,7 +88,11 @@ export class NodeCursorApiTransport implements CursorApiTransport {
   private readonly endpoint: string;
   private readonly agentEndpoint?: string;
   private readonly fetchImplementation?: typeof globalThis.fetch;
-  private readonly connectImplementation: typeof http2.connect;
+  private readonly runSessions: H2SessionPool;
+  private readonly unaryLimits: {
+    readonly compressedBytes: number;
+    readonly decompressedBytes: number;
+  };
 
   constructor(private readonly options: NodeCursorApiTransportOptions) {
     this.endpoint = (
@@ -104,7 +105,14 @@ export class NodeCursorApiTransport implements CursorApiTransport {
       options.agentEndpoint ?? process.env.CURSOR_BRIDGE_CURSOR_AGENT_ENDPOINT
     )?.replace(/\/$/, '');
     this.fetchImplementation = options.fetch;
-    this.connectImplementation = options.connect ?? http2.connect;
+    this.runSessions = new H2SessionPool(
+      options.connect ?? ((endpoint) => http2.connect(endpoint)),
+      options.maxSessionPoolEntries,
+    );
+    this.unaryLimits = {
+      compressedBytes: options.maxUnaryCompressedBytes ?? DEFAULT_MAX_UNARY_COMPRESSED_BYTES,
+      decompressedBytes: options.maxUnaryDecompressedBytes ?? DEFAULT_MAX_UNARY_DECOMPRESSED_BYTES,
+    };
   }
 
   private async headers(
@@ -139,51 +147,19 @@ export class NodeCursorApiTransport implements CursorApiTransport {
       'content-type': 'application/proto',
       'connect-protocol-version': '1',
     };
-    if (this.fetchImplementation) {
-      const response = await this.fetchImplementation(`${this.endpoint}${path}`, {
-        method: 'POST',
-        headers,
-        body: Buffer.from(body),
-        signal,
-      });
-      const payload = Buffer.from(await response.arrayBuffer());
-      if (!response.ok) this.throwHttpError(response.status, payload);
-      return payload;
-    }
-    return new Promise<Buffer>((resolve, reject) => {
-      const request = https.request(
-        `${this.endpoint}${path}`,
-        {
-          method: 'POST',
-          headers:
-            body.byteLength === 0
-              ? { ...headers, 'content-length': '0' }
-              : { ...headers, 'transfer-encoding': 'chunked' },
-          signal,
-        },
-        (response) => {
-          const chunks: Buffer[] = [];
-          response.on('data', (chunk: Buffer) => chunks.push(chunk));
-          response.once('error', reject);
-          response.once('end', () => {
-            try {
-              const wirePayload = Buffer.concat(chunks);
-              const payload =
-                response.headers['content-encoding'] === 'gzip'
-                  ? gunzipSync(wirePayload)
-                  : wirePayload;
-              const status = response.statusCode ?? 0;
-              if (status < 200 || status >= 300) this.throwHttpError(status, payload);
-              resolve(payload);
-            } catch (error) {
-              reject(error);
-            }
-          });
-        },
-      );
-      request.once('error', reject);
-      request.end(Buffer.from(body));
+    const response = await sendUnaryRequest({
+      endpoint: this.endpoint,
+      path,
+      headers,
+      body,
+      signal,
+      fetch: this.fetchImplementation,
+      limits: this.unaryLimits,
     });
+    if (response.status < 200 || response.status >= 300) {
+      this.throwHttpError(response.status, response.payload);
+    }
+    return response.payload;
   }
 
   private throwHttpError(status: number, _payload: Buffer): never {
@@ -228,19 +204,20 @@ export class NodeCursorApiTransport implements CursorApiTransport {
     baseUrl: string,
     requestId: string,
     accessToken?: string,
+    trace?: RequestTrace,
   ): Promise<CursorRunStream> {
-    const session = this.connectImplementation(this.agentEndpoint ?? baseUrl);
-    const closeSession = () => {
-      if (!session.closed && !session.destroyed) session.close();
-    };
-    try {
-      const traceId = randomBytes(16).toString('hex');
-      const spanId = randomBytes(8).toString('hex');
-      const traceparent = `00-${traceId}-${spanId}-01`;
-      const stream: ClientHttp2Stream = session.request({
+    traceRunOpen(trace, 'cursor-api');
+    const token = accessToken ?? (await this.options.auth.getToken());
+    const traceId = randomBytes(16).toString('hex');
+    const spanId = randomBytes(8).toString('hex');
+    const traceparent = `00-${traceId}-${spanId}-01`;
+    return this.runSessions.openStream({
+      endpoint: this.agentEndpoint ?? baseUrl,
+      credentialFingerprint: fingerprintCredential(token),
+      headers: {
         ':method': 'POST',
         ':path': '/agent.v1.AgentService/Run',
-        ...(await this.headers(requestId, false, accessToken)),
+        ...(await this.headers(requestId, false, token)),
         'backend-traceparent': traceparent,
         'connect-accept-encoding': 'gzip,br',
         'connect-content-encoding': 'gzip',
@@ -249,13 +226,14 @@ export class NodeCursorApiTransport implements CursorApiTransport {
         traceparent,
         'x-blob-encryption-key': randomBytes(32).toString('hex'),
         'x-original-request-id': requestId,
-      });
-      stream.once('close', closeSession);
-      session.once('error', (error) => stream.destroy(error));
-      return stream;
-    } catch (error) {
-      closeSession();
-      throw error;
-    }
+      },
+      onSessionConnect: () => traceStage(trace, 'h2_session_connect'),
+      onStreamOpen: () => traceStage(trace, 'run_stream_open'),
+    });
+  }
+
+  shutdown(): Promise<void> {
+    this.runSessions.shutdown();
+    return Promise.resolve();
   }
 }

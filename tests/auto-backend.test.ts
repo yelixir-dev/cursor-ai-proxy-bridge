@@ -183,6 +183,68 @@ describe('automatic backend runtime failover', () => {
     expect((await automatic.health()).activeBackend).toBe('cursor-cli');
   });
 
+  it('applies a fatal completion flip to the next request without replaying on CLI', async () => {
+    const failure = new Error('client is out of date');
+    const cliComplete = vi.fn(async () => ({ content: 'cli', model: request.model }));
+    const automatic = new AutoCursorBackend(
+      api({ complete: async () => Promise.reject(failure) }),
+      backend('cursor-cli', cliComplete),
+      {
+        now: () => 1_000,
+        warn: vi.fn(),
+        cooldownMs: 100,
+        fatalThreshold: 3,
+        probeTimeoutMs: 10,
+        initial: 'cursor-api',
+      },
+    );
+
+    await expect(automatic.complete(request)).rejects.toBe(failure);
+    expect(cliComplete).not.toHaveBeenCalled();
+    await expect(automatic.complete(request)).resolves.toMatchObject({ content: 'cli' });
+    expect(cliComplete).toHaveBeenCalledOnce();
+  });
+
+  it('applies a fatal streaming flip to the next request without replaying on CLI', async () => {
+    const failure = new Error('client is out of date');
+    const direct = api();
+    direct.completeStream = () => {
+      const iterator: AsyncIterableIterator<CompletionStreamEvent> = {
+        next: async () => Promise.reject(failure),
+        [Symbol.asyncIterator]: () => iterator,
+      };
+      return iterator;
+    };
+    const cliStream = vi.fn();
+    const fallback = backend('cursor-cli');
+    fallback.completeStream = async function* (): AsyncIterable<CompletionStreamEvent> {
+      cliStream();
+      yield {
+        type: 'done',
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        is_error: false,
+      };
+    };
+    const automatic = new AutoCursorBackend(direct, fallback, {
+      now: () => 1_000,
+      warn: vi.fn(),
+      cooldownMs: 100,
+      fatalThreshold: 3,
+      probeTimeoutMs: 10,
+      initial: 'cursor-api',
+    });
+
+    const failed = automatic.completeStream(request)[Symbol.asyncIterator]();
+    await expect(failed.next()).rejects.toBe(failure);
+    expect(cliStream).not.toHaveBeenCalled();
+    const nextRequest = automatic.completeStream(request)[Symbol.asyncIterator]();
+    await expect(nextRequest.next()).resolves.toMatchObject({
+      done: false,
+      value: { type: 'done', is_error: false },
+    });
+    expect(cliStream).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ['HTTP 401', new CursorApiHttpError(401, 'unauthorized')],
     ['outdated client', new Error('client is out of date')],

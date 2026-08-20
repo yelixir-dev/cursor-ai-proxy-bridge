@@ -199,7 +199,10 @@ export class CursorCredentialRouter {
     state.disabledUntil = this.now() + this.cooldownMs;
   }
 
-  async route<T>(operation: (credential: CursorApiCredential) => Promise<T>): Promise<T> {
+  async route<T>(
+    operation: (credential: CursorApiCredential) => Promise<T>,
+    canFailover: () => boolean = () => true,
+  ): Promise<T> {
     const first = this.pick();
     try {
       const result = await operation(first);
@@ -212,6 +215,7 @@ export class CursorCredentialRouter {
       }
       this.disable(first.id, 'auth');
       this.release(first.id);
+      if (!canFailover()) throw error;
 
       let second: CursorApiCredential;
       try {

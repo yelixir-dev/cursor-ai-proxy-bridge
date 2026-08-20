@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "extractedAt": "2026-08-17T11:06:52.990Z",
+  "extractedAt": "2026-08-18T18:58:17.082Z",
   "bundleVersion": "2026.08.11-e8db854",
   "clientVersion": "cli-2026.08.11-e8db854",
   "roots": [
@@ -99,6 +99,26 @@
           "repeated": false,
           "oneof": "message",
           "message": "agent.v1.ClientHeartbeat"
+        }
+      ]
+    },
+    "agent.v1.AgentConversationTurnStructure": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "user_message",
+          "localName": "userMessage",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 12
+        },
+        {
+          "no": 2,
+          "name": "steps",
+          "localName": "steps",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 12
         }
       ]
     },
@@ -231,6 +251,18 @@
           "repeated": false,
           "oneof": "result",
           "message": "agent.v1.AgentStoreConflictError"
+        }
+      ]
+    },
+    "agent.v1.AssistantMessage": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "text",
+          "localName": "text",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
         }
       ]
     },
@@ -386,6 +418,15 @@
           "repeated": false,
           "oneof": "action",
           "message": "agent.v1.UserMessageAction"
+        },
+        {
+          "no": 2,
+          "name": "resume_action",
+          "localName": "resumeAction",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "action",
+          "message": "agent.v1.ResumeAction"
         }
       ]
     },
@@ -411,6 +452,61 @@
           "repeated": false,
           "oneof": "result",
           "message": "agent.v1.ConversationSearchError"
+        }
+      ]
+    },
+    "agent.v1.ConversationStateStructure": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "root_prompt_messages_json",
+          "localName": "rootPromptMessagesJson",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 12
+        },
+        {
+          "no": 8,
+          "name": "turns",
+          "localName": "turns",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 12
+        }
+      ]
+    },
+    "agent.v1.ConversationStep": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "assistant_message",
+          "localName": "assistantMessage",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.AssistantMessage"
+        },
+        {
+          "no": 2,
+          "name": "tool_call",
+          "localName": "toolCall",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ToolCall"
+        }
+      ]
+    },
+    "agent.v1.ConversationTurnStructure": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "agent_conversation_turn",
+          "localName": "agentConversationTurn",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "turn",
+          "message": "agent.v1.AgentConversationTurnStructure"
         }
       ]
     },
@@ -1440,6 +1536,15 @@
           "message": "agent.v1.ToolCallStartedUpdate"
         },
         {
+          "no": 3,
+          "name": "tool_call_completed",
+          "localName": "toolCallCompleted",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ToolCallCompletedUpdate"
+        },
+        {
           "no": 4,
           "name": "thinking_delta",
           "localName": "thinkingDelta",
@@ -1732,6 +1837,50 @@
         }
       ]
     },
+    "agent.v1.McpSuccess": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "content",
+          "localName": "content",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.McpToolResultContentItem"
+        }
+      ]
+    },
+    "agent.v1.McpTextContent": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "text",
+          "localName": "text",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.McpToolCall": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "args",
+          "localName": "args",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.McpArgs"
+        },
+        {
+          "no": 2,
+          "name": "result",
+          "localName": "result",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.McpToolResult"
+        }
+      ]
+    },
     "agent.v1.McpToolDefinition": {
       "fields": [
         {
@@ -1781,6 +1930,53 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.McpToolError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.McpToolResult": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "success",
+          "localName": "success",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.McpSuccess"
+        },
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.McpToolError"
+        }
+      ]
+    },
+    "agent.v1.McpToolResultContentItem": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "text",
+          "localName": "text",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "content",
+          "message": "agent.v1.McpTextContent"
         }
       ]
     },
@@ -1846,6 +2042,22 @@
           "no": 1,
           "name": "call_id",
           "localName": "callId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "tool_call",
+          "localName": "toolCall",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.ToolCall"
+        },
+        {
+          "no": 3,
+          "name": "args_text_delta",
+          "localName": "argsTextDelta",
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
@@ -2535,6 +2747,9 @@
         }
       ]
     },
+    "agent.v1.ResumeAction": {
+      "fields": []
+    },
     "agent.v1.SelectedContext": {
       "fields": [
         {
@@ -3108,6 +3323,47 @@
         }
       ]
     },
+    "agent.v1.ToolCall": {
+      "fields": [
+        {
+          "no": 15,
+          "name": "mcp_tool_call",
+          "localName": "mcpToolCall",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "tool",
+          "message": "agent.v1.McpToolCall"
+        },
+        {
+          "no": 57,
+          "name": "tool_call_id",
+          "localName": "toolCallId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.ToolCallCompletedUpdate": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "call_id",
+          "localName": "callId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "tool_call",
+          "localName": "toolCall",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.ToolCall"
+        }
+      ]
+    },
     "agent.v1.ToolCallStartedUpdate": {
       "fields": [
         {
@@ -3117,6 +3373,14 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "tool_call",
+          "localName": "toolCall",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.ToolCall"
         }
       ]
     },

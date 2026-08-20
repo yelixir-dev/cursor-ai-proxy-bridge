@@ -75,4 +75,16 @@ describe('tool history validation', () => {
       'Every assistant tool call must be followed by its matching tool result',
     );
   });
+
+  it('rejects a second tool result for an already answered call', () => {
+    invalid(
+      [
+        { role: 'user', content: 'start' },
+        { role: 'assistant', content: '', tool_calls: [call('call_dup')] },
+        { role: 'tool', content: 'first', tool_call_id: 'call_dup' },
+        { role: 'tool', content: 'second', tool_call_id: 'call_dup' },
+      ],
+      'Unknown tool result id: call_dup',
+    );
+  });
 });
