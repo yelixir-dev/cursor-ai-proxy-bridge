@@ -7,17 +7,28 @@ function withExecFailureSelections(types, baseSelections) {
   for (const resultField of execClientType?.fields.list() ?? []) {
     if (resultField.kind !== 'message' || !resultField.oneof) continue;
     const resultType = resultField.T;
-    const failureField = resultType.fields
-      .list()
-      .find((field) =>
-        ['rejected', 'error', 'permissionDenied', 'failure'].includes(
-          field.localName ?? field.name,
-        ),
-      );
-    if (failureField?.kind !== 'message' || selections.has(resultType.typeName)) {
+    const resultFields = resultType.fields.list();
+    const failureField = resultFields.find((field) =>
+      ['rejected', 'error', 'permissionDenied', 'failure'].includes(field.localName ?? field.name),
+    );
+    if (failureField?.kind !== 'message') continue;
+    const failureName = failureField.localName ?? failureField.name;
+    const existing = selections.get(resultType.typeName);
+    if (existing !== undefined) {
+      const keepsFailure = existing === '*' || existing.includes(failureName);
+      if (keepsFailure && !selections.has(failureField.T.typeName)) {
+        selections.set(failureField.T.typeName, '*');
+      }
       continue;
     }
-    selections.set(resultType.typeName, [failureField.localName ?? failureField.name]);
+    const selectedNames = [failureName];
+    const successField = resultFields.find(
+      (field) => (field.localName ?? field.name) === 'success' && field.kind === 'message',
+    );
+    if (successField && selections.has(successField.T.typeName)) {
+      selectedNames.unshift(successField.localName ?? successField.name);
+    }
+    selections.set(resultType.typeName, selectedNames);
     selections.set(failureField.T.typeName, '*');
   }
   return selections;

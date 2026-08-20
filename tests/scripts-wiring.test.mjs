@@ -145,4 +145,83 @@ describe('zero-network script wiring', () => {
       path.resolve('./fixture-bundle'),
     );
   });
+
+  it('keeps McpResult success when the success type is already selected', () => {
+    const mcpSuccess = messageType('agent.v1.McpSuccess', [
+      { no: 1, name: 'content', localName: 'content', kind: 'scalar', repeated: true, T: 9 },
+    ]);
+    const mcpError = messageType('agent.v1.McpError', [
+      { no: 1, name: 'error', localName: 'error', kind: 'scalar', repeated: false, T: 9 },
+    ]);
+    const mcpResult = messageType('agent.v1.McpResult', [
+      {
+        no: 1,
+        name: 'success',
+        localName: 'success',
+        kind: 'message',
+        repeated: false,
+        T: mcpSuccess,
+        oneof: { localName: 'result', name: 'result' },
+      },
+      {
+        no: 2,
+        name: 'error',
+        localName: 'error',
+        kind: 'message',
+        repeated: false,
+        T: mcpError,
+        oneof: { localName: 'result', name: 'result' },
+      },
+    ]);
+    const execClient = messageType('agent.v1.ExecClientMessage', [
+      {
+        no: 11,
+        name: 'mcp_result',
+        localName: 'mcpResult',
+        kind: 'message',
+        repeated: false,
+        T: mcpResult,
+        oneof: { localName: 'message', name: 'message' },
+      },
+    ]);
+    const root = messageType('agent.v1.AgentClientMessage', [
+      {
+        no: 2,
+        name: 'exec_client_message',
+        localName: 'execClientMessage',
+        kind: 'message',
+        repeated: false,
+        T: execClient,
+        oneof: { localName: 'message', name: 'message' },
+      },
+    ]);
+    const types = new Map([
+      ['agent.v1.AgentClientMessage', root],
+      ['agent.v1.ExecClientMessage', execClient],
+      ['agent.v1.McpResult', mcpResult],
+      ['agent.v1.McpSuccess', mcpSuccess],
+      ['agent.v1.McpError', mcpError],
+    ]);
+
+    const output = buildDescriptorOutput({
+      types,
+      bundleVersion: 'fixture-mcp-result',
+      extractedAt: '2026-08-20T00:00:00.000Z',
+      roots: ['agent.v1.AgentClientMessage'],
+      services: [],
+      selected: new Map([
+        ['agent.v1.AgentClientMessage', ['execClientMessage']],
+        ['agent.v1.ExecClientMessage', '*'],
+        ['agent.v1.McpSuccess', '*'],
+      ]),
+      extraRoots: [],
+    });
+
+    expect(output.messages['agent.v1.McpResult']?.fields.map((field) => field.localName)).toEqual([
+      'success',
+      'error',
+    ]);
+    expect(output.messages['agent.v1.McpSuccess']).toBeDefined();
+    expect(output.messages['agent.v1.McpError']).toBeDefined();
+  });
 });
