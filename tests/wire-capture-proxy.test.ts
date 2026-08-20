@@ -174,6 +174,7 @@ describe('wire-capture proxy', () => {
       'x-cursor-privacy-mode',
       'proxy-authorization',
       'x-apis-key',
+      'x-blob-encryption-key',
       'x-client-key',
     ];
     for (const name of sensitive) {

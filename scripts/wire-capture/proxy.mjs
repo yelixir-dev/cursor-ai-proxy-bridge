@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global Buffer, URL, console, performance, process */
 // Local TLS MITM forward proxy for cursor-agent protocol capture.
 // Ported from /tmp/cursor-mitm/proxy.mjs (proven 2026-08-17) with parametrized config.
 // Usage: node proxy.mjs --port 8443 --target-host api2.cursor.sh --cert leaf.crt --key leaf.key --capture-dir captures [--target-ca ca.crt]
@@ -16,8 +17,15 @@ const SENSITIVE = new Set([
   'x-cursor-privacy-mode',
   'proxy-authorization',
   'x-apis-key',
+  'x-blob-encryption-key',
   'x-client-key',
 ]);
+
+// Caps how many Connect frames are retained as .bin files. Later frames are
+// still parsed and lifecycle-logged (stream open/data/rst/close); only the
+// raw payload dump is skipped. Override via --max-req-bins / --max-res-bins.
+const MAX_REQ_FRAME_BINS = 12;
+const MAX_RES_FRAME_BINS = 40;
 
 function redactShape(name, value) {
   if (!SENSITIVE.has(name.toLowerCase())) return value;
@@ -130,6 +138,12 @@ function fwdHeaders(h) {
 
 function createCaptureProxy(options) {
   const { targetHost, captureDir } = options;
+  const maxReqFrameBins = Number.isFinite(options.maxReqFrameBins)
+    ? options.maxReqFrameBins
+    : MAX_REQ_FRAME_BINS;
+  const maxResFrameBins = Number.isFinite(options.maxResFrameBins)
+    ? options.maxResFrameBins
+    : MAX_RES_FRAME_BINS;
   const log = options.log ?? ((...a) => console.log(new Date().toISOString(), ...a));
   fs.mkdirSync(captureDir, { recursive: true });
   const upstreamTls = options.targetCa ? { ca: options.targetCa } : {};
@@ -219,7 +233,8 @@ function createCaptureProxy(options) {
             `${tag}#${id} REQ frame[${idx}] flags=0x${flags.toString(16).padStart(2, '0')} len=${payload.length} fields=${fp} first${Math.min(64, payload.length)}=${payload.subarray(0, 64).toString('hex')}`,
           );
           summary.req.push({ f: flags, l: payload.length, fields: fp });
-          if (want && idx < 12) fs.writeFileSync(capFile(tag, id, idx, 'req'), payload);
+          if (want && idx < maxReqFrameBins)
+            fs.writeFileSync(capFile(tag, id, idx, 'req'), payload);
         });
       },
       resData(chunk) {
@@ -242,7 +257,8 @@ function createCaptureProxy(options) {
             log(
               `${tag}#${id} RES trailer frame[${idx}] JSON=${payload.toString('utf8').slice(0, 400)}`,
             );
-          if (want && idx < 40) fs.writeFileSync(capFile(tag, id, idx, 'res'), payload);
+          if (want && idx < maxResFrameBins)
+            fs.writeFileSync(capFile(tag, id, idx, 'res'), payload);
         });
       },
       summary,
@@ -618,6 +634,18 @@ if (isMain()) {
       process.exit(2);
     }
   }
+  const maxReq =
+    args['max-req-bins'] !== undefined ? Number(args['max-req-bins']) : MAX_REQ_FRAME_BINS;
+  const maxRes =
+    args['max-res-bins'] !== undefined ? Number(args['max-res-bins']) : MAX_RES_FRAME_BINS;
+  if (!Number.isInteger(maxReq) || maxReq < 0) {
+    console.error('invalid --max-req-bins');
+    process.exit(2);
+  }
+  if (!Number.isInteger(maxRes) || maxRes < 0) {
+    console.error('invalid --max-res-bins');
+    process.exit(2);
+  }
   const proxy = createCaptureProxy({
     port: Number(args.port),
     targetHost: args['target-host'],
@@ -625,6 +653,8 @@ if (isMain()) {
     key: fs.readFileSync(args.key),
     targetCa: args['target-ca'] ? fs.readFileSync(args['target-ca']) : undefined,
     captureDir: args['capture-dir'],
+    maxReqFrameBins: maxReq,
+    maxResFrameBins: maxRes,
   });
   proxy.listen().catch((e) => {
     console.error(e);
@@ -637,4 +667,12 @@ if (isMain()) {
   process.on('SIGTERM', shutdown);
 }
 
-export { SENSITIVE, createCaptureProxy, fieldPath, parseFrames, redactShape };
+export {
+  MAX_REQ_FRAME_BINS,
+  MAX_RES_FRAME_BINS,
+  SENSITIVE,
+  createCaptureProxy,
+  fieldPath,
+  parseFrames,
+  redactShape,
+};

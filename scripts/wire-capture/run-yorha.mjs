@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global AbortSignal, Buffer, clearTimeout, fetch, process, setTimeout */
 // Yorha-lane wire-capture runner: certs + proxy pair + local bridge + one F3 case.
 // Configures the bridge purely by env (no src/ edits). Stall with complete captures is success.
 import { spawn } from 'node:child_process';
@@ -341,10 +342,12 @@ function waitClose(child, ms) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('close timeout')), ms);
     timer.unref?.();
-    child.once('close', () => {
+    const done = () => {
       clearTimeout(timer);
       resolve();
-    });
+    };
+    child.once('close', done);
+    child.once('error', done);
   });
 }
 
@@ -555,6 +558,20 @@ async function runOmoCase(plan, fixture, deps, env, children) {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   children.add(child, 'omo');
+  const spawnFailed = new Promise((_, reject) => {
+    child.once('error', (err) => {
+      const code =
+        err && typeof err === 'object' && 'code' in err && err.code != null
+          ? String(err.code)
+          : 'SPAWN';
+      const message = err instanceof Error ? err.message : String(err);
+      reject(
+        Object.assign(new Error(`omo spawn failed (${code}): ${message}`), {
+          code: 'SPAWN_FAILED',
+        }),
+      );
+    });
+  });
   let pending = '';
   let firstEvent = false;
   let stdout = '';
@@ -595,6 +612,7 @@ async function runOmoCase(plan, fixture, deps, env, children) {
   const winner = await Promise.race([
     closed.then((exit) => ({ kind: 'exit', exit })),
     timeout.then((value) => ({ kind: value })),
+    spawnFailed,
   ]);
   if (winner.kind === 'timeout') {
     signalTree(child, 'SIGTERM');
@@ -675,7 +693,6 @@ async function runYorhaCapture(args, deps = {}) {
   let error = null;
   let probe = { ok: false, status: null, error: null };
   let omoExit = null;
-  let stall = false;
   let omoDiagnostics = null;
   const localSpawn = (command, spawnArgs, options) => spawnChild(command, spawnArgs, options);
 
@@ -758,7 +775,6 @@ async function runYorhaCapture(args, deps = {}) {
     fixture = materializeOmoFixture(plan, bridgeKey, io);
     const omo = await runOmoCase(plan, fixture, { spawn: localSpawn }, env, children);
     omoExit = omo.exit;
-    stall = omo.stalled;
     omoDiagnostics = {
       stdout_bytes: Buffer.byteLength(omo.stdout),
       stderr_bytes: Buffer.byteLength(omo.stderr),
@@ -768,7 +784,7 @@ async function runYorhaCapture(args, deps = {}) {
     if (!captures.complete) {
       outcome = 'incomplete_capture';
       error = captures.gaps.join('; ');
-    } else if (stall) {
+    } else if (omo.stalled) {
       outcome = 'stalled';
       error = null;
     } else {

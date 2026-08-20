@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global TextDecoder, URL, console, process */
 // Minimal raw protobuf decoder - prints the field tree with string inference.
 // Ported from /tmp/cursor-mitm/decode.mjs.
 // Usage: node decode.mjs <capture.bin>
@@ -20,7 +21,7 @@ function varint(b, p) {
 function looksUtf8(b) {
   try {
     const s = new TextDecoder('utf8', { fatal: true }).decode(b);
-    return /^[\x09\x0a\x0d\x20-\x7e -￿]*$/.test(s) && s.length > 0;
+    return /^[\t\n\r\x20-\x7e\u00A0-\uFFFD]*$/.test(s) && s.length > 0;
   } catch {
     return false;
   }

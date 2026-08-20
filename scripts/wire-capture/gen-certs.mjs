@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global URL, console, process */
 // Regenerate the wire-capture CA + leaf certificate pair via openssl.
 // The /tmp/cursor-mitm cert material is volatile; nothing outside --out is touched.
 // Usage: node gen-certs.mjs --out <dir> [--days 7]

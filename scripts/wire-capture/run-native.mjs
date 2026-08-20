@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global AbortController, AbortSignal, clearTimeout, setTimeout */
 // Native-lane wire-capture runner: fresh certs, api2+agentn capture proxies,
 // then one F3 native-lane OMO trial (cursor-agent child) pointed at the proxies.
 // Usage:
@@ -521,20 +522,44 @@ function waitForListening(child, label, signal) {
   });
 }
 
-function waitForClose(child, signal) {
-  return new Promise((resolve) => {
+function waitForClose(child, signal, options = {}) {
+  const failOnError = options.failOnError === true;
+  return new Promise((resolve, reject) => {
     if (child.exitCode !== null || child.signalCode !== null) {
       resolve({ code: child.exitCode, signal: child.signalCode });
       return;
     }
-    const done = (code, sig) => {
+    let settled = false;
+    const finish = (fn) => {
+      if (settled) return;
+      settled = true;
+      child.off('close', onClose);
+      child.off('error', onError);
       signal.removeEventListener('abort', onAbort);
-      resolve({ code: code ?? child.exitCode, signal: sig ?? child.signalCode });
+      fn();
+    };
+    const onClose = (code, sig) => {
+      finish(() => resolve({ code: code ?? child.exitCode, signal: sig ?? child.signalCode }));
+    };
+    const onError = (err) => {
+      const code =
+        err && typeof err === 'object' && 'code' in err && err.code != null
+          ? String(err.code)
+          : 'spawn_error';
+      const message = err instanceof Error ? err.message : String(err);
+      if (failOnError) {
+        finish(() =>
+          reject(new NativeRunError('spawn_error', `child spawn failed (${code}): ${message}`)),
+        );
+        return;
+      }
+      finish(() => resolve({ code: 1, signal: null }));
     };
     const onAbort = () => {
       killTree(child, 'SIGKILL');
     };
-    child.once('close', done);
+    child.once('close', onClose);
+    child.once('error', onError);
     signal.addEventListener('abort', onAbort, { once: true });
     if (signal.aborted) onAbort();
   });
@@ -667,6 +692,7 @@ async function runNativeCapture(options, deps = {}) {
   const children = [];
   let fixture = null;
   let omoExit = { code: null, signal: null };
+  let spawnFailure = null;
   try {
     fs.mkdirSync(plan.dirs.api2, { recursive: true });
     fs.mkdirSync(plan.dirs.agentn, { recursive: true });
@@ -692,6 +718,7 @@ async function runNativeCapture(options, deps = {}) {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     children.push(agent);
+    const closed = waitForClose(agent, controller.signal, { failOnError: true });
     const appendCaptureLog = (name) => (chunk) => {
       try {
         fs.appendFileSync(path.join(plan.dirs.capture, name), chunk);
@@ -707,13 +734,15 @@ async function runNativeCapture(options, deps = {}) {
         if (isModelVisible(event)) killTree(agent, 'SIGTERM');
       });
     }
-    const closed = waitForClose(agent, controller.signal);
     if (controller.signal.aborted) killTree(agent, 'SIGTERM');
     else agent.stdin?.end(plan.prompt);
     omoExit = await closed;
   } catch (error) {
     if (error instanceof NativeRunError && error.reason === 'timeout') {
       omoExit = { code: null, signal: 'SIGKILL' };
+    } else if (error instanceof NativeRunError && error.reason === 'spawn_error') {
+      spawnFailure = error;
+      omoExit = { code: 1, signal: null };
     } else if (!(error instanceof NativeRunError)) {
       throw error;
     } else if (error.reason !== 'proxy_exited') {
@@ -731,6 +760,30 @@ async function runNativeCapture(options, deps = {}) {
     );
     clearTimeout(killTimer);
     if (fixture && typeof fixture.dispose === 'function') await fixture.dispose();
+  }
+
+  if (spawnFailure) {
+    const receipt = {
+      schema_version: 1,
+      lane: plan.lane,
+      case_id: plan.caseId,
+      seed: plan.seed,
+      pair_index: plan.pairIndex,
+      sentinel: plan.sentinel,
+      omo_seed: plan.omoSeed,
+      ports: plan.ports,
+      targets: plan.targets,
+      capture_dir: plan.dirs.capture,
+      certs_dir: plan.dirs.certs,
+      omo_exit: omoExit,
+      ok: false,
+      reason: spawnFailure.reason,
+      completeness: verifyCaptureCompleteness(plan).completeness,
+      started_at: startedAt,
+      ended_at: new Date().toISOString(),
+    };
+    writeReceipt(plan, receipt);
+    throw spawnFailure;
   }
 
   const verified = verifyCaptureCompleteness(plan);

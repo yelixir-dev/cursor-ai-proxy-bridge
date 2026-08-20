@@ -22,6 +22,7 @@ import {
   runNativeCapture,
   sentinelFor,
   verifyCaptureCompleteness,
+  type NativeRunDependencies,
   type NativeRunOptions,
   type NativeRunPlan,
 } from '../scripts/wire-capture/run-native.mjs';
@@ -71,6 +72,7 @@ function expectedSentinel(caseId: string): string {
 }
 
 class FakeChild extends EventEmitter {
+  static seq = 0;
   readonly stdin = new PassThrough();
   readonly stdout = new PassThrough();
   readonly stderr = new PassThrough();
@@ -79,7 +81,6 @@ class FakeChild extends EventEmitter {
   signalCode: NodeJS.Signals | null = null;
   killCalls: NodeJS.Signals[] = [];
   private closed = false;
-  static seq = 0;
 
   constructor() {
     super();
@@ -111,6 +112,50 @@ function stubSpawn(onSpawn?: (child: FakeChild, command: string, args: readonly 
     return child as unknown as ChildProcess;
   };
   return { spawn, children };
+}
+
+function recordProcessGroupKills(): {
+  calls: Array<{ pid: number; signal: NodeJS.Signals | number | undefined }>;
+  restore: () => void;
+} {
+  const calls: Array<{ pid: number; signal: NodeJS.Signals | number | undefined }> = [];
+  const original = process.kill.bind(process);
+  process.kill = ((pid: number, signal?: NodeJS.Signals | number) => {
+    if (pid < 0) calls.push({ pid, signal });
+    return original(pid, signal);
+  }) as typeof process.kill;
+  return {
+    calls,
+    restore: () => {
+      process.kill = original;
+    },
+  };
+}
+
+function stubCerts(): NativeRunDependencies['generateCerts'] {
+  return ({ out }) => {
+    mkdirSync(out, { recursive: true });
+    writeFileSync(join(out, 'ca.crt'), 'ca');
+    writeFileSync(join(out, 'leaf.crt'), 'leaf');
+    writeFileSync(join(out, 'leaf.key'), 'key');
+    return {
+      caCrt: join(out, 'ca.crt'),
+      caKey: join(out, 'ca.key'),
+      leafCrt: join(out, 'leaf.crt'),
+      leafKey: join(out, 'leaf.key'),
+    };
+  };
+}
+
+function stubFixture(root: string): NativeRunDependencies['createFixture'] {
+  return async () => ({
+    rootDir: root,
+    cwd: join(root, 'workspace'),
+    agentDir: join(root, 'agent'),
+    sessionDir: join(root, 'sessions'),
+    toolExtensionPath: join(root, 'benchmark-tools.mjs'),
+    dispose: async () => undefined,
+  });
 }
 
 function plantCompleteCaptures(plan: NativeRunPlan): void {
@@ -418,5 +463,53 @@ describe('native-lane execute with stubbed spawn', () => {
     ) as { ok: boolean; reason: string };
     expect(receipt.ok).toBe(false);
     expect(receipt.reason).toBe('empty_capture');
+  });
+
+  it('exits non-zero and SIGTERMs proxies when the agent spawn emits ENOENT', async () => {
+    // Given: listening proxies and an agent child that fails spawn with ENOENT (close never fires).
+    const opts = options({ dryRun: false, timeoutMs: 2_000 });
+    const { spawn, children } = stubSpawn((child, _command, args) => {
+      if (args.includes('--target-host')) {
+        child.stdout.write('listening on https://127.0.0.1:0 -> https://example.test (h2+h1)\n');
+        return;
+      }
+      const err = new Error('spawn ENOENT: no such file or directory') as NodeJS.ErrnoException;
+      err.code = 'ENOENT';
+      queueMicrotask(() => child.emit('error', err));
+    });
+    const recorder = recordProcessGroupKills();
+    const fixtureRoot = tmp('fx-enoent');
+
+    // When: the runner executes against the failing agent spawn.
+    let caught: unknown;
+    try {
+      await runNativeCapture(opts, {
+        spawn,
+        generateCerts: stubCerts(),
+        createFixture: stubFixture(fixtureRoot),
+        terminationGraceMs: 20,
+      });
+    } catch (error) {
+      caught = error;
+    } finally {
+      recorder.restore();
+    }
+
+    // Then: named spawn failure, non-success, and both proxy process groups were SIGTERM'd.
+    expect(caught).toBeInstanceOf(NativeRunError);
+    expect((caught as NativeRunError).reason).toBe('spawn_error');
+    expect((caught as NativeRunError).message).toMatch(/ENOENT/);
+    expect(children.length).toBeGreaterThanOrEqual(3);
+    const proxies = children.slice(0, 2);
+    expect(proxies).toHaveLength(2);
+    for (const proxy of proxies) {
+      expect(proxy.killCalls).toContain('SIGTERM');
+      expect(recorder.calls).toContainEqual({ pid: -proxy.pid, signal: 'SIGTERM' });
+    }
+    const receipt = JSON.parse(
+      readFileSync(join(buildNativeRunPlan(opts).dirs.capture, 'receipt.json'), 'utf8'),
+    ) as { ok: boolean; reason: string };
+    expect(receipt.ok).toBe(false);
+    expect(receipt.reason).toBe('spawn_error');
   });
 });

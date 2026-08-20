@@ -20,6 +20,7 @@ import {
   sentinelFor,
   verifyCaptureCompleteness,
   type YorhaCliArgs,
+  type YorhaDependencies,
   type YorhaSpawn,
 } from '../scripts/wire-capture/run-yorha.mjs';
 
@@ -81,6 +82,29 @@ function tmpRoot(): string {
   const base = process.env.TMPDIR ?? os.tmpdir();
   mkdirSync(base, { recursive: true });
   return mkdtempSync(path.join(base, 'wire-capture-run-yorha-'));
+}
+
+function scopedMkdtemp(parent: string): NonNullable<YorhaDependencies['mkdtemp']> {
+  const impl = (prefix: string) => mkdtempSync(path.join(parent, path.basename(prefix)));
+  return impl as NonNullable<YorhaDependencies['mkdtemp']>;
+}
+
+function recordProcessGroupKills(): {
+  calls: Array<{ pid: number; signal: NodeJS.Signals | number | undefined }>;
+  restore: () => void;
+} {
+  const calls: Array<{ pid: number; signal: NodeJS.Signals | number | undefined }> = [];
+  const original = process.kill.bind(process);
+  process.kill = ((pid: number, signal?: NodeJS.Signals | number) => {
+    if (pid < 0) calls.push({ pid, signal });
+    return original(pid, signal);
+  }) as typeof process.kill;
+  return {
+    calls,
+    restore: () => {
+      process.kill = original;
+    },
+  };
 }
 
 function writeBin(dir: string, name: string, bytes: string): void {
@@ -272,7 +296,7 @@ describe('wire-capture yorha runner', () => {
         CURSOR_API_KEY: 'cursor-test-key',
         CURSOR_BRIDGE_API_KEY: 'bridge-test-key',
       },
-      mkdtemp: (prefix) => mkdtempSync(path.join(fixtureParent, path.basename(prefix))),
+      mkdtemp: scopedMkdtemp(fixtureParent),
     });
     expect(result.exitCode).toBe(0);
     expect(result.outcome).toBe('completed');
@@ -329,7 +353,7 @@ describe('wire-capture yorha runner', () => {
         CURSOR_API_KEY: 'cursor-test-key',
         CURSOR_BRIDGE_API_KEY: 'bridge-test-key',
       },
-      mkdtemp: (prefix) => mkdtempSync(path.join(fixtureParent, path.basename(prefix))),
+      mkdtemp: scopedMkdtemp(fixtureParent),
     });
     expect(result.exitCode).toBe(0);
     expect(result.outcome).toBe('stalled');
@@ -425,12 +449,78 @@ describe('wire-capture yorha runner', () => {
           CURSOR_API_KEY: 'cursor-test-key',
           CURSOR_BRIDGE_API_KEY: 'bridge-test-key',
         },
-        mkdtemp: (prefix) => mkdtempSync(path.join(fixtureParent, path.basename(prefix))),
+        mkdtemp: scopedMkdtemp(fixtureParent),
       },
     );
     expect(result.exitCode).toBe(0);
     expect(omo?.killCalls.length).toBeGreaterThan(0);
     expect(result.receipt.captures.agentn.bytes).toBeGreaterThan(0);
+  });
+
+  it('exits non-zero and SIGTERMs proxies when OMO spawn emits ENOENT', async () => {
+    // Given: listening proxies+bridge and an OMO child that fails spawn with ENOENT (close never fires).
+    const captureDir = tmpRoot();
+    leftovers.push(captureDir);
+    const fixtureParent = tmpRoot();
+    leftovers.push(fixtureParent);
+    const calls: SpawnCall[] = [];
+    let nextPid = 80_000;
+    const spawnImpl: YorhaSpawn = (_command, args) => {
+      const child = new FakeChild(nextPid);
+      nextPid += 1;
+      const call: SpawnCall = { command: _command, args, options: {}, child, role: roleOf(args) };
+      calls.push(call);
+      queueMicrotask(() => {
+        if (call.role === 'proxy-a' || call.role === 'proxy-b') {
+          child.stdout.write('listening on https://127.0.0.1:0 -> upstream\n');
+        }
+        if (call.role === 'bridge') {
+          child.stdout.write('cursor-ai-bridge listening on http://127.0.0.1:9998\n');
+        }
+        if (call.role === 'omo') {
+          const err = new Error('spawn ENOENT: no such file or directory') as NodeJS.ErrnoException;
+          err.code = 'ENOENT';
+          child.emit('error', err);
+        }
+      });
+      return child as unknown as ChildProcess;
+    };
+    const recorder = recordProcessGroupKills();
+
+    // When: the runner drives the case against the failing OMO spawn.
+    let result: Awaited<ReturnType<typeof runYorhaCapture>>;
+    try {
+      result = await runYorhaCapture(baseArgs(captureDir), {
+        spawn: spawnImpl,
+        generateCerts: ({ out }) => ({
+          caCrt: path.join(out, 'ca.crt'),
+          caKey: path.join(out, 'ca.key'),
+          leafCrt: path.join(out, 'leaf.crt'),
+          leafKey: path.join(out, 'leaf.key'),
+        }),
+        probeBridge: async () => ({ status: 200 }),
+        env: {
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
+          CURSOR_API_KEY: 'cursor-test-key',
+          CURSOR_BRIDGE_API_KEY: 'bridge-test-key',
+        },
+        mkdtemp: scopedMkdtemp(fixtureParent),
+      });
+    } finally {
+      recorder.restore();
+    }
+
+    // Then: named spawn failure, non-zero exit, and proxy process groups were SIGTERM'd.
+    expect(result.exitCode).toBe(1);
+    expect(result.receipt.error).toMatch(/ENOENT/);
+    expect(result.receipt.error).toMatch(/spawn/i);
+    const proxies = calls.filter((call) => call.role === 'proxy-a' || call.role === 'proxy-b');
+    expect(proxies).toHaveLength(2);
+    for (const proxy of proxies) {
+      expect(proxy.child.killCalls).toContain('SIGTERM');
+      expect(recorder.calls).toContainEqual({ pid: -proxy.child.pid, signal: 'SIGTERM' });
+    }
   });
 
   it('formatPlan never interpolates secret values', () => {

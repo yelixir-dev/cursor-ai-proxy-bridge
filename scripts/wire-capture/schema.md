@@ -1,13 +1,31 @@
 # Wire-capture NDJSON schema (schema_version 1)
 
-One JSON object per line (NDJSON, UTF-8, `\n`-terminated). Two layers exist:
+One JSON object per line (NDJSON, UTF-8, `\n`-terminated). The on-disk pipeline
+is **proxy bins → glue NDJSON → normalize**, not proxy-written NDJSON.
 
-1. **Raw capture records** — written by the capture proxy, one per observed
-   Connect frame, alongside the retained raw `.bin` frame files.
-2. **Normalized records** — produced by `normalize.mjs` from raw records; the
-   only form compared across lanes (native vs yorha).
+1. **Proxy capture** (`proxy.mjs`) writes:
+   - raw Connect-frame payloads as `.bin` files
+     (`H2-{id}-{req|res}-{idx}.bin` for streaming Run frames;
+     `unary-{host}-{path}-{id}.bin` for HTTP/1.1 unary bodies)
+   - H2 stream-lifecycle events as `lifecycle.ndjson`
+     (`{ts, mono_ms, conn, stream, event, detail}`)
+     The proxy does **not** write per-frame NDJSON (`payload_b64`, `lane`, `dir`,
+     …). Frame-bin retention is capped (`MAX_REQ_FRAME_BINS` / `MAX_RES_FRAME_BINS`,
+     overridable with `--max-req-bins` / `--max-res-bins`); later frames are still
+     parsed and lifecycle-logged.
+2. **Lane runners** (`run-native.mjs`, `run-yorha.mjs`) start the proxy pair,
+   drive one F3 case, then write `receipt.json` next to the proxy dirs. They do
+   **not** convert `.bin` files into NDJSON.
+3. **Bin→NDJSON glue** (the live-capture archive step, currently
+   `.omo/evidence/wire-capture/_archive-lane.mjs` rather than a committed runner
+   step) walks each lane's `agentn/` `H2-*-{req|res}-*.bin` files and emits
+   `raw-frames.ndjson` records in the shape below (`payload_b64`, `lane`, `dir`,
+   `frame_index`, `flags`, `source_bin`). That file is the input to the
+   normalizer.
+4. **Normalized records** — produced by `normalize.mjs` from the glued raw
+   NDJSON; the only form compared across lanes (native vs yorha).
 
-## Raw capture record (input to the normalizer)
+## Raw capture record (input to the normalizer, output of the bin→NDJSON glue)
 
 | Field          | Type    | Meaning                                                                                                                   |
 | -------------- | ------- | ------------------------------------------------------------------------------------------------------------------------- |
