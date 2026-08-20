@@ -135,6 +135,51 @@ function createCaptureProxy(options) {
   const upstreamTls = options.targetCa ? { ca: options.targetCa } : {};
   let reqSeq = 0;
 
+  // --- H2 stream lifecycle NDJSON (P2 abort measurement instrument) ---
+  const lifecyclePath = path.join(captureDir, 'lifecycle.ndjson');
+  const monoStart = performance.now();
+  function lifecycle(entry) {
+    const line = {
+      ts: new Date().toISOString(),
+      mono_ms: Math.round((performance.now() - monoStart) * 1000) / 1000,
+      conn: entry.conn,
+      stream: entry.stream ?? null,
+      event: entry.event,
+      detail: entry.detail ?? {},
+    };
+    try {
+      fs.appendFileSync(lifecyclePath, `${JSON.stringify(line)}\n`);
+    } catch (e) {
+      // capture dir may already be gone during teardown; lifecycle is best-effort there
+      if (!(e && typeof e === 'object' && 'code' in e && e.code === 'ENOENT')) throw e;
+    }
+  }
+  let connSeq = 0;
+  let upstreamSeq = 0;
+  const sessionConn = new WeakMap();
+  const RST_ERROR_NAMES = new Set([
+    'NGHTTP2_NO_ERROR',
+    'NGHTTP2_PROTOCOL_ERROR',
+    'NGHTTP2_INTERNAL_ERROR',
+    'NGHTTP2_FLOW_CONTROL_ERROR',
+    'NGHTTP2_SETTINGS_TIMEOUT',
+    'NGHTTP2_STREAM_CLOSED',
+    'NGHTTP2_FRAME_SIZE_ERROR',
+    'NGHTTP2_REFUSED_STREAM',
+    'NGHTTP2_CANCEL',
+    'NGHTTP2_COMPRESSION_ERROR',
+    'NGHTTP2_CONNECT_ERROR',
+    'NGHTTP2_ENHANCE_YOUR_CALM',
+    'NGHTTP2_INADEQUATE_SECURITY',
+    'NGHTTP2_HTTP_1_1_REQUIRED',
+  ]);
+  function rstName(code) {
+    const names = http2.constants;
+    for (const k of Object.keys(names))
+      if (RST_ERROR_NAMES.has(k) && names[k] === code) return k.slice('NGHTTP2_'.length);
+    return `code_${code}`;
+  }
+
   function capFile(tag, id, idx, dir) {
     return path.join(captureDir, `${tag}-${id}-${dir}-${String(idx).padStart(2, '0')}.bin`);
   }
@@ -211,22 +256,80 @@ function createCaptureProxy(options) {
   });
 
   server.on('session', (s) => {
+    const conn = `conn-${++connSeq}`;
+    sessionConn.set(s, conn);
     log(`H2 session open alpn=${s.socket.alpnProtocol} from ${s.socket.remoteAddress}`);
-    s.on('close', () => log('H2 session close'));
+    lifecycle({
+      conn,
+      event: 'session_open',
+      detail: { alpn: s.socket.alpnProtocol, remote: s.socket.remoteAddress },
+    });
+    s.on('goaway', (errorCode, lastStreamID) => {
+      log(`H2 session goaway ${rstName(errorCode)} lastStream=${lastStreamID}`);
+      lifecycle({
+        conn,
+        event: 'goaway',
+        detail: {
+          origin: 'downstream',
+          error_code: errorCode,
+          error: rstName(errorCode),
+          last_stream_id: lastStreamID,
+        },
+      });
+    });
+    s.on('close', () => {
+      log('H2 session close');
+      lifecycle({ conn, event: 'session_close' });
+    });
   });
 
   // one pooled upstream h2 session per proxy
   let upstreamSession = null;
+  let upstreamConn = null;
+  let upstreamGoawayed = false;
   function getUpstream() {
-    if (upstreamSession && !upstreamSession.closed && !upstreamSession.destroyed)
+    if (
+      upstreamSession &&
+      !upstreamSession.closed &&
+      !upstreamSession.destroyed &&
+      !upstreamGoawayed
+    )
       return upstreamSession;
     upstreamSession = http2.connect(`https://${targetHost}`, upstreamTls);
+    upstreamGoawayed = false;
+    upstreamConn = `upstream-${++upstreamSeq}`;
+    const uconn = upstreamConn;
+    lifecycle({
+      conn: uconn,
+      event: 'session_open',
+      detail: { origin: 'upstream', target: targetHost },
+    });
+    upstreamSession.on('goaway', (errorCode, lastStreamID) => {
+      upstreamGoawayed = true;
+      log(`upstream h2 goaway ${rstName(errorCode)} lastStream=${lastStreamID}`);
+      lifecycle({
+        conn: uconn,
+        event: 'goaway',
+        detail: {
+          origin: 'upstream',
+          error_code: errorCode,
+          error: rstName(errorCode),
+          last_stream_id: lastStreamID,
+        },
+      });
+    });
     upstreamSession.on('error', (e) => {
       log(`upstream h2 error ${e.message}`);
+      lifecycle({
+        conn: uconn,
+        event: 'session_close',
+        detail: { origin: 'upstream', error: e.message },
+      });
       upstreamSession = null;
     });
     upstreamSession.on('close', () => {
       log('upstream h2 session closed');
+      lifecycle({ conn: uconn, event: 'session_close', detail: { origin: 'upstream' } });
       upstreamSession = null;
     });
     log(`upstream h2 connected to ${targetHost}`);
@@ -239,10 +342,40 @@ function createCaptureProxy(options) {
     const spath = headers[':path'];
     const ctype = headers['content-type'];
     const tag = 'H2';
+    const conn = sessionConn.get(stream.session) ?? 'conn-unknown';
+    const streamId = stream.id;
     log(`${tag}#${id} >>> STREAM ${method} ${spath}`);
     logHeaders(tag, id, 'req', headers);
+    lifecycle({
+      conn,
+      stream: streamId,
+      event: 'open',
+      detail: { method, path: spath, content_type: ctype },
+    });
+    const dataState = {
+      req: { seen: false, last_mono_ms: null, frames: 0, bytes: 0 },
+      res: { seen: false, last_mono_ms: null, frames: 0, bytes: 0 },
+    };
+    const lifecycleData = (dir, chunkLen) => {
+      const s = dataState[dir];
+      const first = !s.seen;
+      s.seen = true;
+      s.frames += 1;
+      s.bytes += chunkLen;
+      const mono = Math.round((performance.now() - monoStart) * 1000) / 1000;
+      s.last_mono_ms = mono;
+      lifecycle({
+        conn,
+        stream: streamId,
+        event: 'data',
+        detail: { dir, bytes: chunkLen, first, mono_ms: mono },
+      });
+    };
     const logger = makeStreamLogger(tag, id, spath, ctype);
-    stream.on('data', (c) => logger.reqData(c));
+    stream.on('data', (c) => {
+      lifecycleData('req', c.length);
+      logger.reqData(c);
+    });
     const up = getUpstream().request({
       ...fwdHeaders(headers),
       ':method': method,
@@ -287,6 +420,7 @@ function createCaptureProxy(options) {
       ) {
         const chunks = [];
         up.on('data', (c) => {
+          lifecycleData('res', c.length);
           chunks.push(c);
         });
         up.on('end', () => {
@@ -304,7 +438,10 @@ function createCaptureProxy(options) {
           stream.end(body);
         });
       } else {
-        up.on('data', (c) => logger.resData(c));
+        up.on('data', (c) => {
+          lifecycleData('res', c.length);
+          logger.resData(c);
+        });
         up.pipe(stream);
       }
     });
@@ -317,7 +454,44 @@ function createCaptureProxy(options) {
           `${tag}#${id} RES seq: ${logger.summary.res.map((r) => `f${r.f}len${r.l}[${r.fields}]`).join(' -> ')}`,
         );
     };
-    up.on('close', done);
+    up.on('close', () => {
+      done();
+      const rst = up.rstCode;
+      if (rst !== undefined && rst !== http2.constants.NGHTTP2_NO_ERROR) {
+        lifecycle({
+          conn,
+          stream: streamId,
+          event: 'rst',
+          detail: { origin: 'upstream', error_code: rst, error: rstName(rst) },
+        });
+      }
+    });
+    stream.on('close', () => {
+      const rst = stream.rstCode;
+      const detail = {
+        rst_code: rst,
+        rst_name: rstName(rst),
+        req_data_frames: dataState.req.frames,
+        res_data_frames: dataState.res.frames,
+        last_req_data_mono_ms: dataState.req.last_mono_ms,
+        last_res_data_mono_ms: dataState.res.last_mono_ms,
+      };
+      if (rst !== http2.constants.NGHTTP2_NO_ERROR) {
+        lifecycle({
+          conn,
+          stream: streamId,
+          event: 'rst',
+          detail: { origin: 'downstream', error_code: rst, error: rstName(rst) },
+        });
+        // propagate the abort upstream so upstream-side ordering is measurable too
+        try {
+          up.close(rst);
+        } catch {
+          up.destroy();
+        }
+      }
+      lifecycle({ conn, stream: streamId, event: 'close', detail });
+    });
     stream.on('error', (e) => log(`${tag}#${id} stream error ${e.message}`));
   });
 
