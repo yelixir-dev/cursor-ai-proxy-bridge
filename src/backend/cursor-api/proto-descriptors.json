@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "extractedAt": "2026-08-18T18:58:17.082Z",
+  "extractedAt": "2026-08-20T12:12:57.438Z",
   "bundleVersion": "2026.08.11-e8db854",
   "clientVersion": "cli-2026.08.11-e8db854",
   "roots": [
@@ -1765,6 +1765,15 @@
     },
     "agent.v1.McpResult": {
       "fields": [
+        {
+          "no": 1,
+          "name": "success",
+          "localName": "success",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.McpSuccess"
+        },
         {
           "no": 2,
           "name": "error",
