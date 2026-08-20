@@ -22,6 +22,15 @@ CLI reverse engineering is in scope if needed.
   frames and bridge ↔ Cursor frames for the identical prompt/tool fixture,
   then diff frame-by-frame (headers, message ordering, tool result envelope,
   Run lifecycle).
+  **EXECUTED (2026-08-20).** Results:
+  [`docs/WIRE-CAPTURE-FINDINGS.md`](WIRE-CAPTURE-FINDINGS.md) (commit
+  `e6ffcf4`). Diagnosis only — P1 is **not** solved; the follow-up is a
+  fix plan derived from those findings.
+  - H1 **CONFIRMED**: yorha lane never answers the server's `mcpArgs`
+    exec request; heartbeats until RST — the known silent-stall mode.
+  - H2 **CONFIRMED**: yorha `requestContextResult` carries
+    `bridge_tool_*` fields native never sends.
+  - H3 **REFUTED**: curl repro stalls without OMO.
 
 ### P2 — cancellation races completion (F3 `live_completion_raced_abort`)
 
@@ -35,6 +44,12 @@ CLI reverse engineering is in scope if needed.
 - Method: capture native CLI abort wire behavior (RST_STREAM timing vs data
   frames) and align bridge abort dispatch to the same point in the frame
   stream; then re-run the live cancellation surface.
+  **EXECUTED (2026-08-20).** Results:
+  [`docs/WIRE-CAPTURE-FINDINGS.md`](WIRE-CAPTURE-FINDINGS.md) (commit
+  `e6ffcf4`). Diagnosis only — P2 is **not** solved; the follow-up is a
+  fix plan derived from those findings.
+  - Native cancel closes `NO_ERROR` without RST.
+  - Yorha RST `INTERNAL_ERROR` 721 ms in with 0 response DATA.
 
 ### P3 — CI latency gates (Task 12: 8 failed latency gates)
 

@@ -70,3 +70,23 @@ The bridge is **not yet live-parity green** on yorha multi-tool rounds and
 active-abort cancellation. See `docs/NEXT-PARITY-PLAN.md` for the follow-up
 planning seed, including the full native-parity goal and CLI reverse
 engineering option.
+
+## Wire-capture round (2026-08-20)
+
+Diagnosis only — P1/P2 remain unsolved. The wire-capture method is executed;
+the follow-up is a fix plan derived from the findings.
+
+- Toolkit landed in `scripts/wire-capture/` (TLS capture proxy, cert
+  generation, H2 lifecycle logging, NDJSON schema/normalizer, frame differ,
+  native and yorha lane runners).
+- Live captures: 6 lane-surface pairs (`tool_parallel_two`,
+  `tool_sequential_two_round`, `cancel_after_first_event` × native/yorha)
+  archived under `.omo/evidence/wire-capture/` with per-surface SHA-256
+  manifests.
+- Findings: `docs/WIRE-CAPTURE-FINDINGS.md` (commit `e6ffcf4`).
+- Conformance test: `tests/wire-conformance-replay.test.ts` replays the
+  captured native Run request fixture
+  (`tests/fixtures/wire/native-tool-parallel-run-request.ndjson`) against
+  the bridge. Documented bridge-superset extra field paths live as
+  `BRIDGE_RUN_REQUEST_EXTRA_FIELD_PATHS` in that test (companion list in
+  `.omo/evidence/wire-capture/task-9-happy.json`).
