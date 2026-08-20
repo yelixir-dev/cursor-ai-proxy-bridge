@@ -38,16 +38,29 @@ const config: BridgeConfig = {
   version: 'test',
 };
 
-/** FINDING: extra field paths the bridge currently emits on Run that native does not. */
+/**
+ * FINDING: extra field paths the bridge currently emits on Run that native does not.
+ * Todo 5: list unchanged after 71174c7 (abort half-close) and 1d96c2b (mcpResult exec
+ * answer) — those fixes touch stream close / exec answers, not the runRequest surface.
+ */
 const BRIDGE_RUN_REQUEST_EXTRA_FIELD_PATHS = [
+  // Empty conversationStateBlobId on userMessageAction; native omits the proto3 default.
   'message.value.action.action.value.userMessage.conversationStateBlobId',
+  // Injected DEFAULT_SYSTEM_PROMPT blob; native first-turn capture has no rootPromptMessagesJson.
   'message.value.conversationState.rootPromptMessagesJson[0]',
+  // Injected tool-scheduling guidance blob; native omits root-prompt entries on this surface.
   'message.value.conversationState.rootPromptMessagesJson[1]',
+  // fallbackRequestedModel always sets builtInModel=false; native omits proto3 default false.
   'message.value.requestedModel.builtInModel',
+  // fallbackRequestedModel always sets isVariantStringRepresentation=false; native omits.
   'message.value.requestedModel.isVariantStringRepresentation',
+  // fallbackRequestedModel always sets maxMode=false; native omits proto3 default false.
   'message.value.requestedModel.maxMode',
+  // mapper copies requestedModel onto selectedSubagentModels[2] (composer-2.5), including builtInModel.
   'message.value.selectedSubagentModels[2].builtInModel',
+  // Same copy of isVariantStringRepresentation onto the composer-2.5 subagent slot.
   'message.value.selectedSubagentModels[2].isVariantStringRepresentation',
+  // Same copy of maxMode onto the composer-2.5 subagent slot.
   'message.value.selectedSubagentModels[2].maxMode',
 ] as const;
 
@@ -387,8 +400,7 @@ describe('native-replay wire conformance', () => {
     );
 
     // COMPANION: extra bridge fields document current behavior, not native parity.
-    // FINDING: the bridge Run request currently carries conversationState blobs,
-    // conversationStateBlobId, and requestedModel variant flags that native omits.
+    // FINDING: still the same 9 extras after 71174c7/1d96c2b (runRequest surface unchanged).
     expect(
       delta.onlyInActual,
       'CURRENT BEHAVIOR (not native parity): extra field paths on the bridge Run request',
