@@ -9,12 +9,14 @@ import type { ChildProcess } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { buildServer, timingSafeKeyEqual } from '../src/server.js';
 import { createMockBackend } from '../src/backend/mock.js';
+import { buildCursorHistory } from '../src/backend/cursor-api/history.js';
+import { loadProtoDescriptors, ProtoCodec } from '../src/backend/cursor-api/protobuf.js';
 import {
   createCursorCliBackend,
   CursorBackendError,
   type CursorSpawn,
 } from '../src/backend/cursor-cli.js';
-import type { CursorBackend } from '../src/backend/types.js';
+import type { ChatCompletionRequest, CursorBackend } from '../src/backend/types.js';
 import type { BridgeConfig } from '../src/config.js';
 import {
   CursorCredentialRouter,
@@ -32,16 +34,6 @@ const baseConfig: BridgeConfig = {
   realWorkspacePath: undefined,
   version: '0.1.0',
 };
-
-function deferred<T = void>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
 
 async function app(overrides: Partial<BridgeConfig> = {}) {
   const server = await buildServer({
@@ -569,6 +561,64 @@ describe('cursor-ai-bridge server', () => {
     );
   });
 
+  it('omits tagged assistant thinking and reasoning parts at the HTTP boundary before history assembly', async () => {
+    const historyCodec = new ProtoCodec(loadProtoDescriptors());
+    let observedRequest: ChatCompletionRequest | undefined;
+    const backend: CursorBackend = {
+      ...createMockBackend(),
+      async complete(request) {
+        observedRequest = request;
+        return { content: 'BOUNDARY_OK', model: request.model };
+      },
+    };
+    const server = await buildServer({
+      config: { ...baseConfig, apiKey: 'test-bridge-key' },
+      backend,
+    });
+
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-bridge-key' },
+      payload: {
+        model: 'composer-2.5',
+        messages: [
+          { role: 'user', content: 'look up the seed' },
+          {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: 'VISIBLE_ASSISTANT_TEXT' },
+              { type: 'thinking', text: 'PRIVATE_CHAIN' },
+              { type: 'reasoning', content: 'PRIVATE_CHAIN_REASONING' },
+            ],
+          },
+          { role: 'user', content: 'now report the seed' },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const capturedRequest = observedRequest;
+    if (!capturedRequest) throw new Error('backend did not receive the completion request');
+    const assistantContent = capturedRequest.messages[1]?.content ?? '';
+    expect(assistantContent).toContain('VISIBLE_ASSISTANT_TEXT');
+    expect(assistantContent).not.toContain('PRIVATE_CHAIN');
+
+    const history = buildCursorHistory(capturedRequest, historyCodec);
+    const serialized = [
+      ...history.conversationState.rootPromptMessagesJson.map((id) =>
+        history.blobs.get(id.toString('hex'))?.toString('utf8'),
+      ),
+      ...history.conversationState.turns.map((id) =>
+        history.blobs.get(id.toString('hex'))?.toString('hex'),
+      ),
+      ...[...history.blobs.values()].map((blob) => blob.toString('utf8')),
+    ].join('\n');
+    expect(serialized).not.toContain('PRIVATE_CHAIN');
+    expect(serialized).toContain('VISIBLE_ASSISTANT_TEXT');
+    await server.close();
+  });
+
   it('rejects excessively large content-part arrays before normalization', async () => {
     const server = await app({ apiKey: 'test-bridge-key' });
     const res = await server.inject({
@@ -652,8 +702,8 @@ describe('cursor-ai-bridge server', () => {
   });
 
   it('delivers an SSE byte before a streaming backend completes', async () => {
-    const firstEvent = deferred();
-    const release = deferred();
+    const firstEvent = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
     let completed = false;
     const backend: CursorBackend = {
       ...createMockBackend(),
@@ -680,9 +730,9 @@ describe('cursor-ai-bridge server', () => {
 
     await firstEvent.promise;
     const { response } = await clientPromise;
-    const firstByte = deferred();
+    const firstByte = Promise.withResolvers<void>();
     const chunks: Buffer[] = [];
-    const ended = deferred();
+    const ended = Promise.withResolvers<void>();
     response.on('data', (chunk: Buffer) => {
       chunks.push(chunk);
       firstByte.resolve();
@@ -709,8 +759,8 @@ describe('cursor-ai-bridge server', () => {
   });
 
   it('buffers tool-mode text, emits indexed tool calls without marker leakage, and includes usage', async () => {
-    const markerYielded = deferred();
-    const release = deferred();
+    const markerYielded = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
     const marker =
       '[TOOL_CALLS: [{"function":{"name":"read_file","arguments":{"path":"one"}}},{"function":{"name":"read_file","arguments":{"path":"two"}}}]]';
     const backend: CursorBackend = {
@@ -745,9 +795,9 @@ describe('cursor-ai-bridge server', () => {
 
     await markerYielded.promise;
     const { response } = await clientPromise;
-    const firstByte = deferred();
+    const firstByte = Promise.withResolvers<void>();
     const chunks: Buffer[] = [];
-    const ended = deferred();
+    const ended = Promise.withResolvers<void>();
     response.on('data', (chunk: Buffer) => {
       chunks.push(chunk);
       firstByte.resolve();
@@ -850,9 +900,9 @@ describe('cursor-ai-bridge server', () => {
   });
 
   it('streams ordinary content before completion when tools are declared', async () => {
-    const contentYielded = deferred();
-    const waitingForRelease = deferred();
-    const release = deferred();
+    const contentYielded = Promise.withResolvers<void>();
+    const waitingForRelease = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
     const backend: CursorBackend = {
       ...createMockBackend(),
       async *completeStream() {
@@ -879,8 +929,8 @@ describe('cursor-ai-bridge server', () => {
     await contentYielded.promise;
     const { response } = await clientPromise;
     const chunks: Buffer[] = [];
-    const ended = deferred();
-    const contentReceived = deferred();
+    const ended = Promise.withResolvers<void>();
+    const contentReceived = Promise.withResolvers<void>();
     response.on('data', (chunk: Buffer) => {
       chunks.push(chunk);
       if (Buffer.concat(chunks).toString('utf8').includes('streamed answer')) {
@@ -1180,7 +1230,7 @@ describe('cursor-ai-bridge server', () => {
     expect(observedDescription).toContain('[description truncated by cursor composer bridge]');
   });
 
-  it('defaults Composer tool rounds to one call when parallel mode is omitted', async () => {
+  it('preserves model scheduling when Composer parallel mode is omitted', async () => {
     let observedParallelToolCalls: boolean | undefined;
     const backend: CursorBackend = {
       ...createMockBackend(),
@@ -1214,7 +1264,7 @@ describe('cursor-ai-bridge server', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(observedParallelToolCalls).toBe(false);
+    expect(observedParallelToolCalls).toBeUndefined();
     await server.close();
   });
 
@@ -1393,8 +1443,8 @@ describe('cursor-ai-bridge server', () => {
     { label: 'global', maxConcurrency: 1, maxConcurrencyPerKey: 2 },
     { label: 'per-key', maxConcurrency: 2, maxConcurrencyPerKey: 1 },
   ])('returns 429 when the $label in-flight completion cap is full', async (limits) => {
-    const started = deferred();
-    const release = deferred();
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
     const backend: CursorBackend = {
       ...createMockBackend(),
       async complete(request) {
@@ -1432,8 +1482,8 @@ describe('cursor-ai-bridge server', () => {
 
   it('admits sixteen same-key completions by default', async () => {
     let started = 0;
-    const allStarted = deferred();
-    const release = deferred();
+    const allStarted = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
     const backend: CursorBackend = {
       ...createMockBackend(),
       async complete(request) {
@@ -1563,8 +1613,8 @@ describe('cursor-ai-bridge server', () => {
       }
     }
 
-    const spawned = deferred<StreamingChild>();
-    const terminated = deferred();
+    const spawned = Promise.withResolvers<StreamingChild>();
+    const terminated = Promise.withResolvers<void>();
     const spawn: CursorSpawn = () => {
       const child = new StreamingChild();
       spawned.resolve(child);
@@ -1598,7 +1648,7 @@ describe('cursor-ai-bridge server', () => {
       `${JSON.stringify({ type: 'thinking', subtype: 'delta', text: 'working' })}\n`,
     );
     const { request, response } = await clientPromise;
-    const firstByte = deferred();
+    const firstByte = Promise.withResolvers<void>();
     response.once('data', () => firstByte.resolve());
     response.resume();
     await firstByte.promise;
@@ -1609,8 +1659,8 @@ describe('cursor-ai-bridge server', () => {
   });
 
   it('propagates a listening HTTP client disconnect to backend completion', async () => {
-    const started = deferred();
-    const aborted = deferred();
+    const started = Promise.withResolvers<void>();
+    const aborted = Promise.withResolvers<void>();
     const backend: CursorBackend = {
       ...createMockBackend(),
       async complete(request, signal) {
@@ -1630,7 +1680,7 @@ describe('cursor-ai-bridge server', () => {
     const server = await buildServer({ config: baseConfig, backend });
     await server.listen({ host: '127.0.0.1', port: 0 });
     const address = server.server.address() as AddressInfo;
-    const clientClosed = deferred();
+    const clientClosed = Promise.withResolvers<void>();
     const client = httpRequest({
       host: '127.0.0.1',
       port: address.port,
