@@ -117,11 +117,30 @@ export class H2SessionPool {
     }
   }
 
-  shutdown(): void {
+  async shutdown(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
     this.entries.clear();
-    for (const entry of this.sessions) this.closeEntry(entry);
+    const pending = [...this.sessions].map((entry) => {
+      // Settled runs can leave half-closed streams pending for the server's
+      // trailer; destroy them first so the session can actually close.
+      const alreadyGone = entry.session.destroyed || entry.session.closed;
+      for (const stream of [...entry.streams]) stream.destroy();
+      this.closeEntry(entry);
+      if (alreadyGone) return Promise.resolve();
+      // Wait for the 'close' event (not the `closed` flag, which flips the
+      // moment close() is called) so the RST/GOAWAY frames are flushed
+      // before the caller proceeds to process exit.
+      return new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 1_000);
+        timer.unref?.();
+        entry.session.once('close', () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+    });
+    await Promise.all(pending);
   }
 
   private usableEntry(key: string): SessionEntry | undefined {
@@ -144,7 +163,9 @@ export class H2SessionPool {
     };
     this.entries.set(key, entry);
     this.sessions.add(entry);
-    session.once('goaway', () => this.drain(entry, true));
+    session.once('goaway', () => {
+      this.drain(entry, true);
+    });
     session.on('error', (error) => {
       this.drain(entry, false);
       for (const stream of [...entry.streams]) stream.destroy(error);

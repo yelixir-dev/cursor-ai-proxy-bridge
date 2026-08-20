@@ -10,7 +10,11 @@ async function main() {
     config.backend === 'mock' ? createMockBackend() : await createConfiguredBackend(config);
   const server = await buildServer({ config, backend });
 
+  let closing = false;
   const close = async () => {
+    if (closing) return;
+    closing = true;
+    await backend.shutdown?.();
     await server.close();
     process.exit(0);
   };

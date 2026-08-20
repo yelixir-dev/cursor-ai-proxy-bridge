@@ -234,7 +234,6 @@ export class NodeCursorApiTransport implements CursorApiTransport {
   }
 
   shutdown(): Promise<void> {
-    this.runSessions.shutdown();
-    return Promise.resolve();
+    return this.runSessions.shutdown();
   }
 }
