@@ -4,7 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
-import type { ChildProcess, SpawnOptions } from 'node:child_process';
+import type { SpawnOptions } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   childEnvironment,
@@ -27,13 +27,18 @@ const baseConfig: BridgeConfig = {
 };
 
 function deferred<T = void>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
+  const callbacks: {
+    resolve: (value: T | PromiseLike<T>) => void;
+    reject: (error: unknown) => void;
+  } = {
+    resolve: () => undefined,
+    reject: () => undefined,
+  };
+  const promise = new Promise<T>((resolve, reject) => {
+    callbacks.resolve = resolve;
+    callbacks.reject = reject;
   });
-  return { promise, resolve, reject };
+  return { promise, resolve: callbacks.resolve, reject: callbacks.reject };
 }
 
 class FakeChild extends EventEmitter {
@@ -63,7 +68,7 @@ function fakeSpawn(
     const child = new FakeChild();
     children.push(child);
     onSpawn?.(child, options, args);
-    return child as unknown as ChildProcess;
+    return child;
   };
   return { spawn, children };
 }
@@ -106,15 +111,14 @@ describe('cursor child process lifecycle', () => {
 
   it('escalates a timed-out child from SIGTERM to SIGKILL after the grace period', async () => {
     vi.useFakeTimers();
-    const { spawn } = fakeSpawn();
+    const { spawn, children } = fakeSpawn();
     const signals: NodeJS.Signals[] = [];
     const runner = createCursorCommandRunner({
       spawn,
       terminationGraceMs: 750,
-      signalChild(child, signal) {
+      signalChild(_child, signal) {
         signals.push(signal);
-        if (signal === 'SIGKILL')
-          queueMicrotask(() => (child as unknown as FakeChild).exit(signal));
+        if (signal === 'SIGKILL') queueMicrotask(() => children[0]?.exit(signal));
       },
     });
 
@@ -134,9 +138,8 @@ describe('cursor child process lifecycle', () => {
     const runner = createCursorCommandRunner({
       spawn,
       maxOutputBytes: 8,
-      signalChild(child, signal) {
-        if (signal === 'SIGTERM')
-          queueMicrotask(() => (child as unknown as FakeChild).exit(signal));
+      signalChild(_child, signal) {
+        if (signal === 'SIGTERM') queueMicrotask(() => children[0]?.exit(signal));
       },
     });
 
@@ -149,15 +152,15 @@ describe('cursor child process lifecycle', () => {
 
   it('terminates registered children during backend shutdown', async () => {
     const registry = new CursorChildRegistry();
-    const { spawn } = fakeSpawn();
+    const { spawn, children } = fakeSpawn();
     const termSent = deferred();
     const runner = createCursorCommandRunner({
       registry,
       spawn,
-      signalChild(child, signal) {
+      signalChild(_child, signal) {
         if (signal === 'SIGTERM') {
           termSent.resolve();
-          queueMicrotask(() => (child as unknown as FakeChild).exit(signal));
+          queueMicrotask(() => children[0]?.exit(signal));
         }
       },
     });
@@ -251,6 +254,7 @@ describe('cursor child process lifecycle', () => {
       {
         type: 'done',
         usage: { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 },
+        usage_source: 'cli_reported',
         is_error: false,
       },
     ]);

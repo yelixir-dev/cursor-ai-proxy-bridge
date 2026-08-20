@@ -2,7 +2,9 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { createCursorCliBackend } from '../src/backend/cursor-cli.js';
+import type { CompletionStreamEvent } from '../src/backend/types.js';
 import type { BridgeConfig } from '../src/config.js';
 
 const baseConfig: BridgeConfig = {
@@ -32,11 +34,12 @@ function cursorResult(
   });
 }
 
-interface Invocation {
-  argv: string[];
-  cwd: string;
-  stdin: string;
-}
+const invocationSchema = z.object({
+  argv: z.array(z.string()),
+  cwd: z.string(),
+  stdin: z.string(),
+});
+type Invocation = z.infer<typeof invocationSchema>;
 
 const readFileTool = {
   type: 'function' as const,
@@ -106,7 +109,7 @@ process.exitCode = 1;
   }
 
   async function readInvocations(logPath: string): Promise<Invocation[]> {
-    return JSON.parse(await readFile(logPath, 'utf8')) as Invocation[];
+    return z.array(invocationSchema).parse(JSON.parse(await readFile(logPath, 'utf8')));
   }
 
   it('invokes Cursor exactly once in JSON ask mode for chat-only requests', async () => {
@@ -281,6 +284,41 @@ process.exitCode = 1;
     expect(invocations[1]?.stdin).toContain('TOOL ARGUMENT VALIDATION FEEDBACK');
     expect(result.tool_calls?.[0]?.function.arguments).toBe('{"command":"printf corrected"}');
     expect(result.usage).toEqual({ prompt_tokens: 31, completion_tokens: 9, total_tokens: 40 });
+  });
+
+  it('preserves a valid streamed tool marker and CLI-reported usage', async () => {
+    const marker =
+      '[TOOL_CALLS: [{"function":{"name":"read_file","arguments":{"path":"streamed.txt"}}}]]';
+    const backend = createCursorCliBackend(baseConfig, {
+      commandRunner: async () =>
+        `${JSON.stringify({
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          result: marker,
+          usage: { inputTokens: 19, outputTokens: 6 },
+        })}\n`,
+    });
+
+    const events: CompletionStreamEvent[] = [];
+    for await (const event of backend.completeStream({
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'stream a tool call' }],
+      tools: [readFileTool],
+      tool_choice: 'required',
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: 'content', text: marker },
+      {
+        type: 'done',
+        usage: { prompt_tokens: 19, completion_tokens: 6, total_tokens: 25 },
+        usage_source: 'cli_reported',
+        is_error: false,
+      },
+    ]);
   });
 
   it('falls back to malformed JSON stdout as plain text with estimated usage', async () => {

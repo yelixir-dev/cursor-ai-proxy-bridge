@@ -13,6 +13,8 @@ import {
 } from './backend/cursor-api/credentials.js';
 
 export type BackendKind = 'auto' | 'mock' | 'cursor-cli' | 'cursor-api';
+
+export const BRIDGE_ENV_FILE = '.env';
 export type WorkspaceMode = 'chat-only' | 'real-workspace';
 export type ClientAuthMode = 'on' | 'off';
 
@@ -52,7 +54,7 @@ function numberFromEnv(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-export function loadConfig(envFile = '.env'): BridgeConfig {
+export function loadConfig(envFile: string = BRIDGE_ENV_FILE): BridgeConfig {
   dotenv.config({ path: envFile, quiet: true });
   const configPath = dashboardConfigPath(process.env);
   const dashboardConfig = readDashboardConfigFile(configPath);

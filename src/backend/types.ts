@@ -72,6 +72,8 @@ export interface BackendHealth {
   };
 }
 
+export type UsageSource = 'turnEnded' | 'cli_reported' | 'estimated' | 'unknown';
+
 export interface CompletionUsage {
   prompt_tokens: number;
   completion_tokens: number;
@@ -83,16 +85,35 @@ export interface CompletionResult {
   model: string;
   tool_calls?: ToolCall[];
   usage?: CompletionUsage;
+  usage_source?: UsageSource;
 }
 
 export type CompletionStreamEvent =
-  | { type: 'thinking'; text: string }
-  | { type: 'content'; text: string }
+  | { readonly type: 'thinking'; readonly text: string }
+  | { readonly type: 'content'; readonly text: string }
   | {
-      type: 'done';
-      usage: CompletionUsage;
-      is_error: boolean;
-      message?: string;
+      readonly type: 'tool_call_start';
+      readonly index: number;
+      readonly id: string;
+      readonly name: string;
+    }
+  | {
+      readonly type: 'tool_call_arguments_delta';
+      readonly index: number;
+      readonly id: string;
+      readonly delta: string;
+    }
+  | {
+      readonly type: 'tool_call_complete';
+      readonly index: number;
+      readonly call: ToolCall;
+    }
+  | {
+      readonly type: 'done';
+      readonly usage: CompletionUsage;
+      readonly usage_source?: UsageSource;
+      readonly is_error: boolean;
+      readonly message?: string;
     };
 
 export interface CursorBackend {
