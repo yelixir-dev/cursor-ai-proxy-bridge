@@ -1,0 +1,1227 @@
+{
+  "schema_version": "cursor-composer-parity-metrics/v1",
+  "suite": {
+    "seed": 20260818,
+    "profile": "smoke",
+    "generated_at": "2026-08-18T09:18:02.753Z"
+  },
+  "verdict": "fail",
+  "trials": [
+    {
+      "case_id": "malformed_duplicate_tool_call_ids",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_duplicate_tool_call_ids",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_duplicate_tool_call_ids",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_duplicate_tool_call_ids",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_required_without_tools",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_required_without_tools",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_required_without_tools",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_required_without_tools",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "tool_auto_single",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 14,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_auto_single",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_auto_single",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_auto_single",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 12,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_auto_single",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 8,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_auto_single",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_auto_single",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_auto_single",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 13,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_parallel_false_cap",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 17,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_parallel_false_cap",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_parallel_false_cap",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_parallel_false_cap",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 9,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_parallel_false_cap",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 17,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_parallel_false_cap",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_parallel_false_cap",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_parallel_false_cap",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "lingering_descendant"
+    },
+    {
+      "case_id": "toolChoice_forced",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 8,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "toolChoice_forced",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "toolChoice_forced",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "toolChoice_forced",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 9,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "toolChoice_forced",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 19,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "toolChoice_forced",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "toolChoice_forced",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "toolChoice_forced",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 16,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "text_long_stream",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 13,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "text_long_stream",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "text_long_stream",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "text_long_stream",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 13,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "text_long_stream",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 12,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "text_long_stream",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "text_long_stream",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "text_long_stream",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 11,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "tool_sequential_two_round",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 21,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_sequential_two_round",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_sequential_two_round",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_sequential_two_round",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 26,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_sequential_two_round",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 24,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_sequential_two_round",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_sequential_two_round",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_sequential_two_round",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 14,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "toolChoice_required",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 17,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "toolChoice_required",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "toolChoice_required",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "toolChoice_required",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 16,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "toolChoice_required",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 11,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "toolChoice_required",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "toolChoice_required",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "toolChoice_required",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 18,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "malformed_orphan_tool_call_id",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_orphan_tool_call_id",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_orphan_tool_call_id",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_orphan_tool_call_id",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "toolChoice_none",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 15,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "toolChoice_none",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "toolChoice_none",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "toolChoice_none",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 13,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "toolChoice_none",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 8,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "toolChoice_none",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "toolChoice_none",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "toolChoice_none",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 13,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "tool_schema_recovery",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 11,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_schema_recovery",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_schema_recovery",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_schema_recovery",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 14,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_schema_recovery",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "lingering_descendant"
+    },
+    {
+      "case_id": "tool_schema_recovery",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_schema_recovery",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_schema_recovery",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 20,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "cancel_after_first_event",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "cancel_after_first_event",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "cancel_after_first_event",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "cancel_after_first_event",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "cancel_after_first_event",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "cancel_after_first_event",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "cancel_after_first_event",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "cancel_after_first_event",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_json",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_json",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_json",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_json",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "tool_history_replay",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "timeout"
+    },
+    {
+      "case_id": "tool_history_replay",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_history_replay",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_history_replay",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 23,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "tool_history_replay",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 20,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_history_replay",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_history_replay",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_history_replay",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "timeout"
+    },
+    {
+      "case_id": "cancel_mid_tool",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "cancel_mid_tool",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "cancel_failed"
+    },
+    {
+      "case_id": "cancel_mid_tool",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "cancel_failed"
+    },
+    {
+      "case_id": "cancel_mid_tool",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "cancel_mid_tool",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "cancel_mid_tool",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "cancel_failed"
+    },
+    {
+      "case_id": "cancel_mid_tool",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "cancel_failed"
+    },
+    {
+      "case_id": "cancel_mid_tool",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "tool_parallel_two",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 12,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_parallel_two",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_parallel_two",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_parallel_two",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 15,
+      "failure_class": "hallucinated_tool"
+    },
+    {
+      "case_id": "tool_parallel_two",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "lingering_descendant"
+    },
+    {
+      "case_id": "tool_parallel_two",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_parallel_two",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "missing_tool_call"
+    },
+    {
+      "case_id": "tool_parallel_two",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "lingering_descendant"
+    },
+    {
+      "case_id": "text_sentinel_nostream",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 10,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "text_sentinel_nostream",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "text_sentinel_nostream",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "text_sentinel_nostream",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 14,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "text_sentinel_nostream",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 11,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "text_sentinel_nostream",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "text_sentinel_nostream",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "text_sentinel_nostream",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 17,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "client_parallel_two",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 18,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "client_parallel_two",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "client_parallel_two",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "client_parallel_two",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "client_parallel_two",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "client_parallel_two",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "client_parallel_two",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "client_parallel_two",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "malformed_unknown_forced_name",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_unknown_forced_name",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_unknown_forced_name",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_unknown_forced_name",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "cold_boot_text",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 8,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "cold_boot_text",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "cold_boot_text",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "cold_boot_text",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 17,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "cold_boot_text",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 13,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "cold_boot_text",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "cold_boot_text",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "cold_boot_text",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 7,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "malformed_duplicate_tool_names",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_duplicate_tool_names",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_duplicate_tool_names",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "malformed_duplicate_tool_names",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": true,
+      "upstream_runs": 0,
+      "failure_class": null
+    },
+    {
+      "case_id": "text_sentinel_stream",
+      "pair_index": 0,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 16,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "text_sentinel_stream",
+      "pair_index": 0,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "text_sentinel_stream",
+      "pair_index": 1,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "text_sentinel_stream",
+      "pair_index": 1,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 11,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "text_sentinel_stream",
+      "pair_index": 2,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 13,
+      "failure_class": "unexpected_tool"
+    },
+    {
+      "case_id": "text_sentinel_stream",
+      "pair_index": 2,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "text_sentinel_stream",
+      "pair_index": 3,
+      "lane": "yorha",
+      "passed": false,
+      "upstream_runs": 0,
+      "failure_class": "sentinel_mismatch"
+    },
+    {
+      "case_id": "text_sentinel_stream",
+      "pair_index": 3,
+      "lane": "native",
+      "passed": false,
+      "upstream_runs": 15,
+      "failure_class": "unexpected_tool"
+    }
+  ]
+}

@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "format:write": "prettier --write .",
     "format:check": "prettier --check .",
     "check:strict": "node scripts/check-strict-assertions.mjs",
     "verify": "npm run typecheck && npm run lint && npm run format:check && npm run check:strict && npm run test && npm run build"

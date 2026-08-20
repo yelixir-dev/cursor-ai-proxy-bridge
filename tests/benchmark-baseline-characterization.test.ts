@@ -11,7 +11,7 @@ interface BaselineTrial {
 describe('sealed task-6 baseline characterization', () => {
   it('records the untouched schema-valid failure without treating it as bridge proof', async () => {
     const baseline = JSON.parse(
-      await readFile('.omo/evidence/cursor-composer-parity-benchmark/baseline-before.json', 'utf8'),
+      await readFile('tests/fixtures/benchmark/baseline-before.json', 'utf8'),
     ) as { verdict: string; trials: BaselineTrial[] };
     const yorha = baseline.trials.filter((trial) => trial.lane === 'yorha');
 
