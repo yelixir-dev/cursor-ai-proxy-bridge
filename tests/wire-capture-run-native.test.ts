@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
   CASE_IDS,
+  DEFAULT_MAX_REQ_BINS,
+  DEFAULT_MAX_RES_BINS,
   DEFAULT_PORT_A,
   DEFAULT_PORT_B,
   FORBIDDEN_PORTS,
@@ -58,6 +60,8 @@ function options(overrides: Partial<NativeRunOptions> = {}): NativeRunOptions {
     childApiEndpoint: null,
     authStorePath: join(tmp('auth'), 'missing-auth.json'),
     modelStorePath: join(tmp('models'), 'missing-models.json'),
+    maxReqBins: DEFAULT_MAX_REQ_BINS,
+    maxResBins: DEFAULT_MAX_RES_BINS,
     ...overrides,
   };
 }
@@ -261,6 +265,66 @@ describe('native-lane capture runner plan', () => {
     expect(printed).not.toContain('28444');
   });
 
+  it('defaults proxy frame caps to 200/500 and passes them through', () => {
+    // Given: a dry-run plan with no cap overrides.
+    const parsed = parseArgs(['--case', 'tool_parallel_two', '--dry-run']);
+    const plan = buildNativeRunPlan(options());
+
+    // Then: both proxies get the raised caps, not the proxy.mjs 12/40 defaults.
+    expect(parsed.maxReqBins).toBe(200);
+    expect(parsed.maxResBins).toBe(500);
+    expect(DEFAULT_MAX_REQ_BINS).toBe(200);
+    expect(DEFAULT_MAX_RES_BINS).toBe(500);
+    for (const proxy of plan.proxies) {
+      expect(proxy.args).toEqual(
+        expect.arrayContaining(['--max-req-bins', '200', '--max-res-bins', '500']),
+      );
+    }
+  });
+
+  it('passes explicit --max-req-bins/--max-res-bins through to both proxies', () => {
+    // Given: custom caps that differ from both runner and proxy defaults.
+    const parsed = parseArgs([
+      '--case',
+      'tool_parallel_two',
+      '--max-req-bins',
+      '17',
+      '--max-res-bins',
+      '19',
+    ]);
+    const plan = buildNativeRunPlan(
+      options({ maxReqBins: parsed.maxReqBins, maxResBins: parsed.maxResBins }),
+    );
+
+    // Then: the exact integers are on both proxy argv lists.
+    expect(parsed.maxReqBins).toBe(17);
+    expect(parsed.maxResBins).toBe(19);
+    for (const proxy of plan.proxies) {
+      expect(proxy.args).toEqual(
+        expect.arrayContaining(['--max-req-bins', '17', '--max-res-bins', '19']),
+      );
+    }
+  });
+
+  it('rejects malformed bin-cap flags with named bad_args', () => {
+    expect(() => parseArgs(['--case', 'tool_parallel_two', '--max-req-bins', '-1'])).toThrow(
+      /invalid --max-req-bins -1/,
+    );
+    expect(() => parseArgs(['--case', 'tool_parallel_two', '--max-res-bins', 'nope'])).toThrow(
+      /invalid --max-res-bins/,
+    );
+    expect(() => parseArgs(['--case', 'tool_parallel_two', '--max-req-bins'])).toThrow(
+      /missing value for --max-req-bins/,
+    );
+    try {
+      parseArgs(['--case', 'tool_parallel_two', '--max-req-bins', '1.5']);
+      throw new Error('expected parseArgs to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(NativeRunError);
+      expect((error as NativeRunError).reason).toBe('bad_args');
+    }
+  });
+
   it('marks cancel_after_first_event for abort-after-first-visible-event', () => {
     // Given: the cheapest F3 cancellation surface.
     const plan = buildNativeRunPlan(options({ caseId: 'cancel_after_first_event' }));
@@ -294,6 +358,10 @@ describe('native-lane dry-run CLI', () => {
     expect(result.stdout).toContain('"18444"');
     expect(result.stdout).toContain('CURSOR_API_ENDPOINT');
     expect(result.stdout).toContain('--agent-endpoint');
+    expect(result.stdout).toContain('--max-req-bins');
+    expect(result.stdout).toContain('"200"');
+    expect(result.stdout).toContain('--max-res-bins');
+    expect(result.stdout).toContain('"500"');
     expect(result.stderr).toBe('');
     expect(() => readFileSync(join(captureDir, 'receipt.json'))).toThrow();
   });

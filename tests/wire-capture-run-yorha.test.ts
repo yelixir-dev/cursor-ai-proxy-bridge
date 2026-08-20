@@ -8,6 +8,8 @@ import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   DEFAULT_BRIDGE_PORT,
+  DEFAULT_MAX_REQ_BINS,
+  DEFAULT_MAX_RES_BINS,
   DEFAULT_PORT_A,
   DEFAULT_PORT_B,
   LANE,
@@ -134,6 +136,8 @@ function baseArgs(captureDir: string, extra: Partial<YorhaCliArgs> = {}): YorhaC
     timeoutMs: 1_000,
     probeTimeoutMs: 200,
     bootTimeoutMs: 1_000,
+    maxReqBins: DEFAULT_MAX_REQ_BINS,
+    maxResBins: DEFAULT_MAX_RES_BINS,
     ...extra,
   };
 }
@@ -221,10 +225,65 @@ describe('wire-capture yorha runner', () => {
     expect(ran.stdout).toContain('--provider yorha');
     expect(ran.stdout).toContain('--target-host api2.cursor.sh');
     expect(ran.stdout).toContain('--target-host agentn.global.api5.cursor.sh');
+    expect(ran.stdout).toContain('--max-req-bins 200');
+    expect(ran.stdout).toContain('--max-res-bins 500');
   });
 
   it('rejects unknown cases', () => {
     expect(() => parseArgs(['--case', 'not_a_case'])).toThrow(/unsupported --case/);
+  });
+
+  it('defaults proxy frame caps to 200/500 and passes them through', () => {
+    const parsed = parseArgs(['--case', 'tool_parallel_two', '--dry-run']);
+    const plan = buildPlan(baseArgs('/tmp/plan-capture-caps'), PROJECT);
+    expect(parsed.maxReqBins).toBe(200);
+    expect(parsed.maxResBins).toBe(500);
+    expect(DEFAULT_MAX_REQ_BINS).toBe(200);
+    expect(DEFAULT_MAX_RES_BINS).toBe(500);
+    expect(plan.proxyAArgs).toEqual(
+      expect.arrayContaining(['--max-req-bins', '200', '--max-res-bins', '500']),
+    );
+    expect(plan.proxyBArgs).toEqual(
+      expect.arrayContaining(['--max-req-bins', '200', '--max-res-bins', '500']),
+    );
+  });
+
+  it('passes explicit --max-req-bins/--max-res-bins through to both proxies', () => {
+    const parsed = parseArgs([
+      '--case',
+      'tool_parallel_two',
+      '--max-req-bins',
+      '17',
+      '--max-res-bins',
+      '19',
+    ]);
+    const plan = buildPlan(
+      baseArgs('/tmp/plan-capture-caps-override', {
+        maxReqBins: parsed.maxReqBins,
+        maxResBins: parsed.maxResBins,
+      }),
+      PROJECT,
+    );
+    expect(parsed.maxReqBins).toBe(17);
+    expect(parsed.maxResBins).toBe(19);
+    expect(plan.proxyAArgs).toEqual(
+      expect.arrayContaining(['--max-req-bins', '17', '--max-res-bins', '19']),
+    );
+    expect(plan.proxyBArgs).toEqual(
+      expect.arrayContaining(['--max-req-bins', '17', '--max-res-bins', '19']),
+    );
+  });
+
+  it('rejects malformed bin-cap flags', () => {
+    expect(() => parseArgs(['--case', 'tool_parallel_two', '--max-req-bins', '-1'])).toThrow(
+      /invalid --max-req-bins/,
+    );
+    expect(() => parseArgs(['--case', 'tool_parallel_two', '--max-res-bins', 'nope'])).toThrow(
+      /invalid --max-res-bins/,
+    );
+    expect(() => parseArgs(['--case', 'tool_parallel_two', '--max-req-bins'])).toThrow(
+      /missing value for --max-req-bins/,
+    );
   });
 
   it('verifyCaptureCompleteness requires non-empty .bin bytes in both proxy dirs', () => {

@@ -27,6 +27,8 @@ export interface YorhaCliArgs {
   timeoutMs: number;
   probeTimeoutMs: number;
   bootTimeoutMs: number;
+  maxReqBins: number;
+  maxResBins: number;
 }
 
 export interface YorhaPlan {
@@ -139,6 +141,8 @@ export declare const CASE_IDS: readonly YorhaCaseId[];
 export declare const DEFAULT_PORT_A: 28443;
 export declare const DEFAULT_PORT_B: 28444;
 export declare const DEFAULT_BRIDGE_PORT: 9998;
+export declare const DEFAULT_MAX_REQ_BINS: 200;
+export declare const DEFAULT_MAX_RES_BINS: 500;
 
 export declare function parseArgs(argv: readonly string[]): YorhaCliArgs;
 export declare function sentinelFor(

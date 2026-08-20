@@ -23,6 +23,8 @@ const SEED = 20260818;
 const LANE = 'native';
 const DEFAULT_PORT_A = 18443;
 const DEFAULT_PORT_B = 18444;
+const DEFAULT_MAX_REQ_BINS = 200;
+const DEFAULT_MAX_RES_BINS = 500;
 const TARGET_API2 = 'api2.cursor.sh';
 const TARGET_AGENTN = 'agentn.global.api5.cursor.sh';
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -100,6 +102,8 @@ function parseArgs(argv) {
     childApiEndpoint: null,
     authStorePath: null,
     modelStorePath: null,
+    maxReqBins: DEFAULT_MAX_REQ_BINS,
+    maxResBins: DEFAULT_MAX_RES_BINS,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i];
@@ -145,6 +149,12 @@ function parseArgs(argv) {
       case 'model-store':
         out.modelStorePath = value;
         break;
+      case 'max-req-bins':
+        out.maxReqBins = Number(value);
+        break;
+      case 'max-res-bins':
+        out.maxResBins = Number(value);
+        break;
       default:
         throw new NativeRunError('bad_args', `unknown flag --${name}`);
     }
@@ -160,6 +170,8 @@ function parseArgs(argv) {
   if (!Number.isFinite(out.timeoutMs) || out.timeoutMs <= 0) {
     throw new NativeRunError('bad_args', 'timeout-ms must be a positive number');
   }
+  assertBinCap(out.maxReqBins, 'max-req-bins');
+  assertBinCap(out.maxResBins, 'max-res-bins');
   return out;
 }
 
@@ -169,6 +181,12 @@ function assertPort(port, label) {
   }
   if (FORBIDDEN_PORTS.has(port)) {
     throw new NativeRunError('bad_args', `forbidden --${label} ${port}`);
+  }
+}
+
+function assertBinCap(value, label) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new NativeRunError('bad_args', `invalid --${label} ${value}`);
   }
 }
 
@@ -242,6 +260,12 @@ function buildNativeRunPlan(options) {
   const leafKey = path.join(certsDir, 'leaf.key');
   const portA = options.portA;
   const portB = options.portB;
+  const maxReqBins = Number.isInteger(options.maxReqBins)
+    ? options.maxReqBins
+    : DEFAULT_MAX_REQ_BINS;
+  const maxResBins = Number.isInteger(options.maxResBins)
+    ? options.maxResBins
+    : DEFAULT_MAX_RES_BINS;
   const apiEndpoint = options.childApiEndpoint ?? `https://127.0.0.1:${portA}`;
   const agentEndpoint = `https://127.0.0.1:${portB}`;
   const omoBin = resolveOmoBin(options.omoBin);
@@ -316,6 +340,10 @@ function buildNativeRunPlan(options) {
           leafKey,
           '--capture-dir',
           api2Dir,
+          '--max-req-bins',
+          String(maxReqBins),
+          '--max-res-bins',
+          String(maxResBins),
         ],
       },
       {
@@ -333,6 +361,10 @@ function buildNativeRunPlan(options) {
           leafKey,
           '--capture-dir',
           agentnDir,
+          '--max-req-bins',
+          String(maxReqBins),
+          '--max-res-bins',
+          String(maxResBins),
         ],
       },
     ],
@@ -851,6 +883,8 @@ if (isMain()) {
 
 export {
   CASE_IDS,
+  DEFAULT_MAX_REQ_BINS,
+  DEFAULT_MAX_RES_BINS,
   DEFAULT_PORT_A,
   DEFAULT_PORT_B,
   FORBIDDEN_PORTS,

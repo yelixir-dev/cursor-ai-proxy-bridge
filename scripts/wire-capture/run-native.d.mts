@@ -2,6 +2,8 @@ export const CASE_IDS: readonly string[];
 export const SEED: number;
 export const DEFAULT_PORT_A: number;
 export const DEFAULT_PORT_B: number;
+export const DEFAULT_MAX_REQ_BINS: number;
+export const DEFAULT_MAX_RES_BINS: number;
 export const FORBIDDEN_PORTS: Set<number>;
 export const TARGET_API2: string;
 export const TARGET_AGENTN: string;
@@ -23,6 +25,8 @@ export interface NativeRunOptions {
   childApiEndpoint: string | null;
   authStorePath: string | null;
   modelStorePath: string | null;
+  maxReqBins: number;
+  maxResBins: number;
 }
 
 export interface SpawnSpec {

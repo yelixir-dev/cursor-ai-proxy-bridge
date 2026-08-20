@@ -16,6 +16,8 @@ const CASE_IDS = ['tool_parallel_two', 'tool_sequential_two_round', 'cancel_afte
 const DEFAULT_PORT_A = 28443;
 const DEFAULT_PORT_B = 28444;
 const DEFAULT_BRIDGE_PORT = 9998;
+const DEFAULT_MAX_REQ_BINS = 200;
+const DEFAULT_MAX_RES_BINS = 500;
 const DEFAULT_TARGET_A = 'api2.cursor.sh';
 const DEFAULT_TARGET_B = 'agentn.global.api5.cursor.sh';
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -65,6 +67,13 @@ function parseArgs(argv) {
     if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`invalid --${name}`);
     return parsed;
   };
+  const binCapFlag = (name, fallback) => {
+    if (raw[name] === undefined) return fallback;
+    if (raw[name] === true) throw new Error(`missing value for --${name}`);
+    const parsed = Number(raw[name]);
+    if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`invalid --${name}`);
+    return parsed;
+  };
   return {
     case: caseId,
     dryRun: raw['dry-run'] === true,
@@ -78,6 +87,8 @@ function parseArgs(argv) {
     timeoutMs: numberFlag('timeout-ms', DEFAULT_TIMEOUT_MS),
     probeTimeoutMs: numberFlag('probe-timeout-ms', DEFAULT_PROBE_TIMEOUT_MS),
     bootTimeoutMs: numberFlag('boot-timeout-ms', DEFAULT_BOOT_TIMEOUT_MS),
+    maxReqBins: binCapFlag('max-req-bins', DEFAULT_MAX_REQ_BINS),
+    maxResBins: binCapFlag('max-res-bins', DEFAULT_MAX_RES_BINS),
   };
 }
 
@@ -126,6 +137,8 @@ function buildPlan(args, projectRoot, now = () => new Date()) {
   const leafCrt = path.join(certsDir, 'leaf.crt');
   const leafKey = path.join(certsDir, 'leaf.key');
   const caCrt = path.join(certsDir, 'ca.crt');
+  const maxReqBins = Number.isInteger(args.maxReqBins) ? args.maxReqBins : DEFAULT_MAX_REQ_BINS;
+  const maxResBins = Number.isInteger(args.maxResBins) ? args.maxResBins : DEFAULT_MAX_RES_BINS;
   const exists = fs.existsSync;
   const bridge = resolveBridgeEntry(projectRoot, exists);
   const omoBin = args.omoBin ?? path.join(projectRoot, OMO_REL);
@@ -185,6 +198,10 @@ function buildPlan(args, projectRoot, now = () => new Date()) {
       leafKey,
       '--capture-dir',
       api2CaptureDir,
+      '--max-req-bins',
+      String(maxReqBins),
+      '--max-res-bins',
+      String(maxResBins),
     ],
     proxyBArgs: [
       proxyScript,
@@ -198,6 +215,10 @@ function buildPlan(args, projectRoot, now = () => new Date()) {
       leafKey,
       '--capture-dir',
       agentnCaptureDir,
+      '--max-req-bins',
+      String(maxReqBins),
+      '--max-res-bins',
+      String(maxResBins),
     ],
     bridgeCommand: bridge.command,
     bridgeArgs: bridge.args,
@@ -865,6 +886,8 @@ if (isMain()) {
 export {
   CASE_IDS,
   DEFAULT_BRIDGE_PORT,
+  DEFAULT_MAX_REQ_BINS,
+  DEFAULT_MAX_RES_BINS,
   DEFAULT_PORT_A,
   DEFAULT_PORT_B,
   LANE,
