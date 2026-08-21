@@ -302,7 +302,10 @@ function createCaptureProxy(options) {
     });
   });
 
-  // one pooled upstream h2 session per proxy
+  // one pooled upstream h2 session per proxy; keep every created session so a
+  // GOAWAY'd idle one cannot leak past close(). Event handlers capture the
+  // created session so they never null out a newer replacement.
+  const upstreamSessions = new Set();
   let upstreamSession = null;
   let upstreamConn = null;
   let upstreamGoawayed = false;
@@ -314,7 +317,9 @@ function createCaptureProxy(options) {
       !upstreamGoawayed
     )
       return upstreamSession;
-    upstreamSession = http2.connect(`https://${targetHost}`, upstreamTls);
+    const created = http2.connect(`https://${targetHost}`, upstreamTls);
+    upstreamSessions.add(created);
+    upstreamSession = created;
     upstreamGoawayed = false;
     upstreamConn = `upstream-${++upstreamSeq}`;
     const uconn = upstreamConn;
@@ -323,8 +328,8 @@ function createCaptureProxy(options) {
       event: 'session_open',
       detail: { origin: 'upstream', target: targetHost },
     });
-    upstreamSession.on('goaway', (errorCode, lastStreamID) => {
-      upstreamGoawayed = true;
+    created.on('goaway', (errorCode, lastStreamID) => {
+      if (upstreamSession === created) upstreamGoawayed = true;
       log(`upstream h2 goaway ${rstName(errorCode)} lastStream=${lastStreamID}`);
       lifecycle({
         conn: uconn,
@@ -337,22 +342,23 @@ function createCaptureProxy(options) {
         },
       });
     });
-    upstreamSession.on('error', (e) => {
+    created.on('error', (e) => {
       log(`upstream h2 error ${e.message}`);
       lifecycle({
         conn: uconn,
         event: 'session_close',
         detail: { origin: 'upstream', error: e.message },
       });
-      upstreamSession = null;
+      if (upstreamSession === created) upstreamSession = null;
     });
-    upstreamSession.on('close', () => {
+    created.on('close', () => {
       log('upstream h2 session closed');
       lifecycle({ conn: uconn, event: 'session_close', detail: { origin: 'upstream' } });
-      upstreamSession = null;
+      upstreamSessions.delete(created);
+      if (upstreamSession === created) upstreamSession = null;
     });
     log(`upstream h2 connected to ${targetHost}`);
-    return upstreamSession;
+    return created;
   }
 
   server.on('stream', (stream, headers) => {
@@ -613,7 +619,11 @@ function createCaptureProxy(options) {
           resolve();
         };
         const forceDestroy = () => {
-          if (upstreamSession && !upstreamSession.destroyed) upstreamSession.destroy();
+          for (const session of upstreamSessions) {
+            if (!session.destroyed) session.destroy();
+          }
+          upstreamSessions.clear();
+          upstreamSession = null;
           for (const session of downstreamSessions) {
             if (!session.destroyed) session.destroy();
           }

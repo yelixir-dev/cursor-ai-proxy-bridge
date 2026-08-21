@@ -49,12 +49,35 @@ interface FakeUpstream {
   close: () => Promise<void>;
 }
 
+function closeHttp2SecureServer(
+  server: http2.Http2SecureServer,
+  sessions: Set<http2.ServerHttp2Session>,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    for (const session of sessions) {
+      if (!session.destroyed) session.destroy();
+    }
+    sessions.clear();
+    server.close((err) => (err ? reject(err) : resolve()));
+  });
+}
+
+function trackSessions(server: http2.Http2SecureServer): Set<http2.ServerHttp2Session> {
+  const sessions = new Set<http2.ServerHttp2Session>();
+  server.on('session', (session) => {
+    sessions.add(session);
+    session.on('close', () => sessions.delete(session));
+  });
+  return sessions;
+}
+
 async function startFakeUpstream(certs: {
   key: Buffer;
   cert: Buffer;
   respondFrame: Buffer;
 }): Promise<FakeUpstream> {
   const server = http2.createSecureServer({ key: certs.key, cert: certs.cert });
+  const sessions = trackSessions(server);
   server.on('stream', (stream: http2.ServerHttp2Stream, headers) => {
     if (headers[':path'] !== '/agent.v1.AgentService/Run') {
       stream.respond({ ':status': 404 });
@@ -70,10 +93,7 @@ async function startFakeUpstream(certs: {
   return {
     server,
     port: address.port,
-    close: () =>
-      new Promise<void>((resolve, reject) =>
-        server.close((err) => (err ? reject(err) : resolve())),
-      ),
+    close: () => closeHttp2SecureServer(server, sessions),
   };
 }
 
@@ -350,6 +370,7 @@ describe('wire-capture proxy', () => {
       resolveUpstreamClosed = resolve;
     });
     const upstreamServer = http2.createSecureServer({ key: leafKey, cert: leafCrt });
+    const upstreamSessions = trackSessions(upstreamServer);
     upstreamServer.on('stream', (stream: http2.ServerHttp2Stream, headers) => {
       if (headers[':path'] !== '/agent.v1.AgentService/Run') {
         stream.respond({ ':status': 404 });
@@ -363,7 +384,7 @@ describe('wire-capture proxy', () => {
       stream.on('close', () => resolveUpstreamClosed(stream.rstCode));
     });
     await new Promise<void>((resolve) => upstreamServer.listen(0, '127.0.0.1', resolve));
-    cleanups.push(() => new Promise<void>((resolve) => upstreamServer.close(() => resolve())));
+    cleanups.push(() => closeHttp2SecureServer(upstreamServer, upstreamSessions));
     const upstreamAddress = upstreamServer.address() as AddressInfo | null;
     if (upstreamAddress === null) throw new Error('upstream has no bound address');
 
@@ -449,6 +470,7 @@ describe('wire-capture proxy', () => {
     let upstreamH2Session: http2.ServerHttp2Session | null = null;
     let streamCount = 0;
     const upstreamServer = http2.createSecureServer({ key: leafKey, cert: leafCrt });
+    const upstreamSessions = trackSessions(upstreamServer);
     upstreamServer.on('session', (s: http2.ServerHttp2Session) => {
       upstreamH2Session = s;
     });
@@ -465,7 +487,7 @@ describe('wire-capture proxy', () => {
       }
     });
     await new Promise<void>((resolve) => upstreamServer.listen(0, '127.0.0.1', resolve));
-    cleanups.push(() => new Promise<void>((resolve) => upstreamServer.close(() => resolve())));
+    cleanups.push(() => closeHttp2SecureServer(upstreamServer, upstreamSessions));
     const upstreamAddress = upstreamServer.address() as AddressInfo | null;
     if (upstreamAddress === null) throw new Error('upstream has no bound address');
 
