@@ -33,6 +33,8 @@ export class CursorRunMessages {
   readonly toolStream: CursorToolStream;
   text = '';
   usageAttribution = cursorUsageAttribution();
+  private emptyExecAnswered = false;
+  private execBatchSettled = false;
 
   constructor(private readonly options: CursorRunMessageOptions) {
     this.toolStream = new CursorToolStream(
@@ -49,7 +51,8 @@ export class CursorRunMessages {
     const messageCase = typeof message?.case === 'string' ? message.case : undefined;
     const value = dict(message?.value) ?? {};
     if (messageCase === 'execServerMessage') {
-      handleExecResponse(
+      const execCase = dict(value.message)?.case;
+      const execOutcome = handleExecResponse(
         {
           codec: this.options.codec,
           request: this.options.request,
@@ -62,6 +65,9 @@ export class CursorRunMessages {
         },
         value,
       );
+      if (execCase === 'mcpArgs' && execOutcome === 'answered-empty') {
+        this.emptyExecAnswered = true;
+      }
       return false;
     }
     if (messageCase === 'kvServerMessage') {
@@ -73,25 +79,41 @@ export class CursorRunMessages {
     const updateCase = dict(value.message)?.case;
     if (updateCase === 'textDelta') {
       const delta = typeof update.text === 'string' ? update.text : '';
+      if (this.execBatchSettled && delta) {
+        // Derail cutoff: the model is generating on top of an empty exec
+        // result (its real output only returns via the client), so end the
+        // turn and hand the tool calls to the client (P1 stall).
+        this.options.finish(undefined);
+        return false;
+      }
       this.text += delta;
       if (delta) this.options.emit?.({ type: 'content', text: delta });
       return false;
     }
     if (updateCase === 'thinkingDelta') {
       const delta = typeof update.text === 'string' ? update.text : '';
+      if (this.execBatchSettled && delta) {
+        this.options.finish(undefined);
+        return false;
+      }
       if (delta) this.options.emit?.({ type: 'thinking', text: delta });
       return false;
     }
     if (updateCase === 'toolCallStarted') {
+      this.emptyExecAnswered = false;
+      this.execBatchSettled = false;
       traceStage(this.options.trace, 'tool_decision');
       this.toolStream.start(update);
       return false;
     }
     if (updateCase === 'partialToolCall') {
+      this.emptyExecAnswered = false;
+      this.execBatchSettled = false;
       this.toolStream.partial(update);
       return false;
     }
     if (updateCase === 'toolCallCompleted') {
+      if (this.emptyExecAnswered) this.execBatchSettled = true;
       this.toolStream.completeUpdate(update);
       return false;
     }

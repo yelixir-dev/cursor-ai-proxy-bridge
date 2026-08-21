@@ -93,7 +93,10 @@ function rejectionValue(
     : { [failureField.localName]: failureValue };
 }
 
-export function handleExecResponse(context: ExecResponseContext, exec: Dict): void {
+export function handleExecResponse(
+  context: ExecResponseContext,
+  exec: Dict,
+): 'answered-empty' | 'ignored' | undefined {
   const message = dict(exec.message);
   const execCase = typeof message?.case === 'string' ? message.case : undefined;
   const value = dict(message?.value) ?? {};
@@ -118,8 +121,9 @@ export function handleExecResponse(context: ExecResponseContext, exec: Dict): vo
         omitExecId: true,
         localExecutionTimeMs: 1,
       });
+      return 'answered-empty';
     }
-    return;
+    return 'ignored';
   }
   if (execCase === 'mcpAllowlistPrecheckArgs') {
     sendExec(context, {

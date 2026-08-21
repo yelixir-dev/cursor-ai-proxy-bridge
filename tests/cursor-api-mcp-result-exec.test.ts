@@ -76,8 +76,9 @@ function scriptedMcpArgsRun(frames: Buffer[]): ScriptedTransport {
 }
 
 describe('cursor-api mcpArgs exec answer', () => {
-  it('writes an execClientMessage mcpResult success after an allowed mcpArgs', async () => {
-    // Given: upstream asks the bridge to execute an advertised MCP tool.
+  it('answers an empty mcpResult success on a first tool round', async () => {
+    // Given: upstream asks the bridge to execute an advertised MCP tool in a
+    // request whose history carries no tool results yet.
     const request = parallelToolRequest();
     const wireName = wireToolName(request);
     const transport = scriptedMcpArgsRun([callBatch(wireName, 'call-a', 'A')]);
@@ -85,7 +86,8 @@ describe('cursor-api mcpArgs exec answer', () => {
     // When: the Run consumes that mcpArgs frame.
     await collect(backend(transport), request);
 
-    // Then: the same Run writes mcpResult success upstream (the missing stall answer).
+    // Then: the legacy empty answer keeps the run open so serialized
+    // parallel batches can complete in-run.
     const results = mcpResultMessages(decodeExecClientMessages(runWrites(transport)));
     expect(results).toHaveLength(1);
     const answered = results[0];
@@ -93,31 +95,47 @@ describe('cursor-api mcpArgs exec answer', () => {
     expect(mcpResultCase(answered)).toBe('success');
   });
 
-  it('echoes the server exec id without execId and keeps OpenAI tool_calls', async () => {
-    // Given: mcpArgs carries a non-default exec id plus a server execId.
+  it('finishes the turn when the model generates after an empty exec answer', async () => {
+    // Given: the model's tool call was exec-answered empty, then the model
+    // keeps generating instead of yielding (the P1 derail signature).
     const request = parallelToolRequest();
     const wireName = wireToolName(request);
-    const transport = scriptedMcpArgsRun([
-      update('toolCallStarted', {
-        callId: 'call-a',
-        toolCall: {
-          tool: { case: 'mcpToolCall', value: { args: toolCall(wireName, 'call-a', '') } },
-          toolCallId: 'call-a',
-        },
-      }),
-      update('partialToolCall', { callId: 'call-a', argsTextDelta: '{"value":"A"}' }),
-      mcpArgsFrame(toolCall(wireName, 'call-a', 'A'), 17, 'server-exec-id'),
-    ]);
+    const transport = new ScriptedTransport((stream) => {
+      stream.emit('response', { ':status': 200 });
+      stream.emit(
+        'data',
+        Buffer.concat([
+          update('toolCallStarted', {
+            callId: 'call-a',
+            toolCall: {
+              tool: { case: 'mcpToolCall', value: { args: toolCall(wireName, 'call-a', '') } },
+              toolCallId: 'call-a',
+            },
+          }),
+          update('partialToolCall', { callId: 'call-a', argsTextDelta: '{"value":"A"}' }),
+          mcpArgsFrame(toolCall(wireName, 'call-a', 'A')),
+          update('toolCallCompleted', {
+            callId: 'call-a',
+            toolCall: {
+              tool: { case: 'mcpToolCall', value: { args: toolCall(wireName, 'call-a', 'A') } },
+              toolCallId: 'call-a',
+            },
+          }),
+          update('textDelta', { text: 'GARBAGE_FROM_EMPTY_RESULT' }),
+          update('turnEnded', { inputTokens: 1, outputTokens: 1 }),
+          trailer(),
+        ]),
+      );
+    });
 
     // When: the client consumes the stream.
     const events = await collect(backend(transport), request);
 
-    // Then: the answer echoes id 17, omits execId, and OpenAI tool_calls still emit.
-    const result = mcpResultMessages(decodeExecClientMessages(runWrites(transport)))[0];
-    if (!result) throw new Error('expected mcpResult answer');
-    expect(result.id).toBe(17);
-    expect(Object.hasOwn(result, 'execId')).toBe(false);
-    expect(mcpResultCase(result)).toBe('success');
+    // Then: the empty answer goes out (batch continuity), the turn finishes
+    // at the first post-answer content, and the garbage text is dropped.
+    const results = mcpResultMessages(decodeExecClientMessages(runWrites(transport)));
+    expect(results).toHaveLength(1);
+    expect(mcpResultCase(results[0] ?? {})).toBe('success');
     expect(
       events.flatMap((event) => (event.type === 'tool_call_complete' ? [event.call] : [])),
     ).toEqual([
@@ -127,6 +145,12 @@ describe('cursor-api mcpArgs exec answer', () => {
         function: { name: 'echo_value', arguments: '{"value":"A"}' },
       },
     ]);
+    expect(
+      events.some(
+        (event) => event.type === 'content' && event.text.includes('GARBAGE_FROM_EMPTY_RESULT'),
+      ),
+    ).toBe(false);
+    expect(events.at(-1)?.type).toBe('done');
   });
 
   it('does not claim mcpResult success for an unknown tool name and does not crash', async () => {
