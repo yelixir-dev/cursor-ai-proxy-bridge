@@ -181,22 +181,26 @@ export function handleExecResponse(
     return;
   }
   if (execCase === 'mcpStateExecArgs') {
+    const advertised = context.request.tool_choice === 'none' ? [] : (context.request.tools ?? []);
     sendExec(context.writeMessage, {
       exec,
       messageCase: 'mcpStateExecResult',
       value: {
         result: {
           case: 'success',
-          value: {
-            servers: [
-              {
-                serverName: 'bridge',
-                serverIdentifier: 'bridge',
-                tools: (context.request.tools ?? []).map(nativeToolDefinition),
-                status: 'connected',
-              },
-            ],
-          },
+          value:
+            advertised.length === 0
+              ? { servers: [] }
+              : {
+                  servers: [
+                    {
+                      serverName: 'bridge',
+                      serverIdentifier: 'bridge',
+                      tools: advertised.map(nativeToolDefinition),
+                      status: 'connected',
+                    },
+                  ],
+                },
         },
       },
     });

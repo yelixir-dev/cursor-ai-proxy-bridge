@@ -9,6 +9,23 @@ import { cursorUsageAttribution } from './usage-attribution.js';
 
 type Dict = Record<string, unknown>;
 
+class CursorUndeclaredToolCallError extends CursorBackendError {
+  readonly name = 'CursorUndeclaredToolCallError';
+
+  constructor(detail: string) {
+    super(`Model attempted a tool call the request cannot serve: ${detail}`);
+  }
+}
+
+function attemptedToolName(update: Dict): string {
+  const toolCall = dict(update.toolCall);
+  const tool = dict(toolCall?.tool);
+  if (tool?.case !== 'mcpToolCall') return '';
+  const args = dict(dict(tool.value)?.args);
+  const name = args?.toolName ?? args?.name;
+  return typeof name === 'string' ? name : '';
+}
+
 export interface CursorRunMessageOptions {
   readonly codec: ProtoCodec;
   readonly request: ChatCompletionRequest;
@@ -96,6 +113,27 @@ export class CursorRunMessages {
       return false;
     }
     if (updateCase === 'toolCallStarted') {
+      const declared = new Set(
+        (this.options.request.tools ?? []).map((tool) => tool.function.name),
+      );
+      if (declared.size === 0 || this.options.request.tool_choice === 'none') {
+        // No exec frame follows in this state (live capture: tool_decision
+        // then silence until the run timeout), so guard at the interaction
+        // level instead of waiting for an mcpArgs that never arrives.
+        this.options.finish(
+          new CursorUndeclaredToolCallError('the request declares no usable tools'),
+        );
+        return false;
+      }
+      const attempted = attemptedToolName(update);
+      if (attempted && !declared.has(attempted)) {
+        this.options.finish(
+          new CursorUndeclaredToolCallError(
+            `${JSON.stringify(attempted)} is not among the declared tools`,
+          ),
+        );
+        return false;
+      }
       traceStage(this.options.trace, 'tool_decision');
       this.toolStream.start(update);
       return false;

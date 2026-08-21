@@ -143,7 +143,8 @@ export function requestContextResult(
             processWorkingDirectory: cwd,
             smartModeClassifierAutoModeEnabled: false,
           },
-          tools: (request.tools ?? []).map(nativeToolDefinition),
+          tools:
+            request.tool_choice === 'none' ? [] : (request.tools ?? []).map(nativeToolDefinition),
           supportsMcpAuth: true,
           gitRepoInfoComplete: true,
         },
