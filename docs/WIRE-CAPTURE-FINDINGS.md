@@ -342,14 +342,14 @@ flag, so late-announced parallel calls still flow. Post-fix ci run: yorha
 
 Same toolkit, `tool_sequential_two_round`, current main (sticky Run):
 
-| metric | pre-sticky yorha | post-sticky yorha |
-| --- | --- | --- |
-| runRequest frames | 5 (retry storm) | **1** |
-| requestContextResult | 5 | **1** |
-| textDelta frames | 102 (derail garbage) | 25 (the real answer) |
-| KV blob churn | ~55 get/set pairs | 14/6 |
-| mcpResult | none (stall) or empty | **populated** `content[0].text="A-17"` |
-| terminal | RST after 120s heartbeat storm | clean trailer |
+| metric               | pre-sticky yorha               | post-sticky yorha                      |
+| -------------------- | ------------------------------ | -------------------------------------- |
+| runRequest frames    | 5 (retry storm)                | **1**                                  |
+| requestContextResult | 5                              | **1**                                  |
+| textDelta frames     | 102 (derail garbage)           | 25 (the real answer)                   |
+| KV blob churn        | ~55 get/set pairs              | 14/6                                   |
+| mcpResult            | none (stall) or empty          | **populated** `content[0].text="A-17"` |
+| terminal             | RST after 120s heartbeat storm | clean trailer                          |
 
 The populated `mcpResult` client frame decodes as
 `f2{1:id, 11:mcpResult{1:success{1:content[{1:text{1:"A-17"}}]}}}` — the
