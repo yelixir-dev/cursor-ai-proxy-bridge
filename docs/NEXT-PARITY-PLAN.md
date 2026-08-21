@@ -32,6 +32,17 @@ CLI reverse engineering is in scope if needed.
     `bridge_tool_*` fields native never sends.
   - H3 **REFUTED**: curl repro stalls without OMO.
 
+  **SOLVED (2026-08-20, `e46a8bb`).** Root cause: the empty-success
+  `mcpResult` left the server-side turn without tool output; the model kept
+  generating on the phantom result and never yielded, so the client saw
+  silence and OMO aborted/retried (the retry masked the stall in single-case
+  runs; only the benchmark's transport accounting exposed it). Fix: keep the
+  empty answer (parallel batches are serialized through per-call mcpArgs),
+  but finish the turn on the first model text/thinking after a
+  `toolCallCompleted` that followed an empty exec answer. Post-fix Task-12
+  ci: yorha 12/12 on every tool case (parallel 10/12 = upstream 5xx storms
+  only). Evidence: `.omo/evidence/wire-parity-fix/p1-derail-cutoff.json`.
+
 ### P2 — cancellation races completion (F3 `live_completion_raced_abort`)
 
 - Symptom: abort issued after `run_stream_open`, but terminal `success`
@@ -51,12 +62,24 @@ CLI reverse engineering is in scope if needed.
   - Native cancel closes `NO_ERROR` without RST.
   - Yorha RST `INTERNAL_ERROR` 721 ms in with 0 response DATA.
 
+  **SOLVED (2026-08-20, `71174c7` + `f49fb83`).** Two-part fix: graceful
+  half-close on the abort signal path, then graceful process shutdown —
+  SIGTERM now awaits `backend.shutdown()`, the pool destroys lingering
+  settled streams (RST CANCEL, the allowed worst case) and waits for the
+  session close event so exit no longer races the RST/GOAWAY flush.
+  Post-fix cancel captures: downstream CANCEL + GOAWAY NO_ERROR, 4/4.
+
 ### P3 — CI latency gates (Task 12: 8 failed latency gates)
 
 - Local overhead measured sub-millisecond, but paired median ratios/CI
   thresholds failed on some surfaces.
 - Method: once P1/P2 wire parity is proven, re-measure; investigate whether
   residual is bridge scheduling overhead or account/upstream variance.
+- **RE-MEASURED (2026-08-20, task-12-ci-postfix.json):** latency ratios
+  ~1.4-2.3x vs thresholds on tool surfaces — unchanged; classified
+  `openai_surface_tax` / upstream variance, previously accepted via user
+  override (`task-12-user-override-closure.json`). Re-check after any RE-lane
+  turn-structure change.
 
 ## Reverse-engineering lane (if wire capture shows unexplained divergence)
 

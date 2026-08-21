@@ -66,10 +66,33 @@ preserved byte-for-byte.
 
 ## Known open gap (next work)
 
-The bridge is **not yet live-parity green** on yorha multi-tool rounds and
-active-abort cancellation. See `docs/NEXT-PARITY-PLAN.md` for the follow-up
-planning seed, including the full native-parity goal and CLI reverse
-engineering option.
+~~The bridge is **not yet live-parity green** on yorha multi-tool rounds and
+active-abort cancellation.~~ **Closed 2026-08-20 — see the resolution section
+below.** See `docs/NEXT-PARITY-PLAN.md` for the remaining work: the full
+wire-shape parity goal (RE lane) and P3 latency.
+
+## Resolution round (2026-08-20, final)
+
+The retained F3/Task-12 failures above were root-caused and fixed in the
+follow-up campaigns (`p1-wire-capture-parity`, `wire-parity-fix`, P1 derail
+cutoff). Final full ci benchmark
+(`.omo/evidence/cursor-composer-parity-benchmark/task-12-ci-final.json`):
+
+- **Correctness: yorha 12/12 on every case** (text, streaming, single /
+  parallel / sequential / forced / required tools, malformed-input
+  validation, cancellation). Only exception: `toolChoice_none` 10/12 — two
+  `unexpected_tool` executions; the same failure class appears on the native
+  lane (1/12 in the prior run), suspected model-discipline flake, not traced
+  to a bridge change. Watch item.
+- The previously retained FAILs are gone: parallel/sequential tool rounds
+  complete in the expected 2 runs; cancellation aborts with terminal=abort
+  and clean CANCEL + GOAWAY on the wire.
+- Latency gates still fail at ~1.4-2.2x thresholds (P3) — the one retained,
+  user-accepted gap; re-measure after any RE-lane turn-structure change.
+
+Fix commits: `71174c7` (abort half-close), `f49fb83` (graceful shutdown
+ordering), `1d96c2b`/`1914ab7`/`d3dfc1b` (mcpArgs answer groundwork),
+`e46a8bb` (P1 derail cutoff).
 
 ## Wire-capture round (2026-08-20)
 
