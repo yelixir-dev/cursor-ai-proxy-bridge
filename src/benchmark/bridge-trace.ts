@@ -135,7 +135,16 @@ export class BridgeTraceCollector {
       },
       finish: async (synchronized = true) => {
         const records = scoped();
-        const requestIds = [...new Set(records.map((record) => record.request_id))];
+        // A request belongs to the trial whose span contains its 'accepted'
+        // record. Sticky-Run resumes replay frames tagged with the original
+        // request id long after that trial's span closed; without this filter
+        // two trials end up claiming the same request id.
+        const startedHere = new Set(
+          records.filter((record) => record.stage === 'accepted').map((r) => r.request_id),
+        );
+        const allIds = [...new Set(records.map((record) => record.request_id))];
+        const requestIds =
+          startedHere.size > 0 ? allIds.filter((id) => startedHere.has(id)) : allIds;
         const state = summarize(records);
         return {
           sequence_start: records[0]?.sequence ?? null,

@@ -178,9 +178,11 @@ describe('cursor-api mcpArgs exec answer', () => {
     // When: the Run handles the unknown tool exec.
     const events = await collect(backend(transport), request);
 
-    // Then: no success is claimed on the exec channel, and the stream still settles.
+    // Then: no success is claimed, the exec is answered with a typed error so
+    // upstream fails fast instead of stalling, and the stream still settles.
     const results = mcpResultMessages(decodeExecClientMessages(runWrites(transport)));
     expect(results.filter((exec) => mcpResultCase(exec) === 'success')).toEqual([]);
+    expect(results.filter((exec) => mcpResultCase(exec) === 'error')).toHaveLength(1);
     expect(events.filter((event) => event.type === 'tool_call_complete')).toEqual([]);
     expect(events.at(-1)?.type).toBe('done');
   });
@@ -200,9 +202,11 @@ describe('cursor-api mcpArgs exec answer', () => {
     // When: the Run decodes that exec.
     const events = await collect(backend(transport), request);
 
-    // Then: typed handling yields no success claim and a normal terminal.
+    // Then: typed error handling answers the exec, claims no success, and
+    // the stream reaches a normal terminal.
     const results = mcpResultMessages(decodeExecClientMessages(runWrites(transport)));
     expect(results.filter((exec) => mcpResultCase(exec) === 'success')).toEqual([]);
+    expect(results.filter((exec) => mcpResultCase(exec) === 'error')).toHaveLength(1);
     expect(events.filter((event) => event.type === 'tool_call_complete')).toEqual([]);
     expect(events.at(-1)?.type).toBe('done');
   });

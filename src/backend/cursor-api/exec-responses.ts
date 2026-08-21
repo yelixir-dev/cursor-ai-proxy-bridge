@@ -138,12 +138,39 @@ export function handleExecResponse(
     return;
   }
   if (execCase === 'mcpArgs') {
-    context.completeTool(value);
-    if (allowedMcpToolName(context.request, value)) {
-      context.holdMcp?.(exec);
-      return 'held';
+    const name = value.toolName ?? value.name;
+    if (typeof name !== 'string' || name.length === 0) {
+      // Fail fast instead of leaving the server waiting on an unanswered
+      // exec until the run timeout burns the full window.
+      sendExec(context.writeMessage, {
+        exec,
+        messageCase: 'mcpResult',
+        value: {
+          result: { case: 'error', value: { error: 'Malformed mcpArgs: missing tool name' } },
+        },
+        omitExecId: true,
+        compressed: false,
+      });
+      return 'ignored';
     }
-    return 'ignored';
+    if (!allowedMcpToolName(context.request, value)) {
+      sendExec(context.writeMessage, {
+        exec,
+        messageCase: 'mcpResult',
+        value: {
+          result: {
+            case: 'error',
+            value: { error: `Tool ${JSON.stringify(name)} is not declared in this request` },
+          },
+        },
+        omitExecId: true,
+        compressed: false,
+      });
+      return 'ignored';
+    }
+    context.completeTool(value);
+    context.holdMcp?.(exec);
+    return 'held';
   }
   if (execCase === 'mcpAllowlistPrecheckArgs') {
     sendExec(context.writeMessage, {
