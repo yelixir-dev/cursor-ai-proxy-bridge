@@ -163,6 +163,11 @@ export class CursorToolStream {
     return this.slots.length > 0 && completed === this.slots.length;
   }
 
+  /** A started slot whose completing exec has not arrived yet. */
+  hasIncompleteStartedCalls(): boolean {
+    return this.slots.some((slot) => slot.started && !slot.call);
+  }
+
   get emitted(): boolean {
     return this.emit !== undefined && this.slots.some((slot) => slot.started);
   }

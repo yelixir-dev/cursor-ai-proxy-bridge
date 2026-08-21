@@ -73,6 +73,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     DEFAULT_TIMEOUT_MS,
   );
   const settleMs = boundedInteger(runtime.environment.CURSOR_BRIDGE_STICKY_SETTLE_MS, 250);
+  const idleMs = boundedInteger(runtime.environment.CURSOR_BRIDGE_RUN_IDLE_MS, 30_000);
 
   return new Promise<RunOutcome>((resolve, reject) => {
     let settled = false;
@@ -92,6 +93,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     const cleanup = () => {
       clearHoldTimer();
       runtime.timers.clearInterval(heartbeat);
+      runtime.timers.clearInterval(idleWatchdog);
       runtime.timers.clearTimeout(timeout);
       signal?.removeEventListener('abort', onAbort);
       runtime.activeStreams.delete(stream);
@@ -124,6 +126,14 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     };
     const hold = () => {
       if (parked || settled || heldExecs.length === 0) return;
+      if (messages.toolStream.hasIncompleteStartedCalls()) {
+        // A sibling call was announced (start/delta streamed) but its
+        // completing mcpArgs has not arrived; parking now would close the
+        // OpenAI response with a dangling partial call. Re-arm the settle
+        // window; the run timeout and idle watchdog still bound the wait.
+        scheduleHold();
+        return;
+      }
       parked = true;
       clearHoldTimer();
       const held: HeldRun = {
@@ -200,6 +210,9 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       finish,
       onHeld: scheduleHold,
       heldExecs,
+      onInteraction: () => {
+        lastInteractionAt = Date.now();
+      },
     });
 
     const heartbeat = runtime.timers.setInterval(() => writeMessage(heartbeatMessage()), 5_000);
@@ -220,6 +233,20 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
 
     let turnEnded = false;
     let streamEnded = false;
+    let lastInteractionAt = Date.now();
+    const idleWatchdog = runtime.timers.setInterval(() => {
+      if (settled || parked) return;
+      if (Date.now() - lastInteractionAt <= idleMs) return;
+      // Silent stall (e.g. the model wants a tool it cannot map to a
+      // declared one and emits nothing at all): no interaction frame for the
+      // whole window means this turn is dead — fail fast instead of burning
+      // the full run timeout.
+      const error = new CursorBackendError(
+        `Cursor API run produced no model output for ${idleMs}ms`,
+      );
+      stream.destroy(error);
+      finish(error);
+    }, 1_000);
     stream.on('response', (headers) => {
       const status = Number(headers[':status']);
       if (status !== 200) {

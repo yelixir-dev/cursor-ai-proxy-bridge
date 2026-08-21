@@ -36,6 +36,7 @@ export interface CursorRunMessageOptions {
   readonly finish: (error: unknown) => void;
   readonly onHeld?: () => void;
   readonly heldExecs?: Array<{ exec: Dict }>;
+  readonly onInteraction?: () => void;
 }
 
 function dict(value: unknown): Dict | undefined {
@@ -99,6 +100,7 @@ export class CursorRunMessages {
       return false;
     }
     if (messageCase !== 'interactionUpdate') return false;
+    this.options.onInteraction?.();
     const update = dict(dict(value.message)?.value) ?? {};
     const updateCase = dict(value.message)?.case;
     if (updateCase === 'textDelta') {
@@ -130,6 +132,20 @@ export class CursorRunMessages {
         this.options.finish(
           new CursorUndeclaredToolCallError(
             `${JSON.stringify(attempted)} is not among the declared tools`,
+          ),
+        );
+        return false;
+      }
+      if (!attempted && dict(update.toolCall) && this.options.request.tool_choice === 'required') {
+        // toolCall is present but not a nameable mcpToolCall (live builtin
+        // attempts decode this way — the descriptor set keeps only
+        // mcpToolCall). It can never satisfy tool_choice: required, and the
+        // model stalls after it (live capture) until the run timeout. Bare
+        // announcements (no toolCall payload yet) pass through; their
+        // mcpArgs is guarded separately.
+        this.options.finish(
+          new CursorUndeclaredToolCallError(
+            "tool_choice 'required' cannot be satisfied by a builtin tool call",
           ),
         );
         return false;

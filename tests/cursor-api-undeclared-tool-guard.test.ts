@@ -87,6 +87,32 @@ describe('cursor-api undeclared tool-call guard', () => {
     await expect(collect(backend(transport), request)).rejects.toThrow(/get_seed/);
   });
 
+  it('fails fast when a required tool choice meets a builtin tool attempt', async () => {
+    // Given: add_numbers is declared and required, but the model cannot map
+    // the prompt to it and attempts a builtin tool instead — live, nothing
+    // further arrives until the run timeout.
+    const request: ChatCompletionRequest = {
+      ...parallelToolRequest(),
+      tool_choice: 'required',
+      messages: [{ role: 'user', content: 'Call get_seed.' }],
+    };
+    const transport = new ScriptedTransport((stream) => {
+      stream.emit('response', { ':status': 200 });
+      stream.emit(
+        'data',
+        update('toolCallStarted', {
+          callId: 'c1',
+          toolCall: {
+            tool: { case: 'shellToolCall', value: { args: { command: 'echo seed' } } },
+            toolCallId: 'c1',
+          },
+        }),
+      );
+    });
+
+    await expect(collect(backend(transport), request)).rejects.toThrow(/required/);
+  });
+
   it('advertises no tools upstream when tool_choice is none', async () => {
     // Given: tools present but tool_choice none — nothing may be advertised.
     const request: ChatCompletionRequest = {
