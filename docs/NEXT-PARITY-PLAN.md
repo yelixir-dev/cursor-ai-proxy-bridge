@@ -78,8 +78,11 @@ CLI reverse engineering is in scope if needed.
 - **RE-MEASURED (2026-08-20, task-12-ci-postfix.json):** latency ratios
   ~1.4-2.3x vs thresholds on tool surfaces — unchanged; classified
   `openai_surface_tax` / upstream variance, previously accepted via user
-  override (`task-12-user-override-closure.json`). Re-check after any RE-lane
-  turn-structure change.
+  override (`task-12-user-override-closure.json`).
+- **CLOSED (2026-08-22, task-12-ci-sticky.json):** post-sticky full ci shows
+  **all 82 latency gates passing** — the per-request Run setup was the
+  residual overhead, and one Run per flow removed it. Remaining trial
+  failures in that run are model/upstream flakes on both lanes.
 
 ## Reverse-engineering lane (if wire capture shows unexplained divergence)
 
