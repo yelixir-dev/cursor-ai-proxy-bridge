@@ -289,15 +289,12 @@ CLI/OS kill uses CANCEL; bridge timeout/abort uses INTERNAL_ERROR.
 
 Committed fixes (see `.omo/plans/wire-parity-fix.md` todos 1-8):
 
-- `57189bd` exec-responses: omit finished `execError` channels (was sending
-  `{execId}`-only `{}` payloads, unlike CLI).
-- `2dd5010` proto bridge: bump `bridge_tool_*` execVersion to 2.
 - `71174c7` abort: `stream.destroy(error)` -> graceful `end()` half-close on
   the signal path (upstream RST INTERNAL_ERROR eliminated).
 - `1d96c2b` run-messages: answer `mcpArgs` with `mcpResult` on the same Run's
-  exec channel; `9d99e84` prunes the companion Run after the answer is
-  observed, so tool turns stay on one Run like the CLI (post-fix capture:
-  mcpResult 3/3 tool cases, single Run, no orphan).
+  exec channel (descriptor groundwork in `1914ab7` / `d3dfc1b`); `9d99e84`
+  prunes the wire-conformance test companion list accordingly (post-fix
+  capture: mcpResult 3/3 tool cases).
 - `f49fb83` client disconnect / process shutdown: SIGTERM previously left
   the h2 session and its half-closed Run stream dangling (`index.ts` never
   called `backend.shutdown()`), so the peer observed RST INTERNAL_ERROR (2)
@@ -320,3 +317,23 @@ with exit 0 and no stall. No code change was made for todo 9; evidence in
 `.omo/evidence/wire-parity-fix/task-9-happy.json`. If the stall resurfaces,
 capture debug-level bridge logs plus the agentn lifecycle for the stalled
 stream id before changing code.
+
+## P1 resolution (2026-08-20, commit e46a8bb)
+
+The remaining stall mode after the fix round: on tool-continuation runs the
+model's calls are typed `mcpToolCall` (the bridge advertises OpenAI tools via
+`requestContextResult.tools`, providerIdentifier `bridge`), so upstream asks
+the bridge to execute them in-turn via `execServerMessage mcpArgs`. The
+empty-success `mcpResult` left the server-side turn without tool output; the
+model kept generating on the phantom result and never yielded, the client saw
+silence, OMO aborted (~4-9 s) and retried, and retries produced duplicate
+tool calls (Task-12 ci: sequential 1/12, history-replay 8/12).
+
+Fix: keep the empty answer (required for parallel batches, which the server
+serializes through per-call mcpArgs), but finish the turn the moment the
+model emits text/thinking after a `toolCallCompleted` that followed an empty
+exec answer — the derail signature. New sibling tool announcements reset the
+flag, so late-announced parallel calls still flow. Post-fix ci run: yorha
+12/12 on every tool case except parallel 10/12, both failures being upstream
+5xx retry storms with both calls correctly executed (evidence
+`.omo/evidence/wire-parity-fix/p1-derail-cutoff.json`).
