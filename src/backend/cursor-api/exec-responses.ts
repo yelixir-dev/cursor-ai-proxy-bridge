@@ -11,6 +11,7 @@ export interface ExecResponseContext {
   readonly writeMessage: (message: Dict, compressed?: boolean) => void;
   readonly finish: (error: unknown) => void;
   readonly completeTool: (value: Dict) => void;
+  readonly holdMcp?: (exec: Dict) => void;
 }
 
 interface ExecReply {
@@ -28,14 +29,17 @@ function dict(value: unknown): Dict | undefined {
     : undefined;
 }
 
-function sendExec(context: ExecResponseContext, reply: ExecReply): void {
+function sendExec(
+  writeMessage: (message: Dict, compressed?: boolean) => void,
+  reply: ExecReply,
+): void {
   const execValue: Dict = {
     id: reply.exec.id,
     message: { case: reply.messageCase, value: reply.value },
     localExecutionTimeMs: reply.localExecutionTimeMs,
   };
   if (reply.omitExecId !== true) execValue.execId = reply.exec.execId;
-  context.writeMessage(
+  writeMessage(
     {
       message: {
         case: 'execClientMessage',
@@ -93,16 +97,38 @@ function rejectionValue(
     : { [failureField.localName]: failureValue };
 }
 
+export function sendMcpToolResult(
+  writeMessage: (message: Dict, compressed?: boolean) => void,
+  exec: Dict,
+  text: string,
+): void {
+  sendExec(writeMessage, {
+    exec,
+    messageCase: 'mcpResult',
+    value: {
+      result: {
+        case: 'success',
+        value: {
+          content: [{ content: { case: 'text', value: { text } } }],
+          isError: false,
+        },
+      },
+    },
+    omitExecId: true,
+    compressed: false,
+  });
+}
+
 export function handleExecResponse(
   context: ExecResponseContext,
   exec: Dict,
-): 'answered-empty' | 'ignored' | undefined {
+): 'held' | 'ignored' | undefined {
   const message = dict(exec.message);
   const execCase = typeof message?.case === 'string' ? message.case : undefined;
   const value = dict(message?.value) ?? {};
   if (!execCase) return;
   if (execCase === 'requestContextArgs') {
-    sendExec(context, {
+    sendExec(context.writeMessage, {
       exec,
       messageCase: 'requestContextResult',
       value: requestContextResult(context.request),
@@ -114,19 +140,13 @@ export function handleExecResponse(
   if (execCase === 'mcpArgs') {
     context.completeTool(value);
     if (allowedMcpToolName(context.request, value)) {
-      sendExec(context, {
-        exec,
-        messageCase: 'mcpResult',
-        value: { result: { case: 'success', value: {} } },
-        omitExecId: true,
-        localExecutionTimeMs: 1,
-      });
-      return 'answered-empty';
+      context.holdMcp?.(exec);
+      return 'held';
     }
     return 'ignored';
   }
   if (execCase === 'mcpAllowlistPrecheckArgs') {
-    sendExec(context, {
+    sendExec(context.writeMessage, {
       exec,
       messageCase: 'mcpAllowlistPrecheckResult',
       value: { allowlisted: true },
@@ -134,7 +154,7 @@ export function handleExecResponse(
     return;
   }
   if (execCase === 'mcpStateExecArgs') {
-    sendExec(context, {
+    sendExec(context.writeMessage, {
       exec,
       messageCase: 'mcpStateExecResult',
       value: {
@@ -156,7 +176,7 @@ export function handleExecResponse(
     return;
   }
   if (execCase === 'listMcpResourcesExecArgs') {
-    sendExec(context, {
+    sendExec(context.writeMessage, {
       exec,
       messageCase: 'listMcpResourcesExecResult',
       value: { result: { case: 'success', value: { resources: [] } } },
@@ -172,5 +192,5 @@ export function handleExecResponse(
     context.finish(new CursorBackendError(`Cannot answer Cursor exec message ${execCase}`));
     return;
   }
-  sendExec(context, { exec, messageCase: resultCase, value: rejection });
+  sendExec(context.writeMessage, { exec, messageCase: resultCase, value: rejection });
 }

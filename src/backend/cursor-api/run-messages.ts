@@ -17,6 +17,8 @@ export interface CursorRunMessageOptions {
   readonly blobs: Map<string, Buffer>;
   readonly writeMessage: (message: Dict, compressed?: boolean) => void;
   readonly finish: (error: unknown) => void;
+  readonly onHeld?: () => void;
+  readonly heldExecs?: Array<{ exec: Dict }>;
 }
 
 function dict(value: unknown): Dict | undefined {
@@ -33,8 +35,6 @@ export class CursorRunMessages {
   readonly toolStream: CursorToolStream;
   text = '';
   usageAttribution = cursorUsageAttribution();
-  private emptyExecAnswered = false;
-  private execBatchSettled = false;
 
   constructor(private readonly options: CursorRunMessageOptions) {
     this.toolStream = new CursorToolStream(
@@ -42,6 +42,10 @@ export class CursorRunMessages {
       new Set((options.request.tools ?? []).map((tool) => tool.function.name)),
       options.request.parallel_tool_calls === false ? 1 : Number.POSITIVE_INFINITY,
     );
+  }
+
+  setEmit(emit: RunEmitter | undefined): void {
+    this.toolStream.setEmit(this.options.request.tool_choice === 'none' ? undefined : emit);
   }
 
   /** Decodes one server frame; returns true when it ended the upstream turn. */
@@ -62,11 +66,14 @@ export class CursorRunMessages {
             traceStage(this.options.trace, 'tool_decision');
             this.toolStream.completeExec(tool);
           },
+          holdMcp: (exec) => {
+            this.options.heldExecs?.push({ exec });
+          },
         },
         value,
       );
-      if (execCase === 'mcpArgs' && execOutcome === 'answered-empty') {
-        this.emptyExecAnswered = true;
+      if (execCase === 'mcpArgs' && execOutcome === 'held') {
+        this.options.onHeld?.();
       }
       return false;
     }
@@ -79,41 +86,25 @@ export class CursorRunMessages {
     const updateCase = dict(value.message)?.case;
     if (updateCase === 'textDelta') {
       const delta = typeof update.text === 'string' ? update.text : '';
-      if (this.execBatchSettled && delta) {
-        // Derail cutoff: the model is generating on top of an empty exec
-        // result (its real output only returns via the client), so end the
-        // turn and hand the tool calls to the client (P1 stall).
-        this.options.finish(undefined);
-        return false;
-      }
       this.text += delta;
       if (delta) this.options.emit?.({ type: 'content', text: delta });
       return false;
     }
     if (updateCase === 'thinkingDelta') {
       const delta = typeof update.text === 'string' ? update.text : '';
-      if (this.execBatchSettled && delta) {
-        this.options.finish(undefined);
-        return false;
-      }
       if (delta) this.options.emit?.({ type: 'thinking', text: delta });
       return false;
     }
     if (updateCase === 'toolCallStarted') {
-      this.emptyExecAnswered = false;
-      this.execBatchSettled = false;
       traceStage(this.options.trace, 'tool_decision');
       this.toolStream.start(update);
       return false;
     }
     if (updateCase === 'partialToolCall') {
-      this.emptyExecAnswered = false;
-      this.execBatchSettled = false;
       this.toolStream.partial(update);
       return false;
     }
     if (updateCase === 'toolCallCompleted') {
-      if (this.emptyExecAnswered) this.execBatchSettled = true;
       this.toolStream.completeUpdate(update);
       return false;
     }

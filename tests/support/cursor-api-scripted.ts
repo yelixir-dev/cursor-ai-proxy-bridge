@@ -184,6 +184,7 @@ export function callBatch(wireName: string, id: string, value: string): Buffer {
 export function backend(
   transport: CursorApiTransport,
   credentials = [{ id: 'only', apiKey: 'only-token' }],
+  environment: Record<string, string> = {},
 ): CursorApiBackend {
   const auth = new CursorAuthProvider({ environment: {} });
   vi.spyOn(auth, 'getToken').mockImplementation(async (credential) => credential?.apiKey ?? '');
@@ -191,7 +192,11 @@ export function backend(
     auth,
     transport,
     credentialRouter: new CursorCredentialRouter({ credentials }),
-    environment: { CURSOR_BRIDGE_CURSOR_RETRY_BASE_MS: '1' },
+    environment: {
+      CURSOR_BRIDGE_CURSOR_RETRY_BASE_MS: '1',
+      CURSOR_BRIDGE_STICKY_SETTLE_MS: '5',
+      ...environment,
+    },
     wait: async () => undefined,
   });
 }

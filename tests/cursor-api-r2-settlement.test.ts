@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ChatCompletionRequest } from '../src/backend/types.js';
 import {
   backend,
   callBatch,
@@ -92,84 +93,52 @@ describe('cursor-api authoritative Run settlement', () => {
     expect(transport.attempts).toEqual(['only-token']);
   });
 
-  it('holds a settled-looking batch open until the upstream turn ends', async () => {
-    // Given: call A is complete with no further data pending, and the test
-    // controls every later delivery from the client's event subscription.
+  it('retains a late parallel sibling across the hold boundary into the resume phase', async () => {
+    // Given: call A completes, the OpenAI response settles after the sticky
+    // window, and only then is call B announced on the same wire.
     const request = parallelToolRequest();
     const wireName = wireToolName(request);
     const transport = new ScriptedTransport((stream) => {
       stream.emit('response', { ':status': 200 });
       stream.emit('data', callBatch(wireName, 'call-a', 'A'));
     });
-    const iterator = backend(transport).completeStream(request)[Symbol.asyncIterator]();
-    const nextEvent = () => iterator.next().then((result) => result.value);
+    const cursor = backend(transport);
 
-    // When: A's start and argument delta are consumed, and no boundary arrived.
-    await expect(nextEvent()).resolves.toEqual({
-      type: 'tool_call_start',
-      index: 0,
-      id: 'call-a',
-      name: 'echo_value',
-    });
-    await expect(nextEvent()).resolves.toEqual({
-      type: 'tool_call_arguments_delta',
-      index: 0,
-      id: 'call-a',
-      delta: '{"value":"A"}',
-    });
+    // When: the first response settles with call A, then B arrives.
+    const first = await collect(cursor, request);
+    expect(
+      first.filter((event) => event.type === 'tool_call_complete').map((event) => event.call.id),
+    ).toEqual(['call-a']);
     const run = await transport.firstRun;
-    const deadline = AbortSignal.timeout(500);
-    const racing = iterator.next().then((result) => ({ status: 'event' as const, result }));
-    const premature = await Promise.race([
-      racing,
-      new Promise<{ status: 'pending' }>((resolve) => {
-        deadline.addEventListener('abort', () => resolve({ status: 'pending' }), { once: true });
-      }),
-    ]);
-
-    // Then: no terminal event exists before the authoritative boundary, a
-    // later parallel call is still retained, and turnEnded settles exactly.
-    expect(premature).toEqual({ status: 'pending' });
     run.stream.emit('data', callBatch(wireName, 'call-b', 'B'));
-    await expect(racing).resolves.toEqual({
-      status: 'event',
-      result: {
-        done: false,
-        value: { type: 'tool_call_start', index: 1, id: 'call-b', name: 'echo_value' },
-      },
-    });
-    await expect(nextEvent()).resolves.toEqual({
-      type: 'tool_call_arguments_delta',
-      index: 1,
-      id: 'call-b',
-      delta: '{"value":"B"}',
-    });
-    run.stream.emit('data', update('turnEnded', { inputTokens: 9, outputTokens: 5 }));
-    await expect(nextEvent()).resolves.toEqual({
-      type: 'tool_call_complete',
-      index: 0,
-      call: {
-        id: 'call-a',
-        type: 'function',
-        function: { name: 'echo_value', arguments: '{"value":"A"}' },
-      },
-    });
-    await expect(nextEvent()).resolves.toEqual({
-      type: 'tool_call_complete',
-      index: 1,
-      call: {
-        id: 'call-b',
-        type: 'function',
-        function: { name: 'echo_value', arguments: '{"value":"B"}' },
-      },
-    });
-    await expect(nextEvent()).resolves.toEqual({
-      type: 'done',
-      usage: { prompt_tokens: 9, completion_tokens: 5, total_tokens: 14 },
-      usage_source: 'turnEnded',
-      is_error: false,
-    });
-    await iterator.return?.();
+
+    // And: the client executes A and posts its result.
+    const followUp: ChatCompletionRequest = {
+      ...request,
+      messages: [
+        ...request.messages,
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'call-a',
+              type: 'function',
+              function: { name: 'echo_value', arguments: '{"value":"A"}' },
+            },
+          ],
+        },
+        { role: 'tool', tool_call_id: 'call-a', content: 'result-A' },
+      ],
+    };
+    const second = await collect(cursor, followUp);
+
+    // Then: B survived the hold boundary and is the only fresh call surfaced
+    // on the resumed phase (A was already handed over in the first response).
+    expect(
+      second.filter((event) => event.type === 'tool_call_complete').map((event) => event.call.id),
+    ).toEqual(['call-b']);
+    expect(second.at(-1)?.type).toBe('done');
     expect(transport.attempts).toEqual(['only-token']);
   });
 

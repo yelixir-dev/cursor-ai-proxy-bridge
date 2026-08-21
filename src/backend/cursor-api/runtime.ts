@@ -7,6 +7,7 @@ import {
   type CursorRunStream,
   NodeCursorApiTransport,
 } from './transport.js';
+import { StickyRunStore } from './sticky-run-store.js';
 
 export interface CursorApiBackendDependencies {
   readonly descriptors?: ProtoDescriptorSet;
@@ -38,6 +39,7 @@ export interface CursorApiRuntime {
     readonly clearTimeout: typeof globalThis.clearTimeout;
   };
   readonly wait: (delayMs: number, signal?: AbortSignal) => Promise<void>;
+  readonly stickyRuns: StickyRunStore;
 }
 
 export function boundedInteger(raw: string | undefined, fallback: number): number {
@@ -104,6 +106,7 @@ export function createCursorApiRuntime(
     timers,
     wait,
     activeStreams: new Set(),
+    stickyRuns: new StickyRunStore(),
     credentialRouter:
       dependencies.credentialRouter ??
       new CursorCredentialRouter({

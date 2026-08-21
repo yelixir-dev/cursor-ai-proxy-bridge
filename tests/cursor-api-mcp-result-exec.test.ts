@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ConnectFrameDecoder } from '../src/backend/cursor-api/connect-frame.js';
 import { loadProtoDescriptors, ProtoCodec } from '../src/backend/cursor-api/protobuf.js';
+import type { ChatCompletionRequest } from '../src/backend/types.js';
 import {
   backend,
   callBatch,
@@ -9,7 +10,6 @@ import {
   parallelToolRequest,
   ScriptedTransport,
   trailer,
-  toolCall,
   update,
   wireToolName,
 } from './support/cursor-api-scripted.js';
@@ -76,68 +76,25 @@ function scriptedMcpArgsRun(frames: Buffer[]): ScriptedTransport {
 }
 
 describe('cursor-api mcpArgs exec answer', () => {
-  it('answers an empty mcpResult success on a first tool round', async () => {
+  it('holds the Run on mcpArgs without answering and surfaces the call to OpenAI', async () => {
     // Given: upstream asks the bridge to execute an advertised MCP tool in a
     // request whose history carries no tool results yet.
     const request = parallelToolRequest();
     const wireName = wireToolName(request);
-    const transport = scriptedMcpArgsRun([callBatch(wireName, 'call-a', 'A')]);
-
-    // When: the Run consumes that mcpArgs frame.
-    await collect(backend(transport), request);
-
-    // Then: the legacy empty answer keeps the run open so serialized
-    // parallel batches can complete in-run.
-    const results = mcpResultMessages(decodeExecClientMessages(runWrites(transport)));
-    expect(results).toHaveLength(1);
-    const answered = results[0];
-    if (!answered) throw new Error('expected mcpResult answer');
-    expect(mcpResultCase(answered)).toBe('success');
-  });
-
-  it('finishes the turn when the model generates after an empty exec answer', async () => {
-    // Given: the model's tool call was exec-answered empty, then the model
-    // keeps generating instead of yielding (the P1 derail signature).
-    const request = parallelToolRequest();
-    const wireName = wireToolName(request);
     const transport = new ScriptedTransport((stream) => {
       stream.emit('response', { ':status': 200 });
-      stream.emit(
-        'data',
-        Buffer.concat([
-          update('toolCallStarted', {
-            callId: 'call-a',
-            toolCall: {
-              tool: { case: 'mcpToolCall', value: { args: toolCall(wireName, 'call-a', '') } },
-              toolCallId: 'call-a',
-            },
-          }),
-          update('partialToolCall', { callId: 'call-a', argsTextDelta: '{"value":"A"}' }),
-          mcpArgsFrame(toolCall(wireName, 'call-a', 'A')),
-          update('toolCallCompleted', {
-            callId: 'call-a',
-            toolCall: {
-              tool: { case: 'mcpToolCall', value: { args: toolCall(wireName, 'call-a', 'A') } },
-              toolCallId: 'call-a',
-            },
-          }),
-          update('textDelta', { text: 'GARBAGE_FROM_EMPTY_RESULT' }),
-          update('turnEnded', { inputTokens: 1, outputTokens: 1 }),
-          trailer(),
-        ]),
-      );
+      stream.emit('data', callBatch(wireName, 'call-a', 'A'));
     });
 
-    // When: the client consumes the stream.
+    // When: the sticky settle window elapses with no further execs.
     const events = await collect(backend(transport), request);
 
-    // Then: the empty answer goes out (batch continuity), the turn finishes
-    // at the first post-answer content, and the garbage text is dropped.
+    // Then: no mcpResult is sent (the client owns execution), the call is
+    // handed to OpenAI, and the Run stays parked for the next request.
     const results = mcpResultMessages(decodeExecClientMessages(runWrites(transport)));
-    expect(results).toHaveLength(1);
-    expect(mcpResultCase(results[0] ?? {})).toBe('success');
+    expect(results).toEqual([]);
     expect(
-      events.flatMap((event) => (event.type === 'tool_call_complete' ? [event.call] : [])),
+      events.filter((event) => event.type === 'tool_call_complete').map((event) => event.call),
     ).toEqual([
       {
         id: 'call-a',
@@ -145,12 +102,64 @@ describe('cursor-api mcpArgs exec answer', () => {
         function: { name: 'echo_value', arguments: '{"value":"A"}' },
       },
     ]);
-    expect(
-      events.some(
-        (event) => event.type === 'content' && event.text.includes('GARBAGE_FROM_EMPTY_RESULT'),
-      ),
-    ).toBe(false);
     expect(events.at(-1)?.type).toBe('done');
+  });
+
+  it('resumes a held Run with the client tool result on the same stream', async () => {
+    // Given: request 1 parked on mcpArgs for call-a and returned it to OpenAI.
+    const request = parallelToolRequest();
+    const wireName = wireToolName(request);
+    const transport = new ScriptedTransport((stream) => {
+      stream.emit('response', { ':status': 200 });
+      stream.emit('data', callBatch(wireName, 'call-a', 'A'));
+    });
+    const cursor = backend(transport);
+    const first = await collect(cursor, request);
+    expect(first.at(-1)?.type).toBe('done');
+
+    // When: request 2 carries the tool result and, once answered in band, the
+    // model continues with text and ends the turn.
+    const followUp: ChatCompletionRequest = {
+      ...request,
+      messages: [
+        ...request.messages,
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'call-a',
+              type: 'function',
+              function: { name: 'echo_value', arguments: '{"value":"A"}' },
+            },
+          ],
+        },
+        { role: 'tool', tool_call_id: 'call-a', content: 'result-A' },
+      ],
+    };
+    const secondPromise = collect(cursor, followUp);
+    const run = await transport.firstRun;
+    run.stream.emit(
+      'data',
+      Buffer.concat([
+        update('textDelta', { text: 'used result-A' }),
+        update('turnEnded', { inputTokens: 4, outputTokens: 2 }),
+        trailer(),
+      ]),
+    );
+    const second = await secondPromise;
+
+    // Then: the result went over the same Run as a populated mcpResult and
+    // the continuation text reached the second OpenAI response.
+    const results = mcpResultMessages(decodeExecClientMessages(runWrites(transport)));
+    expect(results).toHaveLength(1);
+    expect(mcpResultCase(results[0] ?? {})).toBe('success');
+    const resultWire = JSON.stringify(results[0]);
+    expect(resultWire).toContain('result-A');
+    expect(
+      second.some((event) => event.type === 'content' && event.text.includes('used result-A')),
+    ).toBe(true);
+    expect(second.at(-1)?.type).toBe('done');
   });
 
   it('does not claim mcpResult success for an unknown tool name and does not crash', async () => {

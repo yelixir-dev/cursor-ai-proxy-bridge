@@ -78,11 +78,19 @@ export class CursorToolStream {
   private readonly aliases = new Map<string, ToolSlot>();
   private readonly ignoredEnvelopeIds = new Set<string>();
 
+  private emit: ToolEmitter | undefined;
+
   constructor(
-    private readonly emit: ToolEmitter | undefined,
+    emit: ToolEmitter | undefined,
     private readonly allowedNames: ReadonlySet<string>,
     private readonly maximumCalls: number,
-  ) {}
+  ) {
+    this.emit = emit;
+  }
+
+  setEmit(emit: ToolEmitter | undefined): void {
+    this.emit = emit;
+  }
 
   start(value: Dict): void {
     const identity = identityFromUpdate(value);

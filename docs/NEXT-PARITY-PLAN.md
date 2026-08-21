@@ -107,3 +107,14 @@ CLI reverse engineering is in scope if needed.
   - F3 R6 report SHA `68b243d1…`, forensics `f3-r6-forensics.json`
   - Task 12 override `task-12-user-override-closure.json`
   - F2 R2 integrated verifier `verify-f2-r2-integrated.json`
+
+## Sticky Run (2026-08-21)
+
+S2 spike (worktree `cursor-cli-re`, 3/3 live) proved one Cursor Run can be
+held across two OpenAI HTTP requests. Transplant: `mcpArgs` is no longer
+empty-answered — the Run is parked in `StickyRunStore`
+(`src/backend/cursor-api/sticky-run-store.ts`) after a settle window
+(`CURSOR_BRIDGE_STICKY_SETTLE_MS`, default 250 ms, lets serialized parallel
+siblings join the same response), the OpenAI response returns the tool
+calls, and the next request's `role: tool` messages resume the same Run
+with a populated `mcpResult`. The empty-answer derail cutoff is gone.

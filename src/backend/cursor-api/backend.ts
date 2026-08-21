@@ -66,6 +66,9 @@ export class CursorApiBackend implements CursorBackend {
   }
 
   async shutdown(): Promise<void> {
+    this.runtime.stickyRuns.clear(
+      new CursorCommandAbortedError('cursor API backend shutting down'),
+    );
     for (const stream of this.runtime.activeStreams) {
       stream.destroy(new CursorCommandAbortedError('cursor API backend shutting down'));
     }
