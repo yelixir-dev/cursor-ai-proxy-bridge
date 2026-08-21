@@ -1,4 +1,5 @@
 import type { SanitizedBridgeTraceRecord } from './bridge-trace.js';
+import { attributeRequestIds } from './bridge-trace.js';
 import type { BenchmarkEvidence } from './types.js';
 
 function sameValues(left: readonly string[], right: readonly string[]): boolean {
@@ -33,7 +34,7 @@ export function validateRetainedTraceJoins(
     const start = join.sequence_start;
     const end = join.sequence_end;
     const scoped = records.filter((record) => record.sequence >= start && record.sequence <= end);
-    const requestIds = [...new Set(scoped.map((record) => record.request_id))];
+    const requestIds = attributeRequestIds(scoped);
     const runCount = scoped.filter((record) => record.stage === 'run_open').length;
     if (
       scoped.length !== join.record_count ||
@@ -50,7 +51,16 @@ export function validateRetainedTraceJoins(
       claimedSequences.add(record.sequence);
     }
   }
-  if (records.some((record) => !claimedSequences.has(record.sequence))) {
+  // Only attribution-opening records must belong to a trial span. Sticky-Run
+  // resumes and held-run timeouts can flush records tagged with an older
+  // request id after that trial's span closed; those are replays, not new
+  // attribution.
+  const unattributed = records.some(
+    (record) =>
+      !claimedSequences.has(record.sequence) &&
+      (record.stage === 'accepted' || record.stage === 'run_open'),
+  );
+  if (unattributed) {
     throw new Error('retained trace record is not joined to a yorha trial');
   }
 }

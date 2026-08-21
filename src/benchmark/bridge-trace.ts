@@ -25,6 +25,21 @@ export interface BridgeTraceScope {
   finish(synchronized?: boolean): Promise<TrialTraceJoin>;
 }
 
+/**
+ * A request belongs to the span that opens its attribution (`accepted` or
+ * `run_open`). Sticky-Run resumes replay frames tagged with the original
+ * request id long after that trial's span closed; those replays carry no
+ * attribution-opening stage, so they stay unclaimed here.
+ */
+export function attributeRequestIds(records: readonly SanitizedBridgeTraceRecord[]): string[] {
+  const opening = new Set(['accepted', 'run_open']);
+  const startedHere = new Set(
+    records.filter((record) => opening.has(record.stage)).map((record) => record.request_id),
+  );
+  const allIds = [...new Set(records.map((record) => record.request_id))];
+  return startedHere.size > 0 ? allIds.filter((id) => startedHere.has(id)) : allIds;
+}
+
 function summarize(records: readonly SanitizedBridgeTraceRecord[]): TraceState {
   const terminal = records.filter((record) => record.stage === 'terminal').at(-1);
   const activeBackend =
@@ -139,12 +154,7 @@ export class BridgeTraceCollector {
         // record. Sticky-Run resumes replay frames tagged with the original
         // request id long after that trial's span closed; without this filter
         // two trials end up claiming the same request id.
-        const startedHere = new Set(
-          records.filter((record) => record.stage === 'accepted').map((r) => r.request_id),
-        );
-        const allIds = [...new Set(records.map((record) => record.request_id))];
-        const requestIds =
-          startedHere.size > 0 ? allIds.filter((id) => startedHere.has(id)) : allIds;
+        const requestIds = attributeRequestIds(records);
         const state = summarize(records);
         return {
           sequence_start: records[0]?.sequence ?? null,
