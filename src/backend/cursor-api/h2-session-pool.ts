@@ -124,15 +124,15 @@ export class H2SessionPool {
     const pending = [...this.sessions].map((entry) => {
       // Settled runs can leave half-closed streams pending for the server's
       // trailer; destroy them first so the session can actually close.
-      const alreadyGone = entry.session.destroyed || entry.session.closed;
+      // Do not treat `session.closed` as done: that flag flips the moment
+      // close() is called, before GOAWAY is flushed. Skipping the wait is
+      // what raced SIGTERM into a TCP RST (INTERNAL_ERROR) on slow hosts.
+      const alreadyDestroyed = entry.session.destroyed;
       for (const stream of [...entry.streams]) stream.destroy();
       this.closeEntry(entry);
-      if (alreadyGone) return Promise.resolve();
-      // Wait for the 'close' event (not the `closed` flag, which flips the
-      // moment close() is called) so the RST/GOAWAY frames are flushed
-      // before the caller proceeds to process exit.
+      if (alreadyDestroyed) return Promise.resolve();
       return new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, 1_000);
+        const timer = setTimeout(resolve, 2_000);
         timer.unref?.();
         entry.session.once('close', () => {
           clearTimeout(timer);

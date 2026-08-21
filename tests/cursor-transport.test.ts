@@ -75,6 +75,7 @@ class FakeSession extends EventEmitter {
   close(): void {
     this.closeCalls += 1;
     this.closed = true;
+    this.emit('close');
   }
 
   goaway(): void {
@@ -285,6 +286,27 @@ describe('Node Cursor API HTTP/2 session reuse', () => {
       'run_stream_open',
     ]);
     expect(JSON.stringify(records)).not.toContain('trace-token-secret');
+  });
+
+  it('waits for session close on shutdown even when closed is already true', async () => {
+    // Given: close() flipped the flag but the 'close' event has not flushed yet.
+    const { sessions, transport } = transportFixture();
+    await open(transport, 'late-close');
+    const session = sessions[0];
+    if (!session) throw new Error('expected pooled session');
+    session.closed = true;
+    const order: string[] = [];
+    setTimeout(() => {
+      order.push('close');
+      session.emit('close');
+    }, 40);
+
+    // When
+    await transport.shutdown();
+    order.push('shutdown');
+
+    // Then: skipping the wait because `closed` is true would finish first.
+    expect(order).toEqual(['close', 'shutdown']);
   });
 
   it('closes every pooled session exactly once through bridge shutdown', async () => {

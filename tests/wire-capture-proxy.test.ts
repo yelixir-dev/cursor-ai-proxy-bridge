@@ -90,6 +90,7 @@ async function h2Post(options: {
   headers?: Record<string, string>;
 }): Promise<H2Result> {
   const client = http2.connect(`https://127.0.0.1:${options.port}`, { ca: options.ca });
+  client.on('error', () => undefined);
   try {
     return await bounded(
       new Promise<H2Result>((resolve, reject) => {
@@ -113,7 +114,7 @@ async function h2Post(options: {
       'h2 client request',
     );
   } finally {
-    client.close();
+    if (!client.destroyed) client.destroy();
   }
 }
 
@@ -134,8 +135,30 @@ function readLifecycle(captureDir: string): LifecycleLine[] {
     .map((line) => JSON.parse(line) as LifecycleLine);
 }
 
-function waitForLifecycleEvent(captureDir: string, event: string): Promise<LifecycleLine> {
+function waitForLifecycleEvent(
+  captureDir: string,
+  event: string,
+  signal?: AbortSignal,
+): Promise<LifecycleLine> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const watchers: fs.FSWatcher[] = [];
+    const done = (error?: Error, value?: LifecycleLine) => {
+      if (settled) return;
+      settled = true;
+      for (const watcher of watchers) watcher.close();
+      signal?.removeEventListener('abort', onAbort);
+      if (error) {
+        reject(error);
+        return;
+      }
+      if (!value) {
+        reject(new Error(`lifecycle event ${event} settled without a line`));
+        return;
+      }
+      resolve(value);
+    };
+    const onAbort = () => done(new Error(`lifecycle event ${event} aborted`));
     const check = (): LifecycleLine | undefined => {
       const file = path.join(captureDir, 'lifecycle.ndjson');
       if (!fs.existsSync(file)) return undefined;
@@ -143,17 +166,22 @@ function waitForLifecycleEvent(captureDir: string, event: string): Promise<Lifec
     };
     const existing = check();
     if (existing) {
-      resolve(existing);
+      done(undefined, existing);
       return;
     }
     const watcher = fs.watch(captureDir, () => {
       const found = check();
-      if (found) {
-        watcher.close();
-        resolve(found);
-      }
+      if (found) done(undefined, found);
     });
-    watcher.on('error', reject);
+    watchers.push(watcher);
+    watcher.on('error', (error) => done(error));
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
   });
 }
 
@@ -164,7 +192,7 @@ describe('wire-capture proxy', () => {
       const cleanup = cleanups.pop();
       if (cleanup) await cleanup();
     }
-  });
+  }, 8_000);
 
   it('redacts every sensitive header name in shape form only', () => {
     const sensitive = [
@@ -453,7 +481,7 @@ describe('wire-capture proxy', () => {
     const address = await proxy.listen();
     cleanups.push(() => proxy.close());
 
-    const goawaySeen = waitForLifecycleEvent(captureDir, 'goaway');
+    const goawaySeen = waitForLifecycleEvent(captureDir, 'goaway', AbortSignal.timeout(10_000));
     const first = await h2Post({
       port: address.port,
       ca,
@@ -506,5 +534,38 @@ describe('wire-capture proxy', () => {
     });
     expect(result.status).toBeGreaterThanOrEqual(400);
     expect(errors.join('\n')).toMatch(/upstream/i);
+  });
+
+  it('close() settles while a client H2 session is still open', async () => {
+    const dir = tmpDir('close-live');
+    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const certDir = path.join(dir, 'certs');
+    generateCerts({ out: certDir });
+    const leafKey = fs.readFileSync(path.join(certDir, 'leaf.key'));
+    const leafCrt = fs.readFileSync(path.join(certDir, 'leaf.crt'));
+    const ca = fs.readFileSync(path.join(certDir, 'ca.crt'));
+    const upstream = await startFakeUpstream({
+      key: leafKey,
+      cert: leafCrt,
+      respondFrame: connectFrame(Buffer.from('live-close')),
+    });
+    cleanups.push(() => upstream.close());
+    const proxy = createCaptureProxy({
+      port: 0,
+      targetHost: `127.0.0.1:${upstream.port}`,
+      cert: leafCrt,
+      key: leafKey,
+      targetCa: ca,
+      captureDir: path.join(dir, 'captures'),
+      log: () => {},
+    });
+    const address = await proxy.listen();
+    const client = http2.connect(`https://127.0.0.1:${address.port}`, { ca });
+    client.on('error', () => undefined);
+    const ping = client.request({ ':method': 'POST', ':path': '/ping' });
+    ping.on('error', () => undefined);
+    ping.end();
+    await bounded(proxy.close(), 'proxy close with live client');
+    if (!client.closed && !client.destroyed) client.destroy();
   });
 });

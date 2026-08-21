@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global Buffer, URL, console, performance, process */
+/* global Buffer, URL, console, performance, process, setTimeout, clearTimeout */
 // Local TLS MITM forward proxy for cursor-agent protocol capture.
 // Ported from /tmp/cursor-mitm/proxy.mjs (proven 2026-08-17) with parametrized config.
 // Usage: node proxy.mjs --port 8443 --target-host api2.cursor.sh --cert leaf.crt --key leaf.key --capture-dir captures [--target-ca ca.crt]
@@ -271,9 +271,12 @@ function createCaptureProxy(options) {
     cert: options.cert,
   });
 
+  const downstreamSessions = new Set();
   server.on('session', (s) => {
     const conn = `conn-${++connSeq}`;
     sessionConn.set(s, conn);
+    downstreamSessions.add(s);
+    s.on('close', () => downstreamSessions.delete(s));
     log(`H2 session open alpn=${s.socket.alpnProtocol} from ${s.socket.remoteAddress}`);
     lifecycle({
       conn,
@@ -603,9 +606,29 @@ function createCaptureProxy(options) {
     },
     close() {
       return new Promise((resolve) => {
-        if (upstreamSession) upstreamSession.close();
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+        const forceDestroy = () => {
+          if (upstreamSession && !upstreamSession.destroyed) upstreamSession.destroy();
+          for (const session of downstreamSessions) {
+            if (!session.destroyed) session.destroy();
+          }
+        };
+        forceDestroy();
         server.closeAllConnections?.();
-        server.close(() => resolve());
+        const timer = setTimeout(() => {
+          forceDestroy();
+          finish();
+        }, 1_000);
+        timer.unref?.();
+        server.close(() => {
+          clearTimeout(timer);
+          finish();
+        });
       });
     },
   };
