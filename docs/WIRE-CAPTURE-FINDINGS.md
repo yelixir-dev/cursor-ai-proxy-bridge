@@ -337,3 +337,26 @@ flag, so late-announced parallel calls still flow. Post-fix ci run: yorha
 12/12 on every tool case except parallel 10/12, both failures being upstream
 5xx retry storms with both calls correctly executed (evidence
 `.omo/evidence/wire-parity-fix/p1-derail-cutoff.json`).
+
+## Post-sticky re-measure (2026-08-21, B lane)
+
+Same toolkit, `tool_sequential_two_round`, current main (sticky Run):
+
+| metric | pre-sticky yorha | post-sticky yorha |
+| --- | --- | --- |
+| runRequest frames | 5 (retry storm) | **1** |
+| requestContextResult | 5 | **1** |
+| textDelta frames | 102 (derail garbage) | 25 (the real answer) |
+| KV blob churn | ~55 get/set pairs | 14/6 |
+| mcpResult | none (stall) or empty | **populated** `content[0].text="A-17"` |
+| terminal | RST after 120s heartbeat storm | clean trailer |
+
+The populated `mcpResult` client frame decodes as
+`f2{1:id, 11:mcpResult{1:success{1:content[{1:text{1:"A-17"}}]}}}` — the
+same envelope grammar as native `grepResult` (echo id, result oneof, no
+execId echo). Native CLI still never exercises MCP on this surface, so a
+frame-for-frame CLI diff is not meaningful; the parity claim is against the
+pi-ai/native-client exec grammar, which now matches.
+
+Captures: `/tmp/wc-post-sticky/surface-*` (not committed; regenerate with
+`run-yorha.mjs`/`run-native.mjs` + `_archive-lane.mjs`).
