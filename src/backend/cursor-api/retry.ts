@@ -1,4 +1,5 @@
 import { ConnectRpcError } from './connect-frame.js';
+import { inspectCursorProviderError } from './provider-error.js';
 import { CursorApiHttpError } from './transport.js';
 
 const RETRYABLE_TRANSPORT_CODES = new Set([
@@ -31,21 +32,32 @@ const NON_RETRYABLE_CURSOR_ERROR_TYPES = new Set([
 ]);
 
 export type RetryFailureKind = 'server' | 'transport';
+export interface CursorRetryOptions {
+  readonly retryProvider5xx?: boolean;
+}
+
+interface ConnectDetailsPolicy {
+  readonly nonRetryable: boolean;
+  readonly permanent: boolean;
+}
 
 function errorCode(error: unknown): string {
   if (!error || typeof error !== 'object' || !('code' in error)) return '';
   return String(error.code ?? '');
 }
 
-function hasNonRetryableConnectDetails(details: unknown): boolean {
+function connectDetailsPolicy(details: unknown): ConnectDetailsPolicy {
   const pending: unknown[] = [details];
   const seen = new Set<unknown>();
+  let nonRetryable = false;
   while (pending.length) {
     const value = pending.pop();
     if (value === null || value === undefined || seen.has(value)) continue;
     seen.add(value);
     if (typeof value === 'string') {
-      if ([...NON_RETRYABLE_CURSOR_ERROR_TYPES].some((type) => value.includes(type))) return true;
+      if ([...NON_RETRYABLE_CURSOR_ERROR_TYPES].some((type) => value.includes(type))) {
+        return { nonRetryable: true, permanent: true };
+      }
       continue;
     }
     if (Array.isArray(value)) {
@@ -54,21 +66,87 @@ function hasNonRetryableConnectDetails(details: unknown): boolean {
     }
     if (typeof value !== 'object') continue;
     for (const [key, child] of Object.entries(value)) {
-      if (key === 'isRetryable' && child === false) return true;
+      if (key === 'isRetryable' && child === false) nonRetryable = true;
       if (
         ['errorType', 'reason', 'type'].includes(key) &&
         typeof child === 'string' &&
         NON_RETRYABLE_CURSOR_ERROR_TYPES.has(child)
       ) {
-        return true;
+        return { nonRetryable: true, permanent: true };
       }
       pending.push(child);
     }
   }
-  return false;
+  return { nonRetryable, permanent: false };
 }
 
-export function cursorRetryFailureKind(error: unknown): RetryFailureKind | undefined {
+type ConnectRetryDecision = RetryFailureKind | 'terminal';
+
+function connectRetryDecision(
+  error: ConnectRpcError,
+  options: CursorRetryOptions,
+): ConnectRetryDecision | undefined {
+  const detailsPolicy = connectDetailsPolicy(error.details);
+  const provider = inspectCursorProviderError(error);
+  if (
+    detailsPolicy.permanent ||
+    provider.nonProviderNonRetryable ||
+    provider.providerRetryableConflict
+  ) {
+    return 'terminal';
+  }
+  if (
+    options.retryProvider5xx &&
+    provider.providerError &&
+    provider.retryProvider5xx &&
+    error.code === 'resource_exhausted'
+  ) {
+    return 'server';
+  }
+  if (detailsPolicy.nonRetryable || provider.diagnostics?.upstreamRetryable === false) {
+    return 'terminal';
+  }
+  return undefined;
+}
+
+function nestedConnectRetryDecision(
+  error: unknown,
+  options: CursorRetryOptions,
+): ConnectRetryDecision | undefined {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  let retryDecision: RetryFailureKind | undefined;
+  for (let depth = 0; current !== undefined && current !== null && depth < 10; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (
+      current instanceof CursorApiHttpError &&
+      !(current.status >= 500 && current.status <= 599)
+    ) {
+      return 'terminal';
+    }
+    if (current instanceof ConnectRpcError) {
+      const decision = connectRetryDecision(current, options);
+      if (decision === 'terminal') return 'terminal';
+      if (decision !== undefined) retryDecision = decision;
+    }
+    if (current && typeof current === 'object' && 'cause' in current) {
+      current = current.cause;
+      continue;
+    }
+    break;
+  }
+  return retryDecision;
+}
+
+export function cursorRetryFailureKind(
+  error: unknown,
+  options: CursorRetryOptions = {},
+): RetryFailureKind | undefined {
+  const nestedDecision = nestedConnectRetryDecision(error, options);
+  if (nestedDecision === 'terminal') return undefined;
+  if (nestedDecision !== undefined) return nestedDecision;
+
   const seen = new Set<unknown>();
   let current: unknown = error;
   for (let depth = 0; current !== undefined && current !== null && depth < 10; depth += 1) {
@@ -77,8 +155,10 @@ export function cursorRetryFailureKind(error: unknown): RetryFailureKind | undef
     if (current instanceof CursorApiHttpError) {
       return current.status >= 500 && current.status <= 599 ? 'server' : undefined;
     }
-    if (current instanceof ConnectRpcError && hasNonRetryableConnectDetails(current.details)) {
-      return undefined;
+    if (current instanceof ConnectRpcError) {
+      const decision = connectRetryDecision(current, options);
+      if (decision === 'terminal') return undefined;
+      if (decision !== undefined) return decision;
     }
     const code = errorCode(current);
     const message = current instanceof Error ? current.message : String(current);

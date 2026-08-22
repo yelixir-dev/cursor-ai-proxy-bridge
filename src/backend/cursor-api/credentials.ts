@@ -1,4 +1,5 @@
 import { ConnectRpcError } from './connect-frame.js';
+import { inspectCursorProviderError } from './provider-error.js';
 import { CursorApiHttpError } from './transport.js';
 
 export type CredentialDisabledReason = 'auth' | 'cooldown';
@@ -88,9 +89,11 @@ export function cursorCredentialsFromConfig(
 }
 
 export function isCredentialAuthFailure(error: unknown): boolean {
+  const provider = inspectCursorProviderError(error);
+  if (provider.providerError || provider.nonProviderNonRetryable) return false;
   if (error instanceof CursorApiHttpError) return error.status === 401 || error.status === 403;
   if (error instanceof ConnectRpcError) {
-    return error.code === 'unauthenticated' || error.code === 'permission_denied';
+    return error.code === 'unauthenticated';
   }
   if (error && typeof error === 'object' && 'status' in error) {
     const status = Number((error as { status?: unknown }).status);
@@ -187,6 +190,18 @@ export class CursorCredentialRouter {
     return { ...selected.credential };
   }
 
+  pickById(id: string): CursorApiCredential {
+    const state = this.states.find((candidate) => candidate.credential.id === id);
+    if (!state) throw new NoAvailableCursorCredentialError();
+    this.recoverIfReady(state, this.now());
+    if (!state.credential.enabled || state.disabledReason !== undefined) {
+      throw new NoAvailableCursorCredentialError();
+    }
+    state.inFlight += 1;
+    state.routerPicks += 1;
+    return { ...state.credential };
+  }
+
   release(id: string): void {
     const state = this.states.find((candidate) => candidate.credential.id === id);
     if (state) state.inFlight = Math.max(0, state.inFlight - 1);
@@ -202,8 +217,10 @@ export class CursorCredentialRouter {
   async route<T>(
     operation: (credential: CursorApiCredential) => Promise<T>,
     canFailover: () => boolean = () => true,
+    preferredCredentialId?: string,
   ): Promise<T> {
-    const first = this.pick();
+    const first =
+      preferredCredentialId === undefined ? this.pick() : this.pickById(preferredCredentialId);
     try {
       const result = await operation(first);
       this.release(first.id);

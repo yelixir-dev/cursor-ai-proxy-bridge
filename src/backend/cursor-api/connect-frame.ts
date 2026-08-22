@@ -11,6 +11,9 @@ export interface ConnectFrame {
 }
 
 export class ConnectRpcError extends Error {
+  inferenceErrorType?: string;
+  runRequestId?: string;
+
   constructor(
     message: string,
     readonly code?: string,
@@ -122,16 +125,24 @@ export class ConnectFrameDecoder {
             true,
           );
         }
-        const rpcError = trailer.error as
-          | { code?: unknown; message?: unknown; details?: unknown }
-          | undefined;
-        if (!error && rpcError) {
-          error = new ConnectRpcError(
-            typeof rpcError.message === 'string' ? rpcError.message : 'Cursor Connect RPC failed',
-            typeof rpcError.code === 'string' ? rpcError.code : undefined,
-            rpcError.details,
-            true,
-          );
+        if (!error && Object.hasOwn(trailer, 'error')) {
+          const rpcError = trailer.error;
+          if (rpcError === null || typeof rpcError !== 'object' || Array.isArray(rpcError)) {
+            error = new ConnectRpcError(
+              'Invalid Connect end-stream error object',
+              undefined,
+              undefined,
+              true,
+            );
+          } else {
+            const fields = rpcError as Record<string, unknown>;
+            error = new ConnectRpcError(
+              typeof fields.message === 'string' ? fields.message : 'Cursor Connect RPC failed',
+              typeof fields.code === 'string' ? fields.code : undefined,
+              fields.details,
+              true,
+            );
+          }
         }
         this.ended = true;
         this.buffered = Buffer.alloc(0);

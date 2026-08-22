@@ -469,6 +469,15 @@ describe('Cursor API Connect framing', () => {
       expect(() => malformed.finish()).not.toThrow();
     }
 
+    const nullError = new ConnectFrameDecoder();
+    expect(() =>
+      nullError.push(
+        encodeConnectFrame(Buffer.from('{"error":null}'), {
+          trailer: true,
+        }),
+      ),
+    ).toThrowError(ConnectRpcError);
+
     const structured = new ConnectFrameDecoder();
     let structuredError: unknown;
     try {

@@ -90,6 +90,8 @@ export class CursorApiHttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly inferenceErrorType?: string,
+    readonly runRequestId?: string,
   ) {
     super(message);
   }

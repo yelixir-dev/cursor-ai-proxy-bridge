@@ -7,14 +7,19 @@ export interface CursorCredentialOperation<T> {
   readonly signal?: AbortSignal;
   readonly trace?: RequestTrace;
   readonly canFailover?: () => boolean;
+  readonly preferredCredentialId?: string;
 }
 
 export function withCursorCredential<T>(
   runtime: CursorApiRuntime,
   options: CursorCredentialOperation<T>,
 ): Promise<T> {
-  return runtime.credentialRouter.route(async (credential) => {
-    traceCredentialSlot(options.trace, credential.id);
-    return options.operation(credential, await runtime.auth.getToken(credential, options.signal));
-  }, options.canFailover);
+  return runtime.credentialRouter.route(
+    async (credential) => {
+      traceCredentialSlot(options.trace, credential.id);
+      return options.operation(credential, await runtime.auth.getToken(credential, options.signal));
+    },
+    options.canFailover,
+    options.preferredCredentialId,
+  );
 }

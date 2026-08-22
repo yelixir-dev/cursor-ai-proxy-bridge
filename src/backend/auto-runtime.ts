@@ -3,6 +3,10 @@ import type {
   CursorApiCredentialStateView,
 } from './cursor-api/credentials.js';
 import { cursorRetryFailureKind } from './cursor-api/index.js';
+import {
+  cursorProviderErrorDiagnostics,
+  inspectCursorProviderError,
+} from './cursor-api/provider-error.js';
 import { CursorApiHttpError } from './cursor-api/transport.js';
 import type {
   BackendHealth,
@@ -20,10 +24,23 @@ export interface ProbeableCursorApiBackend extends CursorBackend {
 }
 
 export function errorText(error: unknown): string {
+  if (inspectCursorProviderError(error).connectError) {
+    return 'Cursor upstream provider error';
+  }
+  if (cursorProviderErrorDiagnostics(error)?.upstreamErrorType !== undefined) {
+    return 'Cursor upstream provider error';
+  }
   return error instanceof Error ? error.message : String(error);
 }
 
 function failureKind(error: unknown): 'ordinary' | 'auth' | 'protocol' | 'transport' {
+  const provider = inspectCursorProviderError(error);
+  if (provider.providerError || provider.nonProviderNonRetryable) {
+    return 'ordinary';
+  }
+  if (provider.connectError && provider.diagnostics?.connectCode === 'unauthenticated') {
+    return 'auth';
+  }
   if (error instanceof CursorApiHttpError) {
     if (error.status === 401 || error.status === 403) return 'auth';
     if (error.status === 429 || (error.status >= 400 && error.status < 500)) return 'ordinary';

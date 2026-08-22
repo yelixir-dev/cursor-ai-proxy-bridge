@@ -11,6 +11,10 @@ import { filterToolCallsToAllowed, parseToolCallsFromText } from '../backend/too
 import { TOOL_CALL_MARKER, ToolTextStreamFilter } from '../backend/tool-call-stream.js';
 import { CursorBackendError } from '../backend/cursor-cli.js';
 import { cursorRunDiagnostics, cursorRunRequestId } from '../backend/cursor-api/run-errors.js';
+import {
+  cursorProviderResponseDetails,
+  safeCursorBackendError,
+} from '../backend/cursor-api/provider-error.js';
 import { OpenAiToolStreamAccumulator, type OpenAiToolCallDelta } from '../openai-tool-stream.js';
 import { traceUsageSource, type RequestTrace } from '../trace.js';
 import { backendErrorMessage, completionChunk, openAiError, sseData } from './responses.js';
@@ -188,7 +192,7 @@ export async function streamChatCompletion(input: StreamRequest): Promise<Stream
       const upstreamRequestId = cursorRunRequestId(error);
       reply.request.log.warn(
         {
-          err: error,
+          err: safeCursorBackendError(error),
           upstreamRequestId,
           runDiagnostics: cursorRunDiagnostics(error),
         },
@@ -196,7 +200,14 @@ export async function streamChatCompletion(input: StreamRequest): Promise<Stream
       );
       await writeSse(
         reply,
-        sseData(openAiError(backendErrorMessage(error), 'backend_error', upstreamRequestId)),
+        sseData(
+          openAiError(
+            backendErrorMessage(error),
+            'backend_error',
+            upstreamRequestId,
+            cursorProviderResponseDetails(error),
+          ),
+        ),
       );
       reply.raw.end();
     }

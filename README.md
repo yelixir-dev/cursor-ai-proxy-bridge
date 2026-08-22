@@ -51,17 +51,26 @@ The default address is `http://127.0.0.1:9997`. Set `CURSOR_BRIDGE_API_KEY` befo
 
 The overall Run ceiling and the no-output watchdog are separate controls:
 
-| Variable                          | Default  | Purpose                                                                                    |
-| --------------------------------- | -------- | ------------------------------------------------------------------------------------------ |
-| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS` | `300000` | Hard ceiling for one upstream Cursor Run, including reasoning and multi-tool rounds.       |
-| `CURSOR_BRIDGE_RUN_IDLE_MS`       | `30000`  | Fails a Run that produces no model interaction frames for the configured interval.         |
-| `CURSOR_BRIDGE_RETRY_RUN_TIMEOUT` | `0`      | Set to `1` to retry one overall Run timeout before any semantic output reaches the client. |
+| Variable                           | Default  | Purpose                                                                                    |
+| ---------------------------------- | -------- | ------------------------------------------------------------------------------------------ |
+| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS`  | `300000` | Hard ceiling for one upstream Cursor Run, including reasoning and multi-tool rounds.       |
+| `CURSOR_BRIDGE_RUN_IDLE_MS`        | `30000`  | Fails a Run that produces no model interaction frames for the configured interval.         |
+| `CURSOR_BRIDGE_RETRY_RUN_TIMEOUT`  | `0`      | Set to `1` to retry one overall Run timeout before any semantic output reaches the client. |
+| `CURSOR_BRIDGE_RETRY_PROVIDER_5XX` | `0`      | Experimental: retry a typed provider 5xx before client-visible semantic output.            |
 
 Reasoning-heavy models such as `composer-2.5` can exceed the previous 120-second ceiling during cold starts and multi-tool work, truncating the stream and dropping partially emitted tool calls. Keep the overall ceiling above the idle watchdog; the 300-second default gives active work time to finish while the 30-second watchdog still rejects dead Runs quickly. Both values can be overridden independently in `.env`.
 
 Every HTTP response includes an `x-request-id` that matches the bridge log entry. A Cursor Run timeout also includes the upstream `request_id` in the JSON or SSE error payload. The timeout log records the Run phase, tool results sent, external tool calls announced and completed, buffered frames, live stream state, last interaction kind and age, output bytes, terminal-frame state, stream reset code, and any HTTP/2 GOAWAY metadata. Successful tool-batch trace records include the same sanitized call counts without tool names or arguments. In particular, `phase=resumed_after_tool_results` identifies a continuation that stalled after the bridge returned the client's tool result upstream.
 
 Timeout retry is opt-in because replay is safe only before client-visible content or tool-call deltas. When enabled, the bridge retries the same requested model once; it never silently changes to `composer-2.5-fast`. A timeout after any semantic output still ends with an error to prevent duplicate text or tool execution. The retry starts only after the original Run reaches its ceiling, so a 300-second timeout followed by a 12-second successful retry completes in roughly 312 seconds, not 12 seconds.
+
+Cursor's typed `ERROR_PROVIDER_ERROR` metadata is decoded before retry classification. Explicit
+`isRetryable:false` remains terminal by default, including provider HTTP 400 responses. Set
+`CURSOR_BRIDGE_RETRY_PROVIDER_5XX=1` only to experiment with the narrower 500–599 case. It uses
+the existing three-server-retry ceiling, preserves the requested model and originating credential,
+and never retries after content or tool-call output reaches the client. Provider type, retry marker,
+provider status, Connect code, and upstream Run request ID are emitted as allowlisted diagnostics;
+raw provider detail text and arbitrary metadata are not logged or returned.
 
 ### Hermes provider configuration (Composer)
 

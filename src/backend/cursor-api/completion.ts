@@ -1,10 +1,11 @@
-import { requestTrace, traceBackend, traceRetry } from '../../trace.js';
+import { requestTrace, traceBackend, traceRetry, traceUpstreamError } from '../../trace.js';
 import { TOOL_CALL_MARKER, ToolTextStreamFilter } from '../tool-call-stream.js';
 import type { ChatCompletionRequest, CompletionResult, CompletionStreamEvent } from '../types.js';
 import { AsyncQueue } from './async-queue.js';
 import { withCursorCredential } from './credential-route.js';
 import type { CursorApiDiscovery } from './discovery.js';
 import { buildCursorHistory } from './history.js';
+import { cursorProviderErrorDiagnostics } from './provider-error.js';
 import { cursorRetryFailureKind } from './retry.js';
 import { CursorRunTimeoutError } from './run-errors.js';
 import { executeCursorRun, resumeCursorRun } from './run-execution.js';
@@ -180,6 +181,9 @@ export class CursorApiCompletion {
     );
     const retryRunTimeout =
       this.runtime.environment.CURSOR_BRIDGE_RETRY_RUN_TIMEOUT?.trim() === '1';
+    const retryProvider5xx =
+      this.runtime.environment.CURSOR_BRIDGE_RETRY_PROVIDER_5XX?.trim() === '1';
+    let preferredCredentialId: string | undefined;
     for (;;) {
       try {
         const resumed = resumeCursorRun({
@@ -188,11 +192,15 @@ export class CursorApiCompletion {
           signal: lifecycle.signal,
           emit: trackedEmit,
           trace: lifecycle.trace,
+          onCredential: (credentialId) => {
+            preferredCredentialId = credentialId;
+          },
         });
         if (resumed) return await resumed;
         return await withCursorCredential(this.runtime, {
-          operation: async (credential, accessToken) =>
-            executeCursorRun({
+          operation: async (credential, accessToken) => {
+            preferredCredentialId = credential.id;
+            return executeCursorRun({
               runtime: this.runtime,
               discovery: this.discovery,
               request,
@@ -203,16 +211,19 @@ export class CursorApiCompletion {
               emit: trackedEmit,
               trace: lifecycle.trace,
               resolveModel: (model, effort) => this.discovery.resolveRequestedModel(model, effort),
-            }),
+            });
+          },
           signal: lifecycle.signal,
           trace: lifecycle.trace,
           canFailover: () => !gate.delivered,
+          ...(preferredCredentialId === undefined ? {} : { preferredCredentialId }),
         });
       } catch (error) {
+        traceUpstreamError(lifecycle.trace, cursorProviderErrorDiagnostics(error));
         const kind =
           retryRunTimeout && error instanceof CursorRunTimeoutError
             ? 'transport'
-            : cursorRetryFailureKind(error);
+            : cursorRetryFailureKind(error, { retryProvider5xx });
         if (!kind || gate.delivered || lifecycle.signal?.aborted) throw error;
         const retries = kind === 'server' ? serverRetries : transportRetries;
         const limit = kind === 'server' ? MAX_SERVER_RETRIES : MAX_TRANSPORT_RETRIES;

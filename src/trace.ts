@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type { UsageSource } from './backend/types.js';
+import type { CursorProviderErrorDiagnostics } from './backend/cursor-api/provider-error.js';
 
 export type TraceStage =
   | 'accepted'
@@ -13,6 +14,7 @@ export type TraceStage =
   | 'tool_decision'
   | 'tool_batch_complete'
   | 'retry'
+  | 'upstream_error'
   | 'terminal'
   | 'abort'
   | 'backend_flip';
@@ -37,6 +39,11 @@ export interface TraceRecord {
   terminal?: TraceTerminal;
   tool_calls_announced?: number;
   tool_calls_completed?: number;
+  upstream_error_code?: string;
+  upstream_error_type?: string;
+  upstream_retryable?: boolean;
+  provider_status_code?: string;
+  run_request_id?: string;
 }
 
 export interface TraceSafeFields {
@@ -47,6 +54,11 @@ export interface TraceSafeFields {
   terminal?: TraceTerminal;
   toolCallsAnnounced?: number;
   toolCallsCompleted?: number;
+  upstreamErrorCode?: string;
+  upstreamErrorType?: string;
+  upstreamRetryable?: boolean;
+  providerStatusCode?: string;
+  runRequestId?: string;
 }
 
 export type TraceSink = (record: TraceRecord) => void;
@@ -103,6 +115,11 @@ const safeFieldNames = new Set<keyof TraceSafeFields>([
   'terminal',
   'toolCallsAnnounced',
   'toolCallsCompleted',
+  'upstreamErrorCode',
+  'upstreamErrorType',
+  'upstreamRetryable',
+  'providerStatusCode',
+  'runRequestId',
 ]);
 
 interface TraceableRequest {
@@ -144,6 +161,20 @@ export function assertSafeTraceFields(fields: unknown): asserts fields is TraceS
   }
   if (values.quiescent !== undefined && typeof values.quiescent !== 'boolean') {
     throw new TypeError('trace quiescence must be a boolean');
+  }
+  for (const key of [
+    'upstreamErrorCode',
+    'upstreamErrorType',
+    'providerStatusCode',
+    'runRequestId',
+  ] as const) {
+    const value = values[key];
+    if (value !== undefined && (typeof value !== 'string' || value.length > 96)) {
+      throw new TypeError(`trace ${key} must be a bounded string`);
+    }
+  }
+  if (values.upstreamRetryable !== undefined && typeof values.upstreamRetryable !== 'boolean') {
+    throw new TypeError('trace upstreamRetryable must be a boolean');
   }
   for (const key of ['toolCallsAnnounced', 'toolCallsCompleted'] as const) {
     const count = values[key];
@@ -223,6 +254,19 @@ export function traceStage(
     ...(fields.toolCallsCompleted === undefined
       ? {}
       : { tool_calls_completed: fields.toolCallsCompleted }),
+    ...(fields.upstreamErrorCode === undefined
+      ? {}
+      : { upstream_error_code: fields.upstreamErrorCode }),
+    ...(fields.upstreamErrorType === undefined
+      ? {}
+      : { upstream_error_type: fields.upstreamErrorType }),
+    ...(fields.upstreamRetryable === undefined
+      ? {}
+      : { upstream_retryable: fields.upstreamRetryable }),
+    ...(fields.providerStatusCode === undefined
+      ? {}
+      : { provider_status_code: fields.providerStatusCode }),
+    ...(fields.runRequestId === undefined ? {} : { run_request_id: fields.runRequestId }),
     ...(fields.terminal === undefined
       ? {}
       : {
@@ -263,6 +307,28 @@ export function traceRetry(trace: RequestTrace | undefined, kind: TraceRetryKind
   trace.retryCount += 1;
   trace.retryKind = kind;
   traceStage(trace, 'retry', { retryKind: kind });
+}
+
+export function traceUpstreamError(
+  trace: RequestTrace | undefined,
+  diagnostics: CursorProviderErrorDiagnostics | undefined,
+): void {
+  if (!diagnostics) return;
+  traceStage(trace, 'upstream_error', {
+    ...(diagnostics.connectCode === undefined
+      ? {}
+      : { upstreamErrorCode: diagnostics.connectCode }),
+    ...(diagnostics.upstreamErrorType === undefined
+      ? {}
+      : { upstreamErrorType: diagnostics.upstreamErrorType }),
+    ...(diagnostics.upstreamRetryable === undefined
+      ? {}
+      : { upstreamRetryable: diagnostics.upstreamRetryable }),
+    ...(diagnostics.providerStatusCode === undefined
+      ? {}
+      : { providerStatusCode: diagnostics.providerStatusCode }),
+    ...(diagnostics.runRequestId === undefined ? {} : { runRequestId: diagnostics.runRequestId }),
+  });
 }
 
 export function traceUsageSource(trace: RequestTrace | undefined, source: UsageSource): void {

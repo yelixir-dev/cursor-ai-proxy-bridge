@@ -4,6 +4,7 @@ import {
   createConfiguredBackend,
   type ProbeableCursorApiBackend,
 } from '../src/backend/auto.js';
+import { errorText } from '../src/backend/auto-runtime.js';
 import { ConnectRpcError } from '../src/backend/cursor-api/connect-frame.js';
 import { CursorApiHttpError } from '../src/backend/cursor-api/transport.js';
 import type {
@@ -14,6 +15,7 @@ import type {
   CursorBackend,
 } from '../src/backend/types.js';
 import type { BridgeConfig } from '../src/config.js';
+import { providerDetails } from './support/provider-error-fixtures.js';
 
 const config: BridgeConfig = {
   host: '127.0.0.1',
@@ -155,6 +157,143 @@ describe('automatic backend runtime failover', () => {
     expect((await automatic.complete(request)).content).toBe('api');
     expect(probe).toHaveBeenCalledOnce();
     expect((await automatic.health()).activeBackend).toBe('cursor-api');
+  });
+
+  it('flips immediately for a plain unauthenticated Connect error and redacts diagnostics', async () => {
+    const rawMessage = 'upstream rejected sk-auto-AUTH-SECRET';
+    const failure = new ConnectRpcError(rawMessage, 'unauthenticated');
+    const warnings: string[] = [];
+    const cliComplete = vi.fn(async () => ({ content: 'cli', model: request.model }));
+    const automatic = new AutoCursorBackend(
+      api({ complete: async () => Promise.reject(failure) }),
+      backend('cursor-cli', cliComplete),
+      {
+        now: () => 1_000,
+        warn: (message) => warnings.push(message),
+        cooldownMs: 100,
+        fatalThreshold: 3,
+        probeTimeoutMs: 10,
+        initial: 'cursor-api',
+      },
+    );
+
+    await expect(automatic.complete(request)).rejects.toBe(failure);
+    const health = await automatic.health();
+    expect({
+      activeBackend: health.activeBackend,
+      consecutiveFatal: health.flipState?.consecutiveFatal,
+    }).toEqual({ activeBackend: 'cursor-cli', consecutiveFatal: 3 });
+    expect(health.flipState?.reason).toBe('auth: Cursor upstream provider error');
+    expect(warnings).toHaveLength(1);
+    expect(errorText(failure)).toBe('Cursor upstream provider error');
+    const diagnostics = [errorText(failure), health.flipState?.reason ?? '', ...warnings].join(
+      '\n',
+    );
+    expect(diagnostics).not.toContain(rawMessage);
+    expect(diagnostics).not.toContain('sk-auto-AUTH-SECRET');
+
+    await expect(automatic.complete(request)).resolves.toMatchObject({ content: 'cli' });
+    expect(cliComplete).toHaveBeenCalledOnce();
+  });
+
+  it('does not flip or leak provider errors that mention transport text', async () => {
+    const warnings: string[] = [];
+    const failure = new ConnectRpcError(
+      'socket failed sk-auto-SECRET',
+      'unauthenticated',
+      providerDetails('503'),
+      true,
+    );
+    const automatic = new AutoCursorBackend(
+      api({ complete: async () => Promise.reject(failure) }),
+      backend('cursor-cli'),
+      {
+        now: () => 1_000,
+        warn: (message) => warnings.push(message),
+        cooldownMs: 100,
+        fatalThreshold: 3,
+        probeTimeoutMs: 10,
+        initial: 'cursor-api',
+      },
+    );
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(automatic.complete(request)).rejects.toBe(failure);
+    }
+
+    await expect(automatic.health()).resolves.toMatchObject({
+      activeBackend: 'cursor-api',
+      flipState: { consecutiveFatal: 0 },
+    });
+    expect(warnings).toEqual([]);
+    expect(JSON.stringify(warnings)).not.toContain('sk-auto-SECRET');
+  });
+
+  it('does not flip for a typed provider HTTP 403', async () => {
+    const warnings: string[] = [];
+    const failure = new CursorApiHttpError(
+      403,
+      'provider denied',
+      'ERROR_PROVIDER_ERROR',
+      'run-123',
+    );
+    const automatic = new AutoCursorBackend(
+      api({ complete: async () => Promise.reject(failure) }),
+      backend('cursor-cli'),
+      {
+        now: () => 1_000,
+        warn: (message) => warnings.push(message),
+        cooldownMs: 100,
+        fatalThreshold: 3,
+        probeTimeoutMs: 10,
+        initial: 'cursor-api',
+      },
+    );
+
+    await expect(automatic.complete(request)).rejects.toBe(failure);
+    await expect(automatic.health()).resolves.toMatchObject({
+      activeBackend: 'cursor-api',
+      flipState: { consecutiveFatal: 0 },
+    });
+    expect(warnings).toEqual([]);
+  });
+
+  it('does not flip or leak permanent Connect errors with transport-like messages', async () => {
+    const warnings: string[] = [];
+    const failure = new ConnectRpcError(
+      'socket failed sk-auto-PERMANENT',
+      'unauthenticated',
+      [
+        {
+          type: 'aiserver.v1.ErrorDetails',
+          value: Buffer.from([0x08, 0x0a]).toString('base64').replace(/=+$/u, ''),
+        },
+      ],
+      true,
+    );
+    const automatic = new AutoCursorBackend(
+      api({ complete: async () => Promise.reject(failure) }),
+      backend('cursor-cli'),
+      {
+        now: () => 1_000,
+        warn: (message) => warnings.push(message),
+        cooldownMs: 100,
+        fatalThreshold: 3,
+        probeTimeoutMs: 10,
+        initial: 'cursor-api',
+      },
+    );
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(automatic.complete(request)).rejects.toBe(failure);
+    }
+
+    await expect(automatic.health()).resolves.toMatchObject({
+      activeBackend: 'cursor-api',
+      flipState: { consecutiveFatal: 0 },
+    });
+    expect(warnings).toEqual([]);
+    expect(errorText(failure)).toBe('Cursor upstream provider error');
   });
 
   it.each([

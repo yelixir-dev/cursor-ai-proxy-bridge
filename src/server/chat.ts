@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { cursorRunDiagnostics, cursorRunRequestId } from '../backend/cursor-api/run-errors.js';
+import {
+  cursorProviderResponseDetails,
+  safeCursorBackendError,
+} from '../backend/cursor-api/provider-error.js';
 import { ToolHistoryValidationError, assertValidToolHistory } from '../backend/tool-history.js';
 import { unifiedFromSlug } from '../backend/cursor-api/unified-models.js';
 import {
@@ -113,7 +117,7 @@ export function registerChatRoutes(context: ServerContext): void {
       const upstreamRequestId = cursorRunRequestId(error);
       request.log.warn(
         {
-          err: error,
+          err: safeCursorBackendError(error),
           upstreamRequestId,
           runDiagnostics: cursorRunDiagnostics(error),
         },
@@ -121,7 +125,14 @@ export function registerChatRoutes(context: ServerContext): void {
       );
       return reply
         .code(502)
-        .send(openAiError(backendErrorMessage(error), 'backend_error', upstreamRequestId));
+        .send(
+          openAiError(
+            backendErrorMessage(error),
+            'backend_error',
+            upstreamRequestId,
+            cursorProviderResponseDetails(error),
+          ),
+        );
     } finally {
       const finalTerminal = requestAbort.signal.aborted ? 'abort' : (terminal ?? 'error');
       requestAbort.cleanup();

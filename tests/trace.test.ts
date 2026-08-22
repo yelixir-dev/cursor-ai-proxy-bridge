@@ -24,6 +24,7 @@ import {
   attachRequestTrace,
   createRequestTrace,
   traceRunOpen,
+  traceUpstreamError,
   type RequestTrace,
   type TraceRecord,
 } from '../src/trace.js';
@@ -325,6 +326,29 @@ describe('bridge request tracing', () => {
       /unsafe trace field: api_key/,
     );
     expect(() => assertSafeTraceFields({ retryKind: 'transport' })).not.toThrow();
+  });
+
+  it('records only allowlisted upstream provider diagnostics', () => {
+    const records: TraceRecord[] = [];
+    const trace = testTrace(records);
+
+    traceUpstreamError(trace, {
+      connectCode: 'resource_exhausted',
+      upstreamErrorType: 'ERROR_PROVIDER_ERROR',
+      upstreamRetryable: false,
+      providerStatusCode: '400',
+      runRequestId: 'run-provider-123',
+    });
+
+    expect(records.at(-1)).toMatchObject({
+      stage: 'upstream_error',
+      upstream_error_code: 'resource_exhausted',
+      upstream_error_type: 'ERROR_PROVIDER_ERROR',
+      upstream_retryable: false,
+      provider_status_code: '400',
+      run_request_id: 'run-provider-123',
+    });
+    expect(JSON.stringify(records.at(-1))).not.toContain('detail');
   });
 
   it('emits one abort terminal when a client disconnect is signaled repeatedly', async () => {

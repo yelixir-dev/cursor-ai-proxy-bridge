@@ -7,6 +7,7 @@ import type { CursorApiDiscovery } from './discovery.js';
 import { sendMcpToolResult } from './exec-responses.js';
 import type { CursorHistory } from './history.js';
 import { enforceNativeToolChoice, heartbeatMessage, runRequestMessage } from './mapper.js';
+import { cursorInferenceErrorType } from './provider-error.js';
 import type { RequestedModel } from './requested-models.js';
 import { CursorRunTimeoutError, type CursorRunPhase } from './run-errors.js';
 import { CursorRunMessages } from './run-messages.js';
@@ -40,6 +41,7 @@ export interface CursorRunResumeOptions {
   readonly signal?: AbortSignal;
   readonly emit?: RunEmitter;
   readonly trace?: RequestTrace;
+  readonly onCredential?: (credentialId: string) => void;
 }
 
 class CursorRunClosedError extends CursorBackendError {
@@ -56,6 +58,7 @@ export function resumeCursorRun(options: CursorRunResumeOptions): Promise<RunOut
   if (toolResults.length === 0) return undefined;
   const resumed = options.runtime.stickyRuns.take(options.request);
   if (!resumed) return undefined;
+  options.onCredential?.(resumed.credentialId);
   traceCredentialSlot(options.trace, resumed.credentialId);
   return new Promise<RunOutcome>((resolve, reject) => {
     resumed.resume(resolve, reject, toolResults, options.emit, options.signal);
@@ -388,6 +391,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     let streamEnded = false;
     let lastInteractionAt = Date.now();
     let lastInteractionCase: string | null = null;
+    let inferenceErrorType: string | undefined;
     timerHandles.idleWatchdog = runtime.timers.setInterval(() => {
       if (settled || parked) return;
       if (Date.now() - lastInteractionAt <= idleMs) return;
@@ -403,14 +407,31 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     }, 1_000);
     stream.on('response', (headers) => {
       const status = Number(headers[':status']);
+      const inferenceTypeHeader = headers['x-cursor-inference-request-error-type'];
+      inferenceErrorType = cursorInferenceErrorType(
+        Array.isArray(inferenceTypeHeader) ? inferenceTypeHeader[0] : inferenceTypeHeader,
+      );
       if (status !== 200) {
-        finish(new CursorApiHttpError(status, `Cursor Agent Run failed with HTTP ${status}`));
+        finish(
+          new CursorApiHttpError(
+            status,
+            `Cursor Agent Run failed with HTTP ${status}`,
+            inferenceErrorType,
+            requestId,
+          ),
+        );
       }
     });
     stream.on('data', (chunk) => {
       if (settled) return;
       try {
         const frames = decoder.push(chunk);
+        for (const frame of frames) {
+          if (frame.error && inferenceErrorType) {
+            frame.error.inferenceErrorType = inferenceErrorType;
+          }
+          if (frame.error) frame.error.runRequestId = requestId;
+        }
         outputBytes = decoder.rawOutputBytes;
         if (outputBytes > maxOutputBytes) {
           throw new CursorBackendError('output limit exceeded');
@@ -477,6 +498,10 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       } catch (error) {
         outputBytes = decoder.rawOutputBytes;
         const caught = errorValue(error);
+        if (caught instanceof ConnectRpcError && inferenceErrorType) {
+          caught.inferenceErrorType = inferenceErrorType;
+        }
+        if (caught instanceof ConnectRpcError) caught.runRequestId = requestId;
         if (
           parked &&
           caught instanceof ConnectRpcError &&
