@@ -10,7 +10,7 @@ export interface ExecResponseContext {
   readonly request: ChatCompletionRequest;
   readonly writeMessage: (message: Dict, compressed?: boolean) => void;
   readonly finish: (error: unknown) => void;
-  readonly completeTool: (value: Dict) => void;
+  readonly completeTool: (value: Dict) => boolean;
   readonly holdMcp?: (exec: Dict) => void;
 }
 
@@ -168,7 +168,21 @@ export function handleExecResponse(
       });
       return 'ignored';
     }
-    context.completeTool(value);
+    if (!context.completeTool(value)) {
+      sendExec(context.writeMessage, {
+        exec,
+        messageCase: 'mcpResult',
+        value: {
+          result: {
+            case: 'error',
+            value: { error: 'Tool call exceeds the parallel_tool_calls limit' },
+          },
+        },
+        omitExecId: true,
+        compressed: false,
+      });
+      return 'ignored';
+    }
     context.holdMcp?.(exec);
     return 'held';
   }

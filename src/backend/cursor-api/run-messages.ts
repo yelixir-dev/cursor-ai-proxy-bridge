@@ -91,7 +91,7 @@ export class CursorRunMessages {
           finish: this.options.finish,
           completeTool: (tool) => {
             traceStage(this.options.trace, 'tool_decision');
-            this.toolStream.completeExec(tool);
+            return this.toolStream.completeExec(tool);
           },
           holdMcp: (exec) => {
             this.options.heldExecs?.push({ exec });

@@ -43,7 +43,8 @@ class ScriptedStream extends EventEmitter implements CursorRunStream {
     super();
   }
 
-  write(): boolean {
+  write(chunk: Uint8Array): boolean {
+    this.emit('write', Buffer.from(chunk));
     if (!this.started) {
       this.started = true;
       queueMicrotask(() => this.script(this, this.accessToken));
@@ -126,7 +127,10 @@ function backend(
     auth,
     transport,
     credentialRouter: new CursorCredentialRouter({ credentials }),
-    environment: { CURSOR_BRIDGE_CURSOR_RETRY_BASE_MS: '1' },
+    environment: {
+      CURSOR_BRIDGE_CURSOR_RETRY_BASE_MS: '1',
+      CURSOR_BRIDGE_STICKY_SETTLE_MS: '5',
+    },
     wait: async () => undefined,
   });
 }
@@ -151,6 +155,107 @@ function toolCall(name: string, id: string, value: string): Record<string, unkno
 }
 
 describe('cursor-api F2 lifecycle boundaries', () => {
+  it('keeps the successful failover Run sticky through the client tool result', async () => {
+    // Given: the first credential fails before output, the second credential
+    // opens a Run and parks on one external tool call.
+    const request: ChatCompletionRequest = {
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'look up the seed' }],
+      tools: [
+        {
+          type: 'function',
+          function: { name: 'echo_value', parameters: { type: 'object' } },
+        },
+      ],
+      tool_choice: 'auto',
+      parallel_tool_calls: false,
+    };
+    const wireName = mapCursorApiToolRequest(request).request.tools?.[0]?.function.name;
+    if (!wireName) throw new Error('missing wire tool name');
+    const external = toolCall(wireName, 'call-1', 'seed');
+    let successfulStream: ScriptedStream | undefined;
+    const replacementOpened = Promise.withResolvers<'new-run'>();
+    const transport = new ScriptedTransport((stream, accessToken) => {
+      if (accessToken === 'first-token') {
+        stream.emit('response', { ':status': 401 });
+        return;
+      }
+      stream.emit('response', { ':status': 200 });
+      if (successfulStream) {
+        replacementOpened.resolve('new-run');
+        stream.emit(
+          'data',
+          Buffer.concat([
+            update('textDelta', { text: 'replacement' }),
+            update('turnEnded', { inputTokens: 1, outputTokens: 1 }),
+            encodeConnectFrame(Buffer.alloc(0), { trailer: true }),
+          ]),
+        );
+        return;
+      }
+      successfulStream = stream;
+      stream.emit(
+        'data',
+        Buffer.concat([
+          update('toolCallStarted', {
+            callId: 'call-1',
+            toolCall: {
+              tool: { case: 'mcpToolCall', value: { args: external } },
+              toolCallId: 'call-1',
+            },
+          }),
+          update('partialToolCall', {
+            callId: 'call-1',
+            argsTextDelta: '{"value":"seed"}',
+          }),
+          exec(external),
+        ]),
+      );
+    });
+    const cursor = backend(transport, [
+      { id: 'first', apiKey: 'first-token' },
+      { id: 'second', apiKey: 'second-token' },
+    ]);
+    const first = await collect(cursor, request);
+    const completed = first.find((event) => event.type === 'tool_call_complete');
+    if (completed?.type !== 'tool_call_complete') throw new Error('missing failover tool call');
+    const active = successfulStream;
+    if (!active) throw new Error('missing successful Run stream');
+    expect(transport.attempts).toEqual(['first-token', 'second-token']);
+
+    // When: the client returns the tool result.
+    const resumed = Promise.withResolvers<'resumed'>();
+    active.once('write', () => resumed.resolve('resumed'));
+    const continuation = collect(cursor, {
+      ...request,
+      messages: [
+        ...request.messages,
+        { role: 'assistant', content: '', tool_calls: [completed.call] },
+        { role: 'tool', tool_call_id: completed.call.id, content: 'seed result' },
+      ],
+    });
+
+    // Then: it resumes the successful second-credential stream without
+    // entering credential routing or opening a third Run.
+    expect(await Promise.race([resumed.promise, replacementOpened.promise])).toBe('resumed');
+    active.emit(
+      'data',
+      Buffer.concat([
+        update('textDelta', { text: 'continued on second' }),
+        update('turnEnded', { inputTokens: 3, outputTokens: 2 }),
+        encodeConnectFrame(Buffer.alloc(0), { trailer: true }),
+      ]),
+    );
+    const continued = await continuation;
+    expect(continued).toContainEqual({ type: 'content', text: 'continued on second' });
+    expect(continued.at(-1)).toMatchObject({
+      type: 'done',
+      usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+      usage_source: 'turnEnded',
+    });
+    expect(transport.attempts).toEqual(['first-token', 'second-token']);
+  });
+
   it('keeps a parallel Run open through a later stream data event', async () => {
     // Given: call B is announced in a separate data event after call A completes,
     // and the upstream stream ends with a Connect trailer.

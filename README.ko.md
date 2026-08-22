@@ -247,6 +247,8 @@ Bridge는 completion을 반환하기 전에 선언된 tool schema와 일치하�
 
 Bridge는 tool-history follow-up에서 OpenAI 표준인 `assistant.content: null`을 받고, replay가 가능하도록 `tool_calls`와 함께 `content: ""`를 반환합니다. `content`를 문자열로만 검증하는 LiteLLM 같은 앞단 proxy는 이 replay를 `messages[N].content`에서 400으로 거절하고 이 process까지 요청을 보내지 않습니다. 그 ingress에서 `null`을 `""`로 바꾸고 `tool_calls[].id`는 그대로 두세요.
 
+Tool-call response는 내부 source `unknown`과 함께 usage 0을 반환할 수 있습니다. Upstream Run이 authoritative token total을 담은 `turnEnded`보다 먼저 `mcpArgs`에서 park되기 때문입니다. Client가 tool result를 제출하면 마지막 continuation이 해당 Run 전체의 `turnEnded` usage를 반환합니다. Bridge는 중간 response의 prompt token을 임의로 추정하지 않습니다.
+
 ### Dashboard
 
 실행 중인 bridge를 관리하려면 `http://127.0.0.1:9997/dashboard`를 여세요. Console에서 status, active backend, credential state, model state를 확인할 수 있습니다. 관리 credential의 add, update, weight, enable, disable, delete를 지원하며, model별 toggle과 model family bulk toggle도 제공합니다. 전체 API key는 console로 반환되지 않습니다.

@@ -39,6 +39,7 @@ export class ScriptedStream extends EventEmitter implements CursorRunStream {
 
   write(chunk: Uint8Array): boolean {
     this.writes.push(Buffer.from(chunk));
+    this.emit('write');
     if (!this.#started) {
       this.#started = true;
       queueMicrotask(() => this.script(this));

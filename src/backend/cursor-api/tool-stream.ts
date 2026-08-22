@@ -145,14 +145,16 @@ export class CursorToolStream {
     if (slot) this.completeSlot(slot, call);
   }
 
-  completeExec(value: Dict): void {
+  completeExec(value: Dict): boolean {
     const call = mcpArgsToToolCall(value);
-    if (!this.allowedNames.has(call.function.name)) return;
+    if (!this.allowedNames.has(call.function.name)) return false;
     const compatible = this.aliases.get(call.id) ?? this.uniqueCompatibleSlot(call);
     const slot = compatible
       ? this.slot({ envelopeId: compatible.envelopeId, id: call.id, name: call.function.name })
       : this.slot({ envelopeId: call.id, id: call.id, name: call.function.name });
-    if (slot) this.completeSlot(slot, call);
+    if (!slot) return false;
+    this.completeSlot(slot, call);
+    return true;
   }
 
   completedCalls(): ToolCall[] {

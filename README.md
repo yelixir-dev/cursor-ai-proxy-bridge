@@ -247,6 +247,8 @@ For a single declared tool, `tool_choice: "required"` is strengthened internally
 
 The bridge accepts OpenAI-standard `assistant.content: null` on a tool-history follow-up and emits `""` with `tool_calls` so a string-only client can replay the assistant message. A front proxy that types `content` as a string only, including some LiteLLM setups, will reject that replay at `messages[N].content` before the request reaches this process. Coerce `null` to `""` at that ingress and leave `tool_calls[].id` unchanged.
 
+A tool-call response can report zero usage with internal source `unknown`: the upstream Run parks on `mcpArgs` before its authoritative `turnEnded` token totals exist. After the client submits the tool result, the final continuation reports the complete `turnEnded` usage for that Run. The bridge does not invent prompt-token estimates for the intermediate response.
+
 ### Dashboard
 
 Open `http://127.0.0.1:9997/dashboard` to manage the running bridge. The console shows status, active backend, credential state, and model state. It supports add, update, weight, enable, disable, and delete actions for managed credentials, plus per-model and bulk model family toggles. Full API keys are never returned to the console.
