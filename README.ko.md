@@ -58,6 +58,51 @@ npm start
 
 `composer-2.5` 같은 reasoning-heavy 모델은 cold start와 multi-tool 작업 중 기존 120초 상한을 넘어서 stream이 잘리고 일부 tool call이 유실될 수 있습니다. 전체 상한은 idle watchdog보다 길게 유지하세요. 기본 300초는 활성 작업이 끝날 시간을 제공하고, 30초 watchdog은 실제로 멈춘 Run을 계속 빠르게 종료합니다. 두 값은 `.env`에서 각각 독립적으로 바꿀 수 있습니다.
 
+### Hermes provider 설정 (Composer)
+
+`composer-2.5`와 `composer-2.5-fast`는 cold-start와 thinking 구간이 길 수 있습니다. Hermes를 client로 사용할 때는 서로 독립적인 두 상한을 모두 충분히 길게 설정해야 합니다.
+
+1. **Bridge Run timeout.** `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS`는 전체 upstream Run의 상한입니다.
+2. **Hermes stale-stream timeout.** `stale_timeout_seconds`는 Hermes가 유효한 stream output을 기다리는 상한입니다. `composer-*`를 reasoning model로 분류하지 않는 Hermes 버전에서는 provider 기본값(일반적으로 180초)이 적용됩니다.
+
+둘 중 하나라도 먼저 만료되면 client가 `Response truncated — stream ended before completion`을 보고하거나, 일부 전송된 tool call을 버리거나, model이 아직 thinking 중인데 reconnect할 수 있습니다.
+
+먼저 bridge를 설정합니다.
+
+```bash
+# Bridge .env
+CURSOR_BRIDGE_CURSOR_TIMEOUT_MS=300000
+CURSOR_BRIDGE_RUN_IDLE_MS=30000
+
+# Linux systemd 예시: 재시작한 뒤 실행 중인 process environment를 확인합니다.
+systemctl --user restart cursor-ai-proxy-bridge
+tr '\0' '\n' <"/proc/$(systemctl --user show -p MainPID --value cursor-ai-proxy-bridge)/environ" |
+  grep CURSOR_BRIDGE_CURSOR_TIMEOUT_MS
+```
+
+그다음 Hermes custom provider 전체의 stale-stream timeout을 높입니다. Hermes 내장 Grok provider는 이미 600초를 사용하지만, custom provider에는 명시적으로 설정해야 합니다.
+
+```bash
+hermes config set providers.custom.stale_timeout_seconds 600
+hermes config get providers.custom.stale_timeout_seconds
+```
+
+동일한 `~/.hermes/config.yaml` 설정은 다음과 같습니다.
+
+```yaml
+providers:
+  custom:
+    name: YorHa LiteLLM
+    base_url: http://127.0.0.1:9997/v1
+    key_env: YORHA_LITELLM_API_KEY
+    default_model: composer-2.5
+    transport: chat_completions
+    context_length: 200000
+    stale_timeout_seconds: 600
+```
+
+`providers.custom.stale_timeout_seconds`는 custom provider 전체에 적용됩니다. `base_url`은 bridge에 직접 연결하는 `http://127.0.0.1:9997/v1`이나, `composer-2.5`와 `composer-2.5-fast`를 이 bridge로 라우팅하는 LiteLLM gateway(예: `http://127.0.0.1:9995/v1`)를 사용하세요.
+
 ### Headless 호스트용 descriptor snapshot
 
 `cursor-api`는 Cursor service에 직접 연결하며 descriptor snapshot이 필요합니다. Private repository에 현재 snapshot을 포함하므로 headless 호스트는 `cursor-agent` 설치 없이 clone, build, 실행할 수 있습니다.

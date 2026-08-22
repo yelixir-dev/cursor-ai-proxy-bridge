@@ -58,6 +58,51 @@ The overall Run ceiling and the no-output watchdog are separate controls:
 
 Reasoning-heavy models such as `composer-2.5` can exceed the previous 120-second ceiling during cold starts and multi-tool work, truncating the stream and dropping partially emitted tool calls. Keep the overall ceiling above the idle watchdog; the 300-second default gives active work time to finish while the 30-second watchdog still rejects dead Runs quickly. Both values can be overridden independently in `.env`.
 
+### Hermes provider configuration (Composer)
+
+`composer-2.5` and `composer-2.5-fast` can have a long cold-start and thinking phase. When Hermes is the client, two independent ceilings must allow enough time:
+
+1. **Bridge Run timeout.** `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS` limits the complete upstream Run.
+2. **Hermes stale-stream timeout.** `stale_timeout_seconds` limits how long Hermes waits for usable stream output. Hermes versions that do not classify `composer-*` as reasoning models apply the provider default, commonly 180 seconds.
+
+If either ceiling fires first, clients can report `Response truncated — stream ended before completion`, drop partially streamed tool calls, or reconnect while the model is still thinking.
+
+Configure the bridge first:
+
+```bash
+# Bridge .env
+CURSOR_BRIDGE_CURSOR_TIMEOUT_MS=300000
+CURSOR_BRIDGE_RUN_IDLE_MS=30000
+
+# Linux systemd example: restart and verify the running process environment.
+systemctl --user restart cursor-ai-proxy-bridge
+tr '\0' '\n' <"/proc/$(systemctl --user show -p MainPID --value cursor-ai-proxy-bridge)/environ" |
+  grep CURSOR_BRIDGE_CURSOR_TIMEOUT_MS
+```
+
+Then raise the Hermes custom provider-wide stale-stream timeout. Hermes' built-in Grok provider already uses 600 seconds, but custom providers must set it explicitly:
+
+```bash
+hermes config set providers.custom.stale_timeout_seconds 600
+hermes config get providers.custom.stale_timeout_seconds
+```
+
+Equivalent `~/.hermes/config.yaml`:
+
+```yaml
+providers:
+  custom:
+    name: YorHa LiteLLM
+    base_url: http://127.0.0.1:9997/v1
+    key_env: YORHA_LITELLM_API_KEY
+    default_model: composer-2.5
+    transport: chat_completions
+    context_length: 200000
+    stale_timeout_seconds: 600
+```
+
+`providers.custom.stale_timeout_seconds` applies to the entire custom provider. Point `base_url` directly at the bridge (`http://127.0.0.1:9997/v1`) or at a LiteLLM gateway such as `http://127.0.0.1:9995/v1` that routes `composer-2.5` and `composer-2.5-fast` to this bridge.
+
 ### Descriptor snapshot for headless hosts
 
 `cursor-api` connects directly to Cursor's service and needs a descriptor snapshot. The private repository includes the current snapshot, so a headless host can clone, build, and run without installing `cursor-agent`.
