@@ -1,3 +1,5 @@
+import { unifiedFromSlug } from './backend/cursor-api/unified-models.js';
+
 const DEFAULT_ENABLED_MODEL_PATTERNS = [
   /^composer-2\.5(-fast)?$/,
   /^cursor-grok-4\.6-/,
@@ -24,9 +26,23 @@ export function defaultPolicy(id: string): boolean {
 
 export class ModelPolicy {
   private overrides: Record<string, boolean>;
+  /** Legacy slug → unified id translations applied at load (for the startup log). */
+  readonly migratedFrom: Record<string, string>;
 
   constructor(overrides: Record<string, boolean> = {}) {
-    this.overrides = { ...overrides };
+    // Legacy variant slugs (claude-opus-5-thinking-max-fast) no longer gate
+    // anything once chat checks the unified id — carry the user's intent to
+    // the unified id instead of orphaning it. On collision the later key in
+    // the file wins.
+    const migrated: Record<string, boolean> = {};
+    const from: Record<string, string> = {};
+    for (const [key, enabled] of Object.entries(overrides)) {
+      const unified = unifiedFromSlug(key) ?? key;
+      if (unified !== key) from[key] = unified;
+      migrated[unified] = enabled;
+    }
+    this.overrides = migrated;
+    this.migratedFrom = from;
   }
 
   enabled(id: string): boolean {
@@ -38,7 +54,11 @@ export class ModelPolicy {
   }
 
   replaceOverrides(overrides: Record<string, boolean>): void {
-    this.overrides = { ...overrides };
+    const migrated: Record<string, boolean> = {};
+    for (const [key, enabled] of Object.entries(overrides)) {
+      migrated[unifiedFromSlug(key) ?? key] = enabled;
+    }
+    this.overrides = migrated;
   }
 
   snapshot(): Record<string, boolean> {

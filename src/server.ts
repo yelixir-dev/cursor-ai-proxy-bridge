@@ -57,11 +57,20 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   });
   await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
 
+  const modelPolicy = new ModelPolicy(config.dashboardConfig?.modelOverrides);
+  const migratedOverrides = Object.entries(modelPolicy.migratedFrom);
+  if (migratedOverrides.length > 0) {
+    app.log.warn(
+      { migrated: modelPolicy.migratedFrom },
+      `migrated ${migratedOverrides.length} legacy model override(s) to unified ids`,
+    );
+  }
+
   const context: ServerContext = {
     app,
     config,
     backend: options.backend,
-    modelPolicy: new ModelPolicy(config.dashboardConfig?.modelOverrides),
+    modelPolicy,
     health: new BackendHealthCache(options.backend),
     limiter: new CompletionLimiter(
       config.maxConcurrency ?? positiveIntegerFromEnv('CURSOR_BRIDGE_MAX_CONCURRENCY', 16),
