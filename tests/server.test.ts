@@ -123,7 +123,7 @@ describe('cursor-ai-bridge server', () => {
     expect(ok.json().data.map((m: { id: string }) => m.id)).toContain('composer-2.5');
   });
 
-  it('shows only daily-driver models in the dashboard state', async () => {
+  it('shows every advertised model in the dashboard state', async () => {
     const server = await app();
     const admin = await server.inject({
       method: 'GET',
@@ -132,7 +132,7 @@ describe('cursor-ai-bridge server', () => {
     });
     expect(admin.statusCode).toBe(200);
     const ids = admin.json().state.models.map((model: { id: string }) => model.id);
-    expect(ids).toEqual(['composer-2.5']);
+    expect(ids).toEqual(['composer-2.5', 'auto']);
   });
 
   it('defaults client auth to off when the API key is unset', async () => {
@@ -275,6 +275,9 @@ describe('cursor-ai-bridge server', () => {
     expect(before.statusCode).toBe(200);
     expect(JSON.stringify(before.json())).not.toContain('first-test-secret');
     expect(before.json().config.credentials[0].apiKeyPreview).toBe('firs…');
+    expect(before.json().state.models.map((model: { id: string }) => model.id)).toEqual([
+      'composer-2.5',
+    ]);
 
     const patched = await server.inject({
       method: 'PATCH',

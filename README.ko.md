@@ -188,7 +188,7 @@ Bridge는 tool-history follow-up에서 OpenAI 표준인 `assistant.content: null
 
 실행 중인 bridge를 관리하려면 `http://127.0.0.1:9997/dashboard`를 여세요. Console에서 status, active backend, credential state, model state를 확인할 수 있습니다. 관리 credential의 add, update, weight, enable, disable, delete를 지원하며, model별 toggle과 model family bulk toggle도 제공합니다. 전체 API key는 console로 반환되지 않습니다.
 
-Dashboard에는 의도적으로 `composer-2.5`, `composer-2.5-fast`와 명시적인 override가 있는 모델만 표시됩니다. 이것은 표시 filter일 뿐이며, `/v1/models`가 노출하는 통합 모델은 해당 통합 ID를 명시적으로 disable하지 않는 한 API에서 계속 활성화되고 사용할 수 있습니다.
+Dashboard에는 `/v1/models`가 사용하는 선별된 통합 모델 목록이 표시되며, 명시적인 override로 현재 비활성화된 row도 포함됩니다. 각 row는 모델이 default policy 또는 override로 활성화됐는지 보여주며, 관리자는 기존 Cursor slug를 쓰지 않고 해당 override를 변경할 수 있습니다.
 
 ## 동작 방식
 

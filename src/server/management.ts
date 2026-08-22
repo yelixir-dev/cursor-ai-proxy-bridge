@@ -15,9 +15,6 @@ import { openAiError } from './responses.js';
 import { adminConfigPatchSchema } from './schema.js';
 import type { ServerContext } from './types.js';
 
-/** Only the daily drivers are manageable from the dashboard. */
-const DASHBOARD_VISIBLE_MODEL = /^composer-2\.5(-fast)?$/;
-
 /** Dashboard configuration state: mutation is required for hot updates. */
 type ManagementState = {
   dashboardConfig: DashboardConfig;
@@ -47,13 +44,9 @@ export function registerManagementRoutes(context: ServerContext): void {
       state: {
         activeBackend: backendHealth.activeBackend ?? backend.type,
         credentials: backend.credentialStates?.() ?? [],
-        // The dashboard manages daily-driver models plus anything the user
-        // explicitly toggled; everything else stays enabled by default
-        // policy and is simply not rendered.
         models: models
           .filter(
-            (model) =>
-              DASHBOARD_VISIBLE_MODEL.test(model.id) || modelPolicy.source(model.id) === 'override',
+            (model) => modelPolicy.enabled(model.id) || modelPolicy.source(model.id) === 'override',
           )
           .map((model) => ({
             id: model.id,
