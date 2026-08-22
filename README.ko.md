@@ -72,6 +72,16 @@ server retry 최대 3회 제한을 사용하고 requested model과 최초 creden
 provider status, Connect code, upstream Run request ID만 allowlist diagnostics로 노출하며 provider
 detail 원문과 임의 metadata는 log나 response에 포함하지 않습니다.
 
+이 flag들을 안전하게 평가하려면 `CURSOR_BRIDGE_TRACE=1`을 설정하세요. 각 request 단계마다 제한된
+범위의 redacted JSON 한 줄이 stderr로 기록됩니다: `request_id`, 시도마다 갱신되는
+`credential_slot_id` sha256 digest(credential id나 token 절대 포함 안 함), 모든 `run_open`의 upstream
+`run_request_id`, policy를 읽은 이후 record의 `retry_provider_5xx` 상태, opt-in이 유발한 retry의
+`retry_reason`(`provider_5xx` 또는 `run_timeout`), 그리고 retry 가능한 typed provider 5xx를 하지
+않기로 결정했을 때 `upstream_error` record의 `retry_declined`(`flag_off`, `post_visible`,
+`retry_limit`). Prompt, provider payload, message, stack은 절대 기록되지 않습니다. 지금까지 실제
+운영 환경에서 typed provider 5xx response는 관측된 적이 없습니다. Tracing은 이런 사건이 발생했을
+때 측정을 가능하게 할 뿐, 발생 빈도를 높이지 않습니다.
+
 ### Hermes provider 설정 (Composer)
 
 `composer-2.5`와 `composer-2.5-fast`는 cold-start와 thinking 구간이 길 수 있습니다. Hermes를 client로 사용할 때는 서로 독립적인 두 상한을 모두 충분히 길게 설정해야 합니다.

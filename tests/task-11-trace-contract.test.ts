@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BridgeTraceCollector } from '../src/benchmark/bridge-trace.js';
+import { BridgeTraceCollector, parseTraceRecord } from '../src/benchmark/bridge-trace.js';
 
 function record(stage: string, values: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -61,5 +61,63 @@ describe('task 11 benchmark trace contract', () => {
     );
 
     expect(collector.records()).toEqual([]);
+  });
+
+  it('retains typed provider errors and retry telemetry at the benchmark boundary', () => {
+    const upstreamError = record('upstream_error', {
+      upstream_error_code: 'resource_exhausted',
+      upstream_error_type: 'ERROR_PROVIDER_ERROR',
+      upstream_retryable: true,
+      provider_status_code: '503',
+      run_request_id: 'run-provider-123',
+      retry_declined: 'flag_off',
+      retry_provider_5xx: true,
+    });
+    expect(parseTraceRecord(upstreamError, 7)).toEqual({
+      sequence: 7,
+      ...upstreamError,
+    });
+
+    expect(
+      parseTraceRecord(
+        record('retry', {
+          upstream_run_count: 1,
+          retry_count: 1,
+          retry_kind: 'server',
+          retry_reason: 'provider_5xx',
+        }),
+        8,
+      ),
+    ).toMatchObject({
+      sequence: 8,
+      stage: 'retry',
+      retry_kind: 'server',
+      retry_reason: 'provider_5xx',
+    });
+  });
+
+  it('rejects malformed provider and retry telemetry values or unknown keys', () => {
+    const base = record('upstream_error', {
+      upstream_error_code: 'resource_exhausted',
+      upstream_error_type: 'ERROR_PROVIDER_ERROR',
+      upstream_retryable: true,
+      provider_status_code: '503',
+      run_request_id: 'run-provider-123',
+      retry_declined: 'flag_off',
+      retry_provider_5xx: true,
+    });
+    for (const [key, value] of [
+      ['upstream_error_code', 'not safe/id'],
+      ['upstream_error_type', 503],
+      ['provider_status_code', '500 status'],
+      ['run_request_id', ''],
+      ['upstream_retryable', 'true'],
+      ['retry_provider_5xx', 'true'],
+      ['retry_declined', 'unknown'],
+      ['retry_reason', 'server'],
+      ['unexpected_trace_key', true],
+    ] as const) {
+      expect(parseTraceRecord({ ...base, [key]: value }, 1), key).toBeNull();
+    }
   });
 });

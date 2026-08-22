@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   createTraceProvenance,
   sanitizeTraceLine,
-  triggerAndAwaitAbortQuiescence,
   serverEnvironment,
+  triggerAndAwaitAbortQuiescence,
 } from '../src/e2e/trace-provenance.js';
 
 const roots: string[] = [];
@@ -50,6 +50,40 @@ describe('pinned E2E bridge trace provenance', () => {
         JSON.stringify({ stage: 'accepted', request_id: 'Bearer secret-token-12345678' }),
       ),
     ).toMatchObject({ request_id: 'Bearer [redacted]' });
+  });
+
+  it('retains provider errors and retry reasons while recursively scrubbing secrets', () => {
+    const upstreamError = {
+      stage: 'upstream_error',
+      request_id: 'req-provider',
+      upstream_error_code: 'resource_exhausted',
+      upstream_error_type: 'ERROR_PROVIDER_ERROR',
+      upstream_retryable: true,
+      provider_status_code: '503',
+      run_request_id: 'run-provider-123',
+      retry_declined: 'post_visible',
+      retry_provider_5xx: true,
+      nested: { authorization: 'Bearer secret-token-12345678' },
+    };
+    expect(sanitizeTraceLine(JSON.stringify(upstreamError))).toEqual({
+      ...upstreamError,
+      nested: { authorization: 'Bearer [redacted]' },
+    });
+    expect(
+      sanitizeTraceLine(
+        JSON.stringify({
+          stage: 'retry',
+          request_id: 'req-provider',
+          retry_kind: 'server',
+          retry_reason: 'run_timeout',
+        }),
+      ),
+    ).toEqual({
+      stage: 'retry',
+      request_id: 'req-provider',
+      retry_kind: 'server',
+      retry_reason: 'run_timeout',
+    });
   });
 
   it('writes a sanitized trace and receipt into a task-owned temp path and retains them on failure', async () => {

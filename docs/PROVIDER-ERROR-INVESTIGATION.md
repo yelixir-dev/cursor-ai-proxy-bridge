@@ -166,30 +166,50 @@ JSON errors and SSE error frames expose these bounded snake-case fields:
 }
 ```
 
-Trace records use `upstream_error_code`, `upstream_error_type`,
-`upstream_retryable`, `provider_status_code`, and `run_request_id`. Safe warning
-logs use `connectCode`, `upstreamErrorType`, `upstreamRetryable`,
-`providerStatusCode`, and `runRequestId`. The upstream Run UUID remains in the
-client-facing `error.request_id`.
+With `CURSOR_BRIDGE_TRACE=1`, trace records use `upstream_error_code`,
+`upstream_error_type`, `upstream_retryable`, `provider_status_code`, and
+`run_request_id`. Every `run_open` includes its upstream Run UUID and current
+hashed credential slot. Records emitted after policy selection include
+`retry_provider_5xx`; opt-in retries carry `retry_reason`, and eligible provider
+5xx declines carry `retry_declined`. Safe warning logs use `connectCode`,
+`upstreamErrorType`, `upstreamRetryable`, `providerStatusCode`, and
+`runRequestId`. The upstream Run UUID remains in the client-facing
+`error.request_id`.
 
 Raw provider title/detail text, the full `additionalInfo` map, base64 values,
 buttons, URLs, metadata, messages, and stacks are not serialized. Redaction
 also applies when a `ConnectRpcError` is wrapped in another error or permanent
 precedence suppresses the provider type.
 
+## Production capture follow-up
+
+The production capture path was exercised end to end through the existing TLS
+wire-capture proxies and direct `cursor-api` backend. Eight bounded, ordinary
+requests across Composer, Grok, Claude, GPT, and Kimi routes all completed
+successfully. Every Run ended with the same two-byte `{}` Connect trailer; no
+error envelope or canonical `ErrorDetails.value` appeared.
+
+This proves capture capability, not production 5xx availability. A real
+canonical provider 5xx still requires a naturally occurring upstream incident.
+The experimental flag remains off by default.
+
 ## Stall correlation verdict
 
-The previous 240/300-second no-terminal stalls are not proven to be this
-provider error.
+Frame-examined historical stalls are not provider errors. The archived bridge
+and native captures end in heartbeats, RST, CANCEL, or benchmark aborts and
+contain zero `ERROR_PROVIDER_ERROR` Connect envelopes. Provider connectivity
+errors found in the same capture sets belong only to trials recorded as
+completed and non-stalled.
 
 A single attempt cannot both:
 
 - receive a terminal provider error; and
 - remain open without `turnEnded` or an EndStream envelope.
 
-They can share an upstream incident, route, load condition, or malformed state,
-but that requires correlation by downstream request ID, upstream Run UUID,
-attempt index, model, credential slot, and frame sequence. Timing overlap in an
+The older reported-only 240/300-second cases remain unresolvable because their
+raw logs predate the Run-ID and frame diagnostics and were not archived. Future
+cases can be correlated by downstream request ID, upstream Run UUID, attempt
+index, model, credential slot, and frame sequence. Timing overlap in an
 aggregate session log is insufficient.
 
 Independent public reports show no-`turnEnded` and event-delivery stalls without
@@ -205,8 +225,11 @@ classes until a shared request/attempt trace proves linkage.
 
 - Focused adversarial package: 66/66 passed.
 - Full `npm run verify`: passed.
-- Final full test run: 75 files / 712 tests passed.
+- Final full test run: 75 files / 723 tests passed.
 - Typecheck, ESLint, Prettier, strict-assertion gate, and build: passed.
+- Provider telemetry coverage verifies flag-off, post-visible, and retry-limit
+  declines; provider-5xx and Run-timeout retry reasons; per-attempt Run IDs and
+  credential-slot continuity; and benchmark/E2E trace retention.
 - Manual live HTTP driver:
   - JSON provider failure: HTTP 502 with allowlisted fields and Run UUID;
   - midstream SSE failure: HTTP 200 stream with structured error event;
@@ -219,16 +242,18 @@ classes until a shared request/attempt trace proves linkage.
 
 ## Residual limits
 
-1. No public or local captured example proves that
-   `providerStatusCode` carries 5xx in production. The experimental flag is
-   insurance and should remain off until measured.
+1. No public or local captured example proves that `providerStatusCode` carries
+   5xx in production. A bounded eight-route production capture observed only
+   successful `{}` trailers. The experimental flag is insurance and should
+   remain off until a natural incident is measured.
 2. Connect `debug` is noncontractual. Capture and hash a real canonical
    `value` plus leading metadata before expanding policy.
 3. Cursor's hidden retry mode may resume from a conversation checkpoint. The
    bridge currently opens a fresh root Run, so the experimental path is not
    full wire-level parity for checkpoint-bearing failures.
-4. Historical stalls require frame-level evidence. Do not infer provider
-   failure from elapsed time alone.
+4. Frame-examined historical stalls are disproven as provider errors. Older
+   report-only stalls remain unresolvable; do not infer provider failure from
+   elapsed time alone.
 5. The private enum inventory can evolve. Unknown canonical enum values without
    an explicit retry marker remain subject to the existing outer Connect-code
    policy until their semantics are added.

@@ -1,4 +1,10 @@
-import { requestTrace, traceBackend, traceRetry, traceUpstreamError } from '../../trace.js';
+import {
+  requestTrace,
+  traceBackend,
+  traceRetry,
+  traceRetryProvider5xxPolicy,
+  traceUpstreamError,
+} from '../../trace.js';
 import { TOOL_CALL_MARKER, ToolTextStreamFilter } from '../tool-call-stream.js';
 import type { ChatCompletionRequest, CompletionResult, CompletionStreamEvent } from '../types.js';
 import { AsyncQueue } from './async-queue.js';
@@ -6,8 +12,7 @@ import { withCursorCredential } from './credential-route.js';
 import type { CursorApiDiscovery } from './discovery.js';
 import { buildCursorHistory } from './history.js';
 import { cursorProviderErrorDiagnostics } from './provider-error.js';
-import { cursorRetryFailureKind } from './retry.js';
-import { CursorRunTimeoutError } from './run-errors.js';
+import { classifyCursorRetry } from './retry.js';
 import { executeCursorRun, resumeCursorRun } from './run-execution.js';
 import type { RunEmitter, RunLifecycle, RunOutcome } from './run-types.js';
 import { boundedInteger, type CursorApiRuntime } from './runtime.js';
@@ -183,6 +188,7 @@ export class CursorApiCompletion {
       this.runtime.environment.CURSOR_BRIDGE_RETRY_RUN_TIMEOUT?.trim() === '1';
     const retryProvider5xx =
       this.runtime.environment.CURSOR_BRIDGE_RETRY_PROVIDER_5XX?.trim() === '1';
+    traceRetryProvider5xxPolicy(lifecycle.trace, retryProvider5xx);
     let preferredCredentialId: string | undefined;
     for (;;) {
       try {
@@ -192,9 +198,7 @@ export class CursorApiCompletion {
           signal: lifecycle.signal,
           emit: trackedEmit,
           trace: lifecycle.trace,
-          onCredential: (credentialId) => {
-            preferredCredentialId = credentialId;
-          },
+          onCredential: (credentialId) => (preferredCredentialId = credentialId),
         });
         if (resumed) return await resumed;
         return await withCursorCredential(this.runtime, {
@@ -219,11 +223,19 @@ export class CursorApiCompletion {
           ...(preferredCredentialId === undefined ? {} : { preferredCredentialId }),
         });
       } catch (error) {
-        traceUpstreamError(lifecycle.trace, cursorProviderErrorDiagnostics(error));
-        const kind =
-          retryRunTimeout && error instanceof CursorRunTimeoutError
-            ? 'transport'
-            : cursorRetryFailureKind(error, { retryProvider5xx });
+        const classification = classifyCursorRetry(error, {
+          retryProvider5xx,
+          retryRunTimeout,
+          delivered: gate.delivered,
+          aborted: lifecycle.signal?.aborted === true,
+          serverRetryExhausted: serverRetries >= MAX_SERVER_RETRIES,
+        });
+        traceUpstreamError(
+          lifecycle.trace,
+          cursorProviderErrorDiagnostics(error),
+          classification.declineReason,
+        );
+        const kind = classification.kind;
         if (!kind || gate.delivered || lifecycle.signal?.aborted) throw error;
         const retries = kind === 'server' ? serverRetries : transportRetries;
         const limit = kind === 'server' ? MAX_SERVER_RETRIES : MAX_TRANSPORT_RETRIES;
@@ -232,7 +244,7 @@ export class CursorApiCompletion {
         else transportRetries += 1;
         trackedEmit?.reset?.();
         const nextRetry = kind === 'server' ? serverRetries : transportRetries;
-        traceRetry(lifecycle.trace, kind);
+        traceRetry(lifecycle.trace, kind, classification.retryReason);
         await this.runtime.wait(
           Math.min(retryBaseMs * 2 ** nextRetry, MAX_RETRY_DELAY_MS),
           lifecycle.signal,

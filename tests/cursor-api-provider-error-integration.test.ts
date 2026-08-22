@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { ConnectRpcError, encodeConnectFrame } from '../src/backend/cursor-api/connect-frame.js';
 import { safeCursorBackendError } from '../src/backend/cursor-api/provider-error.js';
+import { CursorRunTimeoutError } from '../src/backend/cursor-api/run-errors.js';
+import type { ChatCompletionRequest } from '../src/backend/types.js';
 import type { BridgeConfig } from '../src/config.js';
 import { buildServer } from '../src/server.js';
-import type { TraceRecord } from '../src/trace.js';
+import { attachRequestTrace, createRequestTrace, type TraceRecord } from '../src/trace.js';
 import { backend, ScriptedTransport, trailer, update } from './support/cursor-api-scripted.js';
 import {
   canonicalProviderDetailValue,
@@ -23,6 +25,37 @@ function canonicalProviderDetailValueWithRetryable(
   if (markerOffset < 0) throw new Error('missing canonical retry marker');
   binary[markerOffset + 1] = retryable ? 1 : 0;
   return binary.toString('base64').replace(/=+$/u, '');
+}
+
+function tracedProviderRequest(records: TraceRecord[]): ChatCompletionRequest {
+  const candidate = structuredClone(providerRequest);
+  const trace = createRequestTrace({
+    environment: { CURSOR_BRIDGE_TRACE: '1' },
+    requestId: 'chatcmpl-provider-retry-telemetry',
+    model: providerRequest.model,
+    sink: (record) => records.push(record),
+  });
+  if (!trace) throw new Error('expected tracing to be enabled');
+  attachRequestTrace(candidate, trace);
+  return candidate;
+}
+
+function runTimeoutError(): CursorRunTimeoutError {
+  return new CursorRunTimeoutError('Cursor API run timed out after 1ms', 'run-timeout-1', {
+    phase: 'awaiting_upstream',
+    toolResultsSent: 0,
+    bufferedFrames: 0,
+    streamState: { destroyed: false, writableEnded: false },
+    toolCallsAnnounced: 0,
+    toolCallsCompleted: 0,
+    lastInteractionCase: null,
+    lastInteractionAgoMs: 0,
+    outputBytes: 0,
+    decodedOutputBytes: 0,
+    sawTurnEnded: false,
+    sawTrailer: false,
+    transport: {},
+  });
 }
 
 const malformedNestedMapEntryValue = Buffer.from(
@@ -260,6 +293,166 @@ describe('Cursor provider error integration', () => {
     }).rejects.toMatchObject({ code: 'resource_exhausted' });
     expect(events).toContainEqual({ type: 'content', text: 'visible' });
     expect(transport.opened).toHaveLength(1);
+  });
+
+  it('records the flag-off decline for an eligible provider 503 without the opt-in', async () => {
+    const records: TraceRecord[] = [];
+    const transport = new ScriptedTransport((stream) => {
+      stream.emit('response', { ':status': 200 });
+      stream.emit('data', providerErrorTrailer('503'));
+    });
+
+    await expect(backend(transport).complete(tracedProviderRequest(records))).rejects.toMatchObject(
+      { code: 'resource_exhausted' },
+    );
+
+    expect(transport.opened).toHaveLength(1);
+    expect(records.filter((record) => record.stage === 'retry')).toHaveLength(0);
+    expect(records.filter((record) => record.stage === 'upstream_error')).toHaveLength(1);
+    expect(records.find((record) => record.stage === 'upstream_error')).toMatchObject({
+      provider_status_code: '503',
+      upstream_retryable: false,
+      retry_provider_5xx: false,
+      retry_declined: 'flag_off',
+    });
+    expect(JSON.stringify(records)).not.toContain('SECRET_PROVIDER_VALUE');
+  });
+
+  it('records the post-visible decline for an opted-in provider 5xx after client-visible output', async () => {
+    const records: TraceRecord[] = [];
+    const transport = new ScriptedTransport((stream) => {
+      stream.emit('response', { ':status': 200 });
+      stream.emit(
+        'data',
+        Buffer.concat([update('textDelta', { text: 'visible' }), providerErrorTrailer('503')]),
+      );
+    });
+    const cursor = backend(transport, undefined, {
+      CURSOR_BRIDGE_RETRY_PROVIDER_5XX: '1',
+    });
+    const events: unknown[] = [];
+
+    await expect(async () => {
+      for await (const event of cursor.completeStream(tracedProviderRequest(records)))
+        events.push(event);
+    }).rejects.toMatchObject({ code: 'resource_exhausted' });
+
+    expect(events).toContainEqual({ type: 'content', text: 'visible' });
+    expect(transport.opened).toHaveLength(1);
+    expect(records.find((record) => record.stage === 'upstream_error')).toMatchObject({
+      retry_provider_5xx: true,
+      retry_declined: 'post_visible',
+      provider_status_code: '503',
+    });
+    expect(records.filter((record) => record.stage === 'retry')).toHaveLength(0);
+  });
+
+  it('records the retry-limit decline after three provider 5xx retries', async () => {
+    const records: TraceRecord[] = [];
+    const transport = new ScriptedTransport((stream) => {
+      stream.emit('response', { ':status': 200 });
+      stream.emit('data', providerErrorTrailer('503'));
+    });
+
+    await expect(
+      backend(transport, undefined, { CURSOR_BRIDGE_RETRY_PROVIDER_5XX: '1' }).complete(
+        tracedProviderRequest(records),
+      ),
+    ).rejects.toMatchObject({ code: 'resource_exhausted' });
+
+    expect(transport.opened).toHaveLength(4);
+    const retries = records.filter((record) => record.stage === 'retry');
+    expect(retries).toHaveLength(3);
+    expect(
+      retries.every(
+        (record) => record.retry_kind === 'server' && record.retry_reason === 'provider_5xx',
+      ),
+    ).toBe(true);
+    const upstreamErrors = records.filter((record) => record.stage === 'upstream_error');
+    expect(upstreamErrors).toHaveLength(4);
+    expect(upstreamErrors.slice(0, 3).every((record) => record.retry_declined === undefined)).toBe(
+      true,
+    );
+    expect(upstreamErrors.at(-1)).toMatchObject({
+      retry_declined: 'retry_limit',
+      provider_status_code: '503',
+    });
+    expect(JSON.stringify(records)).not.toContain('SECRET_PROVIDER_VALUE');
+  });
+
+  it('self-describes an actual provider 5xx retry with a pinned credential and per-attempt run ids', async () => {
+    const records: TraceRecord[] = [];
+    const transport = new ScriptedTransport((stream) => {
+      stream.emit('response', { ':status': 200 });
+      stream.emit(
+        'data',
+        transport.opened.length === 1
+          ? providerErrorTrailer('503')
+          : Buffer.concat([update('textDelta', { text: 'recovered' }), trailer()]),
+      );
+    });
+    const cursor = backend(
+      transport,
+      [{ id: 'pin-credential-source', apiKey: 'pin-token-secret' }],
+      { CURSOR_BRIDGE_RETRY_PROVIDER_5XX: '1' },
+    );
+
+    await expect(cursor.complete(tracedProviderRequest(records))).resolves.toMatchObject({
+      content: 'recovered',
+    });
+
+    const runOpens = records.filter((record) => record.stage === 'run_open');
+    expect(runOpens).toHaveLength(2);
+    const runRequestIds = runOpens.map((record) => record.run_request_id);
+    expect(new Set(runRequestIds).size).toBe(2);
+    expect(runRequestIds.every((id) => typeof id === 'string' && id.length <= 96)).toBe(true);
+    const slots = runOpens.map((record) => record.credential_slot_id);
+    if (slots[0] === null || slots[0] === undefined) throw new Error('missing slot on first run');
+    if (slots[1] === null || slots[1] === undefined) throw new Error('missing slot on second run');
+    expect(slots[0]).toMatch(/^slot_[0-9a-f]{16}$/u);
+    expect(slots[1]).toBe(slots[0]);
+    expect(records.find((record) => record.stage === 'retry')).toMatchObject({
+      retry_kind: 'server',
+      retry_reason: 'provider_5xx',
+      retry_provider_5xx: true,
+    });
+    expect(
+      records.every(
+        (record) => record.retry_provider_5xx === undefined || record.retry_provider_5xx === true,
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(records)).not.toMatch(/pin-credential-source|pin-token-secret/);
+  });
+
+  it('marks an opt-in run timeout retry with the run_timeout reason', async () => {
+    const records: TraceRecord[] = [];
+    const transport = new ScriptedTransport((stream) => {
+      stream.emit('response', { ':status': 200 });
+      if (transport.opened.length === 1) {
+        stream.emit('error', runTimeoutError());
+        return;
+      }
+      stream.emit(
+        'data',
+        Buffer.concat([update('textDelta', { text: 'after timeout' }), trailer()]),
+      );
+    });
+
+    await expect(
+      backend(transport, undefined, { CURSOR_BRIDGE_RETRY_RUN_TIMEOUT: '1' }).complete(
+        tracedProviderRequest(records),
+      ),
+    ).resolves.toMatchObject({ content: 'after timeout' });
+
+    expect(transport.opened).toHaveLength(2);
+    expect(records.find((record) => record.stage === 'retry')).toMatchObject({
+      retry_kind: 'transport',
+      retry_reason: 'run_timeout',
+      retry_provider_5xx: false,
+    });
+    expect(records.find((record) => record.stage === 'upstream_error')).toMatchObject({
+      run_request_id: 'run-timeout-1',
+    });
   });
 
   it('decodes canonical value-only details before declining retry', async () => {

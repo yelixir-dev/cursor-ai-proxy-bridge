@@ -1,5 +1,7 @@
+import type { TraceRetryDecline, TraceRetryReason } from '../../trace-contract.js';
 import { ConnectRpcError } from './connect-frame.js';
 import { inspectCursorProviderError } from './provider-error.js';
+import { CursorRunTimeoutError } from './run-errors.js';
 import { CursorApiHttpError } from './transport.js';
 
 const RETRYABLE_TRANSPORT_CODES = new Set([
@@ -184,4 +186,52 @@ export function cursorRetryFailureKind(
 
 export function isRetryableCursorTransportError(error: unknown): boolean {
   return cursorRetryFailureKind(error) !== undefined;
+}
+
+/** True when the typed provider-5xx opt-in would retry this error chain. */
+export function isProvider5xxEligible(error: unknown): boolean {
+  return nestedConnectRetryDecision(error, { retryProvider5xx: true }) === 'server';
+}
+
+export interface CursorRetryDecision {
+  readonly retryProvider5xx: boolean;
+  readonly retryRunTimeout: boolean;
+  readonly delivered: boolean;
+  readonly aborted: boolean;
+  readonly serverRetryExhausted: boolean;
+}
+
+export interface CursorRetryClassification {
+  readonly kind: RetryFailureKind | undefined;
+  readonly declineReason: TraceRetryDecline | undefined;
+  readonly retryReason: TraceRetryReason | undefined;
+}
+
+/**
+ * One classification per caught failure: the retry kind plus the bounded
+ * telemetry for why an eligible provider-5xx retry was declined and which
+ * opt-in path an emitted retry came from.
+ */
+export function classifyCursorRetry(
+  error: unknown,
+  decision: CursorRetryDecision,
+): CursorRetryClassification {
+  const timeoutRetry = decision.retryRunTimeout && error instanceof CursorRunTimeoutError;
+  const kind = timeoutRetry
+    ? 'transport'
+    : cursorRetryFailureKind(error, { retryProvider5xx: decision.retryProvider5xx });
+  const eligible = isProvider5xxEligible(error);
+  const provider5xxRetry = decision.retryProvider5xx && eligible && kind === 'server';
+  let declineReason: TraceRetryDecline | undefined;
+  if (provider5xxRetry) {
+    if (decision.delivered) declineReason = 'post_visible';
+    else if (!decision.aborted && decision.serverRetryExhausted) declineReason = 'retry_limit';
+  } else if (!decision.retryProvider5xx && eligible && kind === undefined) {
+    declineReason = 'flag_off';
+  }
+  return {
+    kind,
+    declineReason,
+    retryReason: timeoutRetry ? 'run_timeout' : provider5xxRetry ? 'provider_5xx' : undefined,
+  };
 }

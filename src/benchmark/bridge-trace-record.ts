@@ -12,10 +12,22 @@ const TRACE_STAGES = new Set([
   'tool_decision',
   'tool_batch_complete',
   'retry',
+  'upstream_error',
   'terminal',
   'abort',
   'backend_flip',
 ]);
+
+type RetryDeclined = 'flag_off' | 'post_visible' | 'retry_limit';
+type RetryReason = 'provider_5xx' | 'run_timeout';
+
+function isRetryDeclined(value: unknown): value is RetryDeclined {
+  return value === 'flag_off' || value === 'post_visible' || value === 'retry_limit';
+}
+
+function isRetryReason(value: unknown): value is RetryReason {
+  return value === 'provider_5xx' || value === 'run_timeout';
+}
 
 export interface SanitizedBridgeTraceRecord {
   sequence: number;
@@ -28,6 +40,14 @@ export interface SanitizedBridgeTraceRecord {
   stage: string;
   offset_ms: number;
   retry_kind?: string;
+  retry_reason?: RetryReason;
+  upstream_error_code?: string;
+  upstream_error_type?: string;
+  upstream_retryable?: boolean;
+  provider_status_code?: string;
+  run_request_id?: string;
+  retry_provider_5xx?: boolean;
+  retry_declined?: RetryDeclined;
   usage_source?: UsageSource;
   final_backend_state?: string;
   cancelled?: boolean;
@@ -51,6 +71,14 @@ export function parseTraceRecord(
     'stage',
     'offset_ms',
     'retry_kind',
+    'retry_reason',
+    'upstream_error_code',
+    'upstream_error_type',
+    'upstream_retryable',
+    'provider_status_code',
+    'run_request_id',
+    'retry_provider_5xx',
+    'retry_declined',
     'usage_source',
     'final_backend_state',
     'cancelled',
@@ -82,6 +110,34 @@ export function parseTraceRecord(
     return null;
   if (raw.retry_kind !== undefined && typeof raw.retry_kind !== 'string') return null;
   if (raw.stage === 'retry' && (raw.retry_kind === undefined || retryCount === 0)) return null;
+  const upstreamErrorCode = raw.upstream_error_code;
+  const upstreamErrorType = raw.upstream_error_type;
+  const providerStatusCode = raw.provider_status_code;
+  const runRequestId = raw.run_request_id;
+  if (
+    (upstreamErrorCode !== undefined &&
+      (typeof upstreamErrorCode !== 'string' || !SAFE_ID.test(upstreamErrorCode))) ||
+    (upstreamErrorType !== undefined &&
+      (typeof upstreamErrorType !== 'string' || !SAFE_ID.test(upstreamErrorType))) ||
+    (providerStatusCode !== undefined &&
+      (typeof providerStatusCode !== 'string' || !SAFE_ID.test(providerStatusCode))) ||
+    (runRequestId !== undefined &&
+      (typeof runRequestId !== 'string' || !SAFE_ID.test(runRequestId)))
+  ) {
+    return null;
+  }
+  const upstreamRetryable = raw.upstream_retryable;
+  const retryProvider5xx = raw.retry_provider_5xx;
+  if (
+    (upstreamRetryable !== undefined && typeof upstreamRetryable !== 'boolean') ||
+    (retryProvider5xx !== undefined && typeof retryProvider5xx !== 'boolean')
+  ) {
+    return null;
+  }
+  const retryDeclined = raw.retry_declined;
+  const retryReason = raw.retry_reason;
+  if (retryDeclined !== undefined && !isRetryDeclined(retryDeclined)) return null;
+  if (retryReason !== undefined && !isRetryReason(retryReason)) return null;
   if (
     raw.usage_source !== undefined &&
     !['turnEnded', 'cli_reported', 'estimated', 'unknown'].includes(String(raw.usage_source))
@@ -114,6 +170,14 @@ export function parseTraceRecord(
     stage: raw.stage,
     offset_ms: raw.offset_ms,
     ...(raw.retry_kind === undefined ? {} : { retry_kind: raw.retry_kind }),
+    ...(retryReason === undefined ? {} : { retry_reason: retryReason }),
+    ...(upstreamErrorCode === undefined ? {} : { upstream_error_code: upstreamErrorCode }),
+    ...(upstreamErrorType === undefined ? {} : { upstream_error_type: upstreamErrorType }),
+    ...(upstreamRetryable === undefined ? {} : { upstream_retryable: upstreamRetryable }),
+    ...(providerStatusCode === undefined ? {} : { provider_status_code: providerStatusCode }),
+    ...(runRequestId === undefined ? {} : { run_request_id: runRequestId }),
+    ...(retryProvider5xx === undefined ? {} : { retry_provider_5xx: retryProvider5xx }),
+    ...(retryDeclined === undefined ? {} : { retry_declined: retryDeclined }),
     ...(raw.usage_source === undefined ? {} : { usage_source: raw.usage_source as UsageSource }),
     ...(raw.final_backend_state === undefined
       ? {}

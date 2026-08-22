@@ -23,7 +23,11 @@ import {
   assertSafeTraceFields,
   attachRequestTrace,
   createRequestTrace,
+  traceCredentialSlot,
+  traceRetry,
+  traceRetryProvider5xxPolicy,
   traceRunOpen,
+  traceStage,
   traceUpstreamError,
   type RequestTrace,
   type TraceRecord,
@@ -142,13 +146,13 @@ class RetryingTraceTransport implements CursorApiTransport {
 
   async openRun(
     _baseUrl: string,
-    _requestId: string,
+    requestId: string,
     accessToken?: string,
     trace?: RequestTrace,
   ): Promise<CursorRunStream> {
     expect(accessToken).toBe('cursor-api-key-secret');
     this.runCount += 1;
-    traceRunOpen(trace, 'cursor-api');
+    traceRunOpen(trace, 'cursor-api', requestId);
     if (this.runCount === 1) {
       return new TraceRunStream((stream) => {
         stream.emit('error', Object.assign(new Error('socket reset'), { code: 'ECONNRESET' }));
@@ -271,6 +275,16 @@ describe('bridge request tracing', () => {
         .filter((record) => record.stage === 'run_open')
         .map((record) => record.upstream_run_count),
     ).toEqual([1, 2]);
+    const runRequestIds = records
+      .filter((record) => record.stage === 'run_open')
+      .map((record) => record.run_request_id);
+    expect(runRequestIds).toHaveLength(2);
+    expect(new Set(runRequestIds).size).toBe(2);
+    expect(
+      runRequestIds.every(
+        (id) => typeof id === 'string' && id.length <= 96 && /^[0-9a-f-]{36}$/u.test(id),
+      ),
+    ).toBe(true);
     expect(records.find((record) => record.stage === 'retry')?.retry_kind).toBe('transport');
     expect(records.at(-1)?.terminal).toBe('success');
     expect(records.every((record) => record.offset_ms >= 0)).toBe(true);
@@ -326,6 +340,72 @@ describe('bridge request tracing', () => {
       /unsafe trace field: api_key/,
     );
     expect(() => assertSafeTraceFields({ retryKind: 'transport' })).not.toThrow();
+  });
+
+  it('rejects invalid retry decision values at the trace schema boundary', () => {
+    expect(() => assertSafeTraceFields({ retryDeclined: 'flag_off' })).not.toThrow();
+    expect(() => assertSafeTraceFields({ retryDeclined: 'whim' })).toThrow(
+      /invalid trace retry decline/,
+    );
+    expect(() => assertSafeTraceFields({ retryReason: 'provider_5xx' })).not.toThrow();
+    expect(() => assertSafeTraceFields({ retryReason: 'hunch' })).toThrow(
+      /invalid trace retry reason/,
+    );
+    expect(() => assertSafeTraceFields({ retryProvider5xx: false })).not.toThrow();
+    expect(() => assertSafeTraceFields({ retryProvider5xx: 'on' })).toThrow(
+      /trace retryProvider5xx must be a boolean/,
+    );
+  });
+
+  it('updates the credential slot digest for each routed credential', () => {
+    const records: TraceRecord[] = [];
+    const trace = testTrace(records);
+    traceCredentialSlot(trace, 'credential-alpha');
+    traceStage(trace, 'run_open', { backend: 'cursor-api' });
+    traceCredentialSlot(trace, 'credential-beta');
+    traceStage(trace, 'run_open', { backend: 'cursor-api' });
+    traceCredentialSlot(trace, 'credential-alpha');
+    traceStage(trace, 'retry', { retryKind: 'server' });
+
+    const slots = records.map((record) => record.credential_slot_id);
+    if (slots[0] === null || slots[0] === undefined) throw new Error('missing first slot');
+    if (slots[1] === null || slots[1] === undefined) throw new Error('missing second slot');
+    expect(slots[0]).toMatch(/^slot_[0-9a-f]{16}$/u);
+    expect(slots[1]).toMatch(/^slot_[0-9a-f]{16}$/u);
+    expect(slots[1]).not.toBe(slots[0]);
+    expect(slots[2]).toBe(slots[0]);
+    expect(JSON.stringify(records)).not.toMatch(/credential-alpha|credential-beta/);
+  });
+
+  it('self-describes records with the provider 5xx retry policy once read', () => {
+    const records: TraceRecord[] = [];
+    const trace = testTrace(records);
+    traceStage(trace, 'backend', { backend: 'cursor-api' });
+    traceRetryProvider5xxPolicy(trace, true);
+    traceStage(trace, 'run_open', { backend: 'cursor-api' });
+    traceRetry(trace, 'server', 'provider_5xx');
+    traceRetry(trace, 'tool_validation');
+
+    expect(records[0]).not.toHaveProperty('retry_provider_5xx');
+    expect(records[1]?.retry_provider_5xx).toBe(true);
+    expect(records[2]).toMatchObject({
+      stage: 'retry',
+      retry_kind: 'server',
+      retry_reason: 'provider_5xx',
+      retry_provider_5xx: true,
+    });
+    expect(records[3]).toMatchObject({ stage: 'retry', retry_kind: 'tool_validation' });
+    expect(records[3]).not.toHaveProperty('retry_reason');
+
+    const offRecords: TraceRecord[] = [];
+    const offTrace = testTrace(offRecords);
+    traceRetryProvider5xxPolicy(offTrace, false);
+    traceRetry(offTrace, 'transport', 'run_timeout');
+    expect(offRecords[0]).toMatchObject({
+      retry_kind: 'transport',
+      retry_reason: 'run_timeout',
+      retry_provider_5xx: false,
+    });
   });
 
   it('records only allowlisted upstream provider diagnostics', () => {

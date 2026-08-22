@@ -16,6 +16,7 @@ import type {
 } from '../../src/backend/cursor-api/transport.js';
 import type { ChatCompletionRequest, CompletionStreamEvent } from '../../src/backend/types.js';
 import type { BridgeConfig } from '../../src/config.js';
+import { traceRunOpen, type RequestTrace } from '../../src/trace.js';
 
 const config: BridgeConfig = {
   host: '127.0.0.1',
@@ -96,7 +97,13 @@ export class ScriptedTransport implements CursorApiTransport {
     return Buffer.alloc(0);
   }
 
-  async openRun(_baseUrl: string, _requestId: string, accessToken = ''): Promise<CursorRunStream> {
+  async openRun(
+    _baseUrl: string,
+    requestId: string,
+    accessToken = '',
+    trace?: RequestTrace,
+  ): Promise<CursorRunStream> {
+    traceRunOpen(trace, 'cursor-api', requestId);
     const stream = new ScriptedStream((active) => this.script(active, accessToken));
     const run: OpenedRun = { stream, accessToken };
     this.opened.push(run);

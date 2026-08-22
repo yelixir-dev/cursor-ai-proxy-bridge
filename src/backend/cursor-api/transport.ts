@@ -219,7 +219,7 @@ export class NodeCursorApiTransport implements CursorApiTransport {
     accessToken?: string,
     trace?: RequestTrace,
   ): Promise<CursorRunStream> {
-    traceRunOpen(trace, 'cursor-api');
+    traceRunOpen(trace, 'cursor-api', requestId);
     const token = accessToken ?? (await this.options.auth.getToken());
     const traceId = randomBytes(16).toString('hex');
     const spanId = randomBytes(8).toString('hex');

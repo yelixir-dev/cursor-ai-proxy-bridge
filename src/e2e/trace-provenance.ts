@@ -15,6 +15,7 @@ const TRACE_STAGES: ReadonlySet<string> = new Set<TraceStage>([
   'tool_decision',
   'tool_batch_complete',
   'retry',
+  'upstream_error',
   'terminal',
   'abort',
   'backend_flip',

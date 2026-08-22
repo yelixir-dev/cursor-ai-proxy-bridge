@@ -72,6 +72,16 @@ and never retries after content or tool-call output reaches the client. Provider
 provider status, Connect code, and upstream Run request ID are emitted as allowlisted diagnostics;
 raw provider detail text and arbitrary metadata are not logged or returned.
 
+Set `CURSOR_BRIDGE_TRACE=1` to evaluate these flags safely. Each request stage emits one JSON line
+to stderr with only bounded, redacted fields: `request_id`, a per-attempt `credential_slot_id`
+sha256 digest (never a credential id or token), the upstream `run_request_id` on every `run_open`,
+`retry_provider_5xx` flag state on records emitted after the policy is read, `retry_reason`
+(`provider_5xx` or `run_timeout`) on retries driven by the opt-ins, and `retry_declined`
+(`flag_off`, `post_visible`, or `retry_limit`) on `upstream_error` records when an eligible typed
+provider 5xx was not retried. Prompts, provider payloads, messages, and stacks are never recorded.
+Typed provider 5xx responses have not been observed in production captures to date; tracing makes
+such events measurable when they occur, it does not make them more likely.
+
 ### Hermes provider configuration (Composer)
 
 `composer-2.5` and `composer-2.5-fast` can have a long cold-start and thinking phase. When Hermes is the client, two independent ceilings must allow enough time:
