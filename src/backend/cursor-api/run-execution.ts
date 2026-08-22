@@ -7,6 +7,7 @@ import type { CursorApiDiscovery } from './discovery.js';
 import { sendMcpToolResult } from './exec-responses.js';
 import type { CursorHistory } from './history.js';
 import { enforceNativeToolChoice, heartbeatMessage, runRequestMessage } from './mapper.js';
+import type { RequestedModel } from './requested-models.js';
 import { CursorRunMessages } from './run-messages.js';
 import type { RunEmitter, RunOutcome } from './run-types.js';
 import { boundedInteger, type CursorApiRuntime } from './runtime.js';
@@ -27,6 +28,7 @@ export interface CursorRunExecutionOptions {
   readonly signal?: AbortSignal;
   readonly emit?: RunEmitter;
   readonly trace?: RequestTrace;
+  readonly resolveModel?: (model: string, effort?: string) => RequestedModel | undefined;
 }
 
 class CursorRunClosedError extends CursorBackendError {
@@ -292,7 +294,13 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
         finish(new CursorRunClosedError('Cursor Agent Run stream closed without a trailer'));
     });
     writeMessage(
-      runRequestMessage(request, requestId, options.discovery.requestedModels, options.history),
+      runRequestMessage(
+        request,
+        requestId,
+        options.discovery.requestedModels,
+        options.history,
+        options.resolveModel?.(request.model, request.reasoning_effort),
+      ),
       false,
     );
     if (signal?.aborted) onAbort();

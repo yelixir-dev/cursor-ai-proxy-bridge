@@ -4,7 +4,11 @@ import { basename, join } from 'node:path';
 import type { ChatCompletionRequest, Tool, ToolCall } from '../types.js';
 import { buildCursorHistory, type CursorHistory } from './history.js';
 import { jsonToProtoValue, loadProtoDescriptors, ProtoCodec } from './protobuf.js';
-import { fallbackRequestedModel, type RequestedModelMap } from './requested-models.js';
+import {
+  fallbackRequestedModel,
+  type RequestedModel,
+  type RequestedModelMap,
+} from './requested-models.js';
 
 export { mapRequestedModels, mapUsableModels } from './requested-models.js';
 export type { RequestedModelMap } from './requested-models.js';
@@ -75,10 +79,11 @@ export function runRequestMessage(
   requestId: string,
   requestedModels: RequestedModelMap = new Map(),
   history: CursorHistory = buildCursorHistory(request, new ProtoCodec(loadProtoDescriptors())),
+  resolvedModel?: RequestedModel,
 ): Record<string, unknown> {
   const conversationId = randomUUID();
   const requestedModel =
-    requestedModels.get(request.model) ?? fallbackRequestedModel(request.model);
+    resolvedModel ?? requestedModels.get(request.model) ?? fallbackRequestedModel(request.model);
   return {
     message: {
       case: 'runRequest',

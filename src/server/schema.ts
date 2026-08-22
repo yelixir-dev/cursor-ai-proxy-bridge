@@ -114,6 +114,7 @@ export const chatCompletionSchema = z.object({
   tools: z.array(toolSchema).max(128).optional(),
   tool_choice: toolChoiceSchema.optional(),
   parallel_tool_calls: z.boolean().optional(),
+  reasoning_effort: z.string().min(1).max(20).optional(),
 });
 
 export const adminConfigPatchSchema = z

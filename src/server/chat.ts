@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { ToolHistoryValidationError, assertValidToolHistory } from '../backend/tool-history.js';
+import { unifiedFromSlug } from '../backend/cursor-api/unified-models.js';
 import {
   attachRequestTrace,
   createRequestTrace,
@@ -37,10 +38,13 @@ export function registerChatRoutes(context: ServerContext): void {
       return reply.code(400).send(openAiError(z.prettifyError(parsed.error)));
     }
     const completionRequest = parsed.data;
-    let modelDisabled = !modelPolicy.enabled(completionRequest.model);
-    if (!modelDisabled && completionRequest.model !== config.defaultModel) {
+    // Legacy Cursor slugs (claude-opus-5-thinking-max-fast) and unified ids
+    // (opus-5-thinking-fast) share one policy/list check via the unified id.
+    const unifiedModel = unifiedFromSlug(completionRequest.model) ?? completionRequest.model;
+    let modelDisabled = !modelPolicy.enabled(unifiedModel);
+    if (!modelDisabled && unifiedModel !== config.defaultModel) {
       const liveModels = await backend.listModels();
-      modelDisabled = !liveModels.some((model) => model.id === completionRequest.model);
+      modelDisabled = !liveModels.some((model) => model.id === unifiedModel);
     }
     if (modelDisabled) {
       return reply.code(400).send(openAiError(`model '${completionRequest.model}' is disabled`));

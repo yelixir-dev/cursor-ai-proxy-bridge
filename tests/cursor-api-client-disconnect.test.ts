@@ -147,6 +147,7 @@ describe('client disconnect mid-Run', () => {
     const discovery = {
       requestedModels: new Map<string, never>(),
       agentUrl: async () => upstream.origin,
+      resolveRequestedModel: () => undefined,
     } as unknown as CursorApiDiscovery;
     const completion = new CursorApiCompletion(runtime, discovery);
     const backend: CursorBackend = {

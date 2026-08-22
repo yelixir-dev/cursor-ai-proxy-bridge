@@ -48,6 +48,7 @@ export interface ChatCompletionRequest {
   tools?: Tool[];
   tool_choice?: ToolChoice;
   parallel_tool_calls?: boolean;
+  reasoning_effort?: string;
 }
 
 export interface BridgeModel {

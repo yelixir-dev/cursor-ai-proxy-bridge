@@ -3,6 +3,7 @@ import { CursorBackendError } from '../cursor-cli.js';
 import { awaitWithAbort } from './auth.js';
 import { withCursorCredential } from './credential-route.js';
 import { mapRequestedModels, mapUsableModels, type RequestedModel } from './requested-models.js';
+import { resolveVariantSlug, unifiedModelList } from './unified-models.js';
 import type { CursorApiRuntime } from './runtime.js';
 import { CURSOR_API_STARTUP_SEQUENCE } from './startup-sequence.js';
 
@@ -69,6 +70,14 @@ export class CursorApiDiscovery {
         detail: error instanceof Error ? error.message : 'direct Cursor API unavailable',
       };
     }
+  }
+
+  /** Resolves unified ids (plus reasoning_effort) or legacy slugs to a RequestedModel. */
+  resolveRequestedModel(model: string, effort?: string): RequestedModel | undefined {
+    const direct = this.requestedModels.get(model);
+    if (direct) return direct;
+    const slug = resolveVariantSlug(model, effort, this.requestedModels.keys());
+    return slug ? this.requestedModels.get(slug) : undefined;
   }
 
   async listModels(): Promise<BridgeModel[]> {
@@ -163,7 +172,7 @@ export class CursorApiDiscovery {
     availableResponse?: Buffer,
   ): BridgeModel[] {
     const usable = this.runtime.codec.decode('agent.v1.GetUsableModelsResponse', modelsResponse);
-    const models = mapUsableModels(usable);
+    const models = unifiedModelList(mapUsableModels(usable));
     if (availableResponse) {
       const available = this.runtime.codec.decode(
         'aiserver.v1.AvailableModelsResponse',

@@ -8,6 +8,12 @@ const DEFAULT_ENABLED_MODEL_PATTERNS = [
   /^kimi-k3-/,
   /^glm-5\.2-/,
   /^(default|auto)$/,
+  // Unified surface ids (legacy slugs are translated before policy checks).
+  /^(fable|opus|sonnet)-5(-thinking)?(-fast)?$/,
+  /^gpt-5\.6-(sol|terra|luna)(-fast)?$/,
+  /^grok-4\.6(-fast)?$/,
+  /^kimi-k3$/,
+  /^glm-5\.2$/,
 ] as const;
 
 export type ModelPolicySource = 'default' | 'override';

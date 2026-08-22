@@ -180,6 +180,7 @@ export class CursorApiCompletion {
               signal: lifecycle.signal,
               emit: trackedEmit,
               trace: lifecycle.trace,
+              resolveModel: (model, effort) => this.discovery.resolveRequestedModel(model, effort),
             }),
           signal: lifecycle.signal,
           trace: lifecycle.trace,
