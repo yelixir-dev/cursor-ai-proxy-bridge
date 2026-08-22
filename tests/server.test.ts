@@ -123,6 +123,18 @@ describe('cursor-ai-bridge server', () => {
     expect(ok.json().data.map((m: { id: string }) => m.id)).toContain('composer-2.5');
   });
 
+  it('shows only daily-driver models in the dashboard state', async () => {
+    const server = await app();
+    const admin = await server.inject({
+      method: 'GET',
+      url: '/admin/config',
+      headers: { authorization: 'Bearer ***' },
+    });
+    expect(admin.statusCode).toBe(200);
+    const ids = admin.json().state.models.map((model: { id: string }) => model.id);
+    expect(ids).toEqual(['composer-2.5']);
+  });
+
   it('defaults client auth to off when the API key is unset', async () => {
     const server = await app({ apiKey: undefined, clientAuth: undefined });
     const models = await server.inject({ method: 'GET', url: '/v1/models' });
