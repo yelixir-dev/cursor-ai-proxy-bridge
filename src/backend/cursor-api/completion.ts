@@ -6,6 +6,7 @@ import { withCursorCredential } from './credential-route.js';
 import type { CursorApiDiscovery } from './discovery.js';
 import { buildCursorHistory } from './history.js';
 import { cursorRetryFailureKind } from './retry.js';
+import { CursorRunTimeoutError } from './run-errors.js';
 import { executeCursorRun } from './run-execution.js';
 import type { RunEmitter, RunLifecycle, RunOutcome } from './run-types.js';
 import { boundedInteger, type CursorApiRuntime } from './runtime.js';
@@ -167,6 +168,8 @@ export class CursorApiCompletion {
       this.runtime.environment.CURSOR_BRIDGE_CURSOR_RETRY_BASE_MS,
       DEFAULT_RETRY_BASE_MS,
     );
+    const retryRunTimeout =
+      this.runtime.environment.CURSOR_BRIDGE_RETRY_RUN_TIMEOUT?.trim() === '1';
     for (;;) {
       try {
         return await withCursorCredential(this.runtime, {
@@ -187,7 +190,10 @@ export class CursorApiCompletion {
           canFailover: () => !gate.delivered,
         });
       } catch (error) {
-        const kind = cursorRetryFailureKind(error);
+        const kind =
+          retryRunTimeout && error instanceof CursorRunTimeoutError
+            ? 'transport'
+            : cursorRetryFailureKind(error);
         if (!kind || gate.delivered || lifecycle.signal?.aborted) throw error;
         const retries = kind === 'server' ? serverRetries : transportRetries;
         const limit = kind === 'server' ? MAX_SERVER_RETRIES : MAX_TRANSPORT_RETRIES;

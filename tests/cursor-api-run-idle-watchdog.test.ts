@@ -54,6 +54,85 @@ describe('cursor-api interaction idle watchdog', () => {
           transport: {},
         },
       });
+      expect(transport.opened).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries one timed-out Run when opted in and no semantic output was delivered', async () => {
+    vi.useFakeTimers();
+    try {
+      // Given: the first Run stalls before visible output and the replacement
+      // Run completes normally.
+      const transport = new ScriptedTransport((stream) => {
+        stream.emit('response', { ':status': 200 });
+        if (transport.opened.length !== 2) return;
+        stream.emit(
+          'data',
+          Buffer.concat([
+            update('textDelta', { text: 'recovered' }),
+            update('turnEnded', { inputTokens: 1, outputTokens: 1 }),
+            trailer(),
+          ]),
+        );
+      });
+      const completion = collect(
+        backend(transport, undefined, {
+          CURSOR_BRIDGE_CURSOR_TIMEOUT_MS: '50',
+          CURSOR_BRIDGE_RUN_IDLE_MS: '1000',
+          CURSOR_BRIDGE_RETRY_RUN_TIMEOUT: '1',
+        }),
+        { model: 'composer-2.5', messages: [{ role: 'user', content: 'work' }] },
+      ).then(
+        (events) => ({ kind: 'success' as const, events }),
+        (error: unknown) => ({ kind: 'error' as const, error }),
+      );
+      await transport.firstRun;
+
+      // When: the first Run reaches its overall timeout.
+      await vi.advanceTimersByTimeAsync(50);
+      const result = await completion;
+
+      // Then: one replacement Run succeeds on the same requested model.
+      expect(result.kind).toBe('success');
+      if (result.kind === 'error') throw result.error;
+      expect(transport.opened).toHaveLength(2);
+      expect(result.events).toContainEqual({ type: 'content', text: 'recovered' });
+      expect(result.events.at(-1)?.type).toBe('done');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not retry a timed-out Run after semantic output was delivered', async () => {
+    vi.useFakeTimers();
+    try {
+      // Given: the Run emits client-visible content and then stalls.
+      const transport = new ScriptedTransport((stream) => {
+        stream.emit('response', { ':status': 200 });
+        stream.emit('data', update('textDelta', { text: 'partial' }));
+      });
+      const completion = collect(
+        backend(transport, undefined, {
+          CURSOR_BRIDGE_CURSOR_TIMEOUT_MS: '50',
+          CURSOR_BRIDGE_RUN_IDLE_MS: '1000',
+          CURSOR_BRIDGE_RETRY_RUN_TIMEOUT: '1',
+        }),
+        { model: 'composer-2.5', messages: [{ role: 'user', content: 'work' }] },
+      ).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await transport.firstRun;
+
+      // When: the Run reaches the timeout after the content delta.
+      await vi.advanceTimersByTimeAsync(50);
+      const error = await completion;
+
+      // Then: replay is refused because it could duplicate visible output.
+      expect(error).toMatchObject({ code: 'ERR_CURSOR_RUN_TIMEOUT' });
+      expect(transport.opened).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }

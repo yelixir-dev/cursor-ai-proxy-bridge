@@ -51,14 +51,17 @@ npm start
 
 전체 Run 상한과 무출력 watchdog은 서로 독립적인 설정입니다.
 
-| Variable                          | 기본값   | 용도                                                                                 |
-| --------------------------------- | -------- | ------------------------------------------------------------------------------------ |
-| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS` | `300000` | Reasoning과 multi-tool round를 포함한 단일 upstream Cursor Run의 절대 상한입니다.    |
-| `CURSOR_BRIDGE_RUN_IDLE_MS`       | `30000`  | 설정된 시간 동안 model interaction frame이 하나도 없으면 해당 Run을 실패 처리합니다. |
+| Variable                          | 기본값   | 용도                                                                                            |
+| --------------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS` | `300000` | Reasoning과 multi-tool round를 포함한 단일 upstream Cursor Run의 절대 상한입니다.               |
+| `CURSOR_BRIDGE_RUN_IDLE_MS`       | `30000`  | 설정된 시간 동안 model interaction frame이 하나도 없으면 해당 Run을 실패 처리합니다.            |
+| `CURSOR_BRIDGE_RETRY_RUN_TIMEOUT` | `0`      | Client에 semantic output이 전달되기 전의 전체 Run timeout을 한 번 retry하려면 `1`로 설정합니다. |
 
 `composer-2.5` 같은 reasoning-heavy 모델은 cold start와 multi-tool 작업 중 기존 120초 상한을 넘어서 stream이 잘리고 일부 tool call이 유실될 수 있습니다. 전체 상한은 idle watchdog보다 길게 유지하세요. 기본 300초는 활성 작업이 끝날 시간을 제공하고, 30초 watchdog은 실제로 멈춘 Run을 계속 빠르게 종료합니다. 두 값은 `.env`에서 각각 독립적으로 바꿀 수 있습니다.
 
 모든 HTTP response에는 bridge log entry와 일치하는 `x-request-id`가 포함됩니다. Cursor Run timeout의 JSON 또는 SSE error payload에는 upstream `request_id`도 포함됩니다. Timeout log는 마지막 interaction 종류와 경과 시간, output byte, terminal-frame 상태, stream reset code, HTTP/2 GOAWAY metadata를 기록하므로 열린 채 terminal이 오지 않은 Run과 닫힌 transport를 구분할 수 있습니다.
+
+Timeout retry는 client-visible content나 tool-call delta가 전달되기 전에만 안전하므로 opt-in입니다. 활성화하면 동일한 요청 모델을 한 번 retry하며, 자동으로 `composer-2.5-fast`로 바꾸지 않습니다. Semantic output이 하나라도 전달된 뒤의 timeout은 text나 tool execution 중복을 막기 위해 그대로 error로 종료합니다. Retry는 원래 Run이 상한에 도달한 뒤 시작하므로, 300초 timeout 후 12초 만에 재시도가 성공하면 전체 완료 시간은 12초가 아니라 약 312초입니다.
 
 ### Hermes provider 설정 (Composer)
 
