@@ -77,6 +77,7 @@ export class CursorToolStream {
   private readonly slots: ToolSlot[] = [];
   private readonly aliases = new Map<string, ToolSlot>();
   private readonly ignoredEnvelopeIds = new Set<string>();
+  private readonly announcedEnvelopeIds = new Set<string>();
 
   private emit: ToolEmitter | undefined;
 
@@ -99,6 +100,7 @@ export class CursorToolStream {
       if (envelopeId) this.ignoredEnvelopeIds.add(envelopeId);
       return;
     }
+    this.announcedEnvelopeIds.add(identity.envelopeId);
     const slot = this.slot(identity);
     if (slot) this.emitStart(slot);
   }
@@ -155,6 +157,13 @@ export class CursorToolStream {
 
   completedCalls(): ToolCall[] {
     return this.slots.flatMap((slot) => (slot.call ? [slot.call] : []));
+  }
+
+  frameCounts(): { announced: number; completed: number } {
+    return {
+      announced: this.announcedEnvelopeIds.size,
+      completed: this.completedCalls().length,
+    };
   }
 
   batchComplete(parallel: boolean): boolean {

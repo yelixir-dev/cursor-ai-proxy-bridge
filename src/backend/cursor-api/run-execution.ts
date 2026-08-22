@@ -8,7 +8,7 @@ import { sendMcpToolResult } from './exec-responses.js';
 import type { CursorHistory } from './history.js';
 import { enforceNativeToolChoice, heartbeatMessage, runRequestMessage } from './mapper.js';
 import type { RequestedModel } from './requested-models.js';
-import { CursorRunTimeoutError } from './run-errors.js';
+import { CursorRunTimeoutError, type CursorRunPhase } from './run-errors.js';
 import { CursorRunMessages } from './run-messages.js';
 import type { RunEmitter, RunOutcome } from './run-types.js';
 import { boundedInteger, type CursorApiRuntime } from './runtime.js';
@@ -17,6 +17,7 @@ import { CursorApiHttpError } from './transport.js';
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 8_388_608;
+export const DEFAULT_STICKY_SETTLE_MS = 1_000;
 
 type Dict = Record<string, unknown>;
 
@@ -75,7 +76,10 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     runtime.environment.CURSOR_BRIDGE_CURSOR_TIMEOUT_MS,
     DEFAULT_TIMEOUT_MS,
   );
-  const settleMs = boundedInteger(runtime.environment.CURSOR_BRIDGE_STICKY_SETTLE_MS, 250);
+  const settleMs = boundedInteger(
+    runtime.environment.CURSOR_BRIDGE_STICKY_SETTLE_MS,
+    DEFAULT_STICKY_SETTLE_MS,
+  );
   const idleMs = boundedInteger(runtime.environment.CURSOR_BRIDGE_RUN_IDLE_MS, 30_000);
 
   return new Promise<RunOutcome>((resolve, reject) => {
@@ -83,6 +87,8 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     let parked = false;
     let outputBytes = 0;
     let surfacedCount = 0;
+    let phase: CursorRunPhase = 'awaiting_upstream';
+    let toolResultsSent = 0;
     let currentResolve: (outcome: RunOutcome) => void = resolve;
     let currentReject: (error: unknown) => void = reject;
     const heldExecs: Array<{ exec: Dict }> = [];
@@ -103,9 +109,16 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     };
     const completedCalls = () =>
       enforceNativeToolChoice(messages.toolStream.completedCalls(), request);
+    const traceToolBatch = () => {
+      const counts = messages.toolStream.frameCounts();
+      traceStage(trace, 'tool_batch_complete', {
+        toolCallsAnnounced: counts.announced,
+        toolCallsCompleted: counts.completed,
+      });
+    };
     const outcome = (): RunOutcome => {
       if (messages.toolStream.batchComplete(request.parallel_tool_calls !== false)) {
-        traceStage(trace, 'tool_batch_complete');
+        traceToolBatch();
       }
       // Calls surfaced by an earlier hold (sequential tool rounds) must not be
       // re-sent to the client on resume; only the newly completed ones.
@@ -138,12 +151,14 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
         return;
       }
       parked = true;
+      phase = 'awaiting_client_tool_results';
       clearHoldTimer();
       const held: HeldRun = {
         key: heldExecToKey(heldExecs),
         resume(nextResolve, nextReject, results, nextEmit) {
           if (settled) return;
           parked = false;
+          phase = 'resumed_after_tool_results';
           currentResolve = nextResolve;
           currentReject = nextReject;
           messages.setEmit(nextEmit);
@@ -154,7 +169,10 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
               const value = message?.value as Dict | undefined;
               return String(value?.toolCallId ?? '') === result.id;
             });
-            if (target) sendMcpToolResult(writeMessage, target.exec, result.content);
+            if (target) {
+              sendMcpToolResult(writeMessage, target.exec, result.content);
+              toolResultsSent += 1;
+            }
           }
           heldExecs.length = 0;
           const replay = parkedPayloads.splice(0);
@@ -174,6 +192,9 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       const all = completedCalls();
       const fresh = all.slice(surfacedCount);
       surfacedCount = all.length;
+      if (messages.toolStream.batchComplete(request.parallel_tool_calls !== false)) {
+        traceToolBatch();
+      }
       currentResolve({
         text: messages.text,
         toolCalls: fresh,
@@ -211,7 +232,10 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       blobs,
       writeMessage,
       finish,
-      onHeld: scheduleHold,
+      onHeld: () => {
+        phase = 'settling_tool_calls';
+        scheduleHold();
+      },
       heldExecs,
       onInteraction: (updateCase) => {
         lastInteractionAt = Date.now();
@@ -227,6 +251,15 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
           : `Cursor API run timed out after ${timeoutMs}ms`,
         requestId,
         {
+          phase,
+          toolResultsSent,
+          bufferedFrames: parkedPayloads.length,
+          streamState: {
+            destroyed: stream.destroyed,
+            writableEnded: stream.writableEnded,
+          },
+          toolCallsAnnounced: messages.toolStream.frameCounts().announced,
+          toolCallsCompleted: messages.toolStream.frameCounts().completed,
           lastInteractionCase,
           lastInteractionAgoMs: Math.max(0, Date.now() - lastInteractionAt),
           outputBytes,

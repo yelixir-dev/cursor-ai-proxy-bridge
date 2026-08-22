@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ChatCompletionRequest } from '../src/backend/types.js';
 import {
   backend,
+  callBatch,
   collect,
   parallelToolRequest,
   ScriptedTransport,
   trailer,
   update,
+  wireToolName,
 } from './support/cursor-api-scripted.js';
 
 describe('cursor-api interaction idle watchdog', () => {
@@ -132,6 +134,70 @@ describe('cursor-api interaction idle watchdog', () => {
 
       // Then: replay is refused because it could duplicate visible output.
       expect(error).toMatchObject({ code: 'ERR_CURSOR_RUN_TIMEOUT' });
+      expect(transport.opened).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('identifies a timeout after client tool results resumed the Run', async () => {
+    vi.useFakeTimers();
+    try {
+      // Given: the first request parks a native Run on an external tool call.
+      const request: ChatCompletionRequest = {
+        ...parallelToolRequest(),
+        tool_choice: 'auto',
+      };
+      const externalName = wireToolName(request);
+      const transport = new ScriptedTransport((stream) => {
+        stream.emit('response', { ':status': 200 });
+        stream.emit('data', callBatch(externalName, 'c1', 'seed'));
+      });
+      const cursor = backend(transport, undefined, {
+        CURSOR_BRIDGE_CURSOR_TIMEOUT_MS: '50',
+        CURSOR_BRIDGE_RUN_IDLE_MS: '1000',
+      });
+      const first = collect(cursor, request);
+      await transport.firstRun;
+      await vi.advanceTimersByTimeAsync(5);
+      const firstEvents = await first;
+      const completed = firstEvents.find((event) => event.type === 'tool_call_complete');
+      if (completed?.type !== 'tool_call_complete') throw new Error('missing external tool call');
+
+      // When: the client returns the tool result on the sticky Run, but
+      // upstream emits no final-answer interaction and no trailer.
+      const continuation = collect(cursor, {
+        ...request,
+        messages: [
+          ...request.messages,
+          { role: 'assistant', content: '', tool_calls: [completed.call] },
+          { role: 'tool', content: 'seed output', tool_call_id: completed.call.id },
+        ],
+      }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(transport.opened[0]?.stream.writes).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(45);
+      const error = await continuation;
+
+      // Then: diagnostics distinguish this continuation-delivery gap from an
+      // initial Run stall or a Run still waiting on the client.
+      expect(error).toMatchObject({
+        code: 'ERR_CURSOR_RUN_TIMEOUT',
+        diagnostics: {
+          phase: 'resumed_after_tool_results',
+          toolResultsSent: 1,
+          bufferedFrames: 0,
+          streamState: {
+            destroyed: false,
+            writableEnded: false,
+          },
+          toolCallsAnnounced: 1,
+          toolCallsCompleted: 1,
+        },
+      });
       expect(transport.opened).toHaveLength(1);
     } finally {
       vi.useRealTimers();

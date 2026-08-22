@@ -8,6 +8,7 @@ import {
 import { parseToolCallsFromText } from '../tool-call-parse.js';
 import type { ChatCompletionRequest, CompletionStreamEvent } from '../types.js';
 import { enforceNativeToolChoice } from './mapper.js';
+import { CursorBuiltinToolCallError } from './run-messages.js';
 import type { CursorRun, RunEmitter, RunLifecycle, RunOutcome } from './run-types.js';
 import { mapCursorApiToolRequest } from './tool-wire-names.js';
 import { createSemanticOutputGate } from './visible-lifecycle.js';
@@ -20,6 +21,34 @@ export interface ValidatedRunOptions {
 
 function retryFeedback(failure: ToolArgumentValidationFailure): string {
   return `TOOL ARGUMENT VALIDATION FEEDBACK: Your previous call to ${JSON.stringify(failure.toolName)} was invalid: ${failure.message}. Return a corrected tool call matching the declared schema.`;
+}
+
+function builtinRecoveryRequest(
+  request: ChatCompletionRequest,
+  error: unknown,
+): ChatCompletionRequest | undefined {
+  const tools = request.tools ?? [];
+  if (!(error instanceof CursorBuiltinToolCallError) || request.tool_choice !== 'required') {
+    return undefined;
+  }
+  const tool = tools.length === 1 ? tools[0] : undefined;
+  if (tools.length === 0) return undefined;
+  const names = tools.map((candidate) => candidate.function.name);
+  return {
+    ...request,
+    messages: [
+      ...request.messages,
+      {
+        role: 'user',
+        content: tool
+          ? `BUILTIN TOOL RECOVERY: Call exactly the declared external tool ${JSON.stringify(tool.function.name)}. Do not use a Cursor builtin as a substitute.`
+          : `BUILTIN TOOL RECOVERY: Use only these declared external tools: ${JSON.stringify(names)}. Satisfy the original tool request without using a Cursor builtin as a substitute.`,
+      },
+    ],
+    tool_choice: tool
+      ? { type: 'function', function: { name: tool.function.name } }
+      : request.tool_choice,
+  };
 }
 
 export function choiceRequiresTool(request: ChatCompletionRequest): boolean {
@@ -77,7 +106,23 @@ export async function runValidatedCursorCompletion(
     return recovered.length ? { ...candidate, text: '', toolCalls: recovered } : candidate;
   };
 
-  let outcome = await runMapped(request);
+  let outcome: RunOutcome;
+  try {
+    outcome = await runMapped(request);
+  } catch (error) {
+    const recovery = builtinRecoveryRequest(request, error);
+    if (!recovery || gate.delivered) throw error;
+    traceRetry(lifecycle.trace, 'tool_validation');
+    try {
+      outcome = await runMapped(recovery);
+    } catch (retryError) {
+      if (!(retryError instanceof CursorBuiltinToolCallError)) throw retryError;
+      const toolNames = recovery.tools?.map((tool) => tool.function.name) ?? [];
+      throw new CursorBuiltinToolCallError(
+        `Cursor repeatedly selected a builtin instead of required external tools ${JSON.stringify(toolNames)}; retry with tool_choice="auto" if external tools are optional`,
+      );
+    }
+  }
   if (outcome.toolCalls.length) {
     const failure = validateToolCallArguments(outcome.toolCalls, request.tools);
     if (failure) {

@@ -59,7 +59,7 @@ npm start
 
 `composer-2.5` 같은 reasoning-heavy 모델은 cold start와 multi-tool 작업 중 기존 120초 상한을 넘어서 stream이 잘리고 일부 tool call이 유실될 수 있습니다. 전체 상한은 idle watchdog보다 길게 유지하세요. 기본 300초는 활성 작업이 끝날 시간을 제공하고, 30초 watchdog은 실제로 멈춘 Run을 계속 빠르게 종료합니다. 두 값은 `.env`에서 각각 독립적으로 바꿀 수 있습니다.
 
-모든 HTTP response에는 bridge log entry와 일치하는 `x-request-id`가 포함됩니다. Cursor Run timeout의 JSON 또는 SSE error payload에는 upstream `request_id`도 포함됩니다. Timeout log는 마지막 interaction 종류와 경과 시간, output byte, terminal-frame 상태, stream reset code, HTTP/2 GOAWAY metadata를 기록하므로 열린 채 terminal이 오지 않은 Run과 닫힌 transport를 구분할 수 있습니다.
+모든 HTTP response에는 bridge log entry와 일치하는 `x-request-id`가 포함됩니다. Cursor Run timeout의 JSON 또는 SSE error payload에는 upstream `request_id`도 포함됩니다. Timeout log는 Run phase, 전송한 tool result 수, 발표·완료된 external tool call 수, buffered frame, live stream 상태, 마지막 interaction 종류와 경과 시간, output byte, terminal-frame 상태, stream reset code, HTTP/2 GOAWAY metadata를 기록합니다. 성공한 tool-batch trace에도 tool 이름이나 인자 없이 같은 sanitized call count가 포함됩니다. 특히 `phase=resumed_after_tool_results`는 bridge가 client의 tool result를 upstream에 돌려준 뒤 continuation이 멈춘 경우를 식별합니다.
 
 Timeout retry는 client-visible content나 tool-call delta가 전달되기 전에만 안전하므로 opt-in입니다. 활성화하면 동일한 요청 모델을 한 번 retry하며, 자동으로 `composer-2.5-fast`로 바꾸지 않습니다. Semantic output이 하나라도 전달된 뒤의 timeout은 text나 tool execution 중복을 막기 위해 그대로 error로 종료합니다. Retry는 원래 Run이 상한에 도달한 뒤 시작하므로, 300초 timeout 후 12초 만에 재시도가 성공하면 전체 완료 시간은 12초가 아니라 약 312초입니다.
 
@@ -242,6 +242,8 @@ Bridge는 completion을 반환하기 전에 선언된 tool schema와 일치하�
 | `forced`     | `tool_choice: { type: "function", function: { name: "..." } }` | 선언된 function 하나를 선택합니다.                        |
 | `required`   | `tool_choice: "required"`                                      | 선언된 tool call을 하나 이상 요구합니다.                  |
 | `none`       | `tool_choice: "none"`                                          | Tool call을 억제하고 일반 text를 반환합니다.              |
+
+선언된 tool이 하나뿐이면 `tool_choice: "required"`를 의미상 같은 named-function choice로 내부 강화합니다. 모든 required 요청에서 client에 output이 전달되기 전에 Composer가 Cursor builtin을 선택하면 허용된 external tool 목록을 명시해 한 번 retry합니다. 두 번째에도 builtin을 선택하면 tool이 optional일 때 `tool_choice: "auto"`를 사용하라는 actionable error를 반환하며, builtin 실행을 선언된 function으로 조용히 대체하지 않습니다. Parallel batch는 upstream Run을 park하기 전에 늦게 발표되는 sibling을 1,000ms 동안 기다리며, `CURSOR_BRIDGE_STICKY_SETTLE_MS`로 이 window를 바꿀 수 있습니다.
 
 Bridge는 tool-history follow-up에서 OpenAI 표준인 `assistant.content: null`을 받고, replay가 가능하도록 `tool_calls`와 함께 `content: ""`를 반환합니다. `content`를 문자열로만 검증하는 LiteLLM 같은 앞단 proxy는 이 replay를 `messages[N].content`에서 400으로 거절하고 이 process까지 요청을 보내지 않습니다. 그 ingress에서 `null`을 `""`로 바꾸고 `tool_calls[].id`는 그대로 두세요.
 

@@ -47,17 +47,24 @@ export function mapCursorApiToolRequest(
         }
       : message,
   );
-  const toolChoice =
-    typeof request.tool_choice === 'object'
+  const requestedToolChoice =
+    request.tool_choice === 'required' && request.tools.length === 1
       ? {
-          ...request.tool_choice,
-          function: {
-            ...request.tool_choice.function,
-            name:
-              toWire.get(request.tool_choice.function.name) ?? request.tool_choice.function.name,
-          },
+          type: 'function' as const,
+          function: { name: request.tools[0]?.function.name ?? '' },
         }
       : request.tool_choice;
+  const toolChoice =
+    typeof requestedToolChoice === 'object'
+      ? {
+          ...requestedToolChoice,
+          function: {
+            ...requestedToolChoice.function,
+            name:
+              toWire.get(requestedToolChoice.function.name) ?? requestedToolChoice.function.name,
+          },
+        }
+      : requestedToolChoice;
   const aliasInstruction =
     request.tool_choice === 'none'
       ? []

@@ -5,11 +5,13 @@ import { loadProtoDescriptors, ProtoCodec } from '../src/backend/cursor-api/prot
 import type { ChatCompletionRequest } from '../src/backend/types.js';
 import {
   backend,
+  callBatch,
   collect,
   parallelToolRequest,
   ScriptedTransport,
   trailer,
   update,
+  wireToolName,
 } from './support/cursor-api-scripted.js';
 
 const codec = new ProtoCodec(loadProtoDescriptors());
@@ -87,30 +89,103 @@ describe('cursor-api undeclared tool-call guard', () => {
     await expect(collect(backend(transport), request)).rejects.toThrow(/get_seed/);
   });
 
-  it('fails fast when a required tool choice meets a builtin tool attempt', async () => {
-    // Given: add_numbers is declared and required, but the model cannot map
-    // the prompt to it and attempts a builtin tool instead — live, nothing
-    // further arrives until the run timeout.
+  it('retries a builtin misselection as the single required external tool', async () => {
+    // Given: one external tool is declared and required, but the first Run
+    // selects Cursor's builtin shell tool instead.
     const request: ChatCompletionRequest = {
       ...parallelToolRequest(),
       tool_choice: 'required',
       messages: [{ role: 'user', content: 'Call get_seed.' }],
     };
+    const externalName = wireToolName(request);
     const transport = new ScriptedTransport((stream) => {
       stream.emit('response', { ':status': 200 });
       stream.emit(
         'data',
-        update('toolCallStarted', {
-          callId: 'c1',
-          toolCall: {
-            tool: { case: 'shellToolCall', value: { args: { command: 'echo seed' } } },
-            toolCallId: 'c1',
-          },
-        }),
+        transport.opened.length === 1 ? builtinShellCall() : callBatch(externalName, 'c2', 'seed'),
       );
     });
 
-    await expect(collect(backend(transport), request)).rejects.toThrow(/required/);
+    // When: the bridge handles the pre-visible builtin misselection.
+    const result = await backend(transport).complete(request);
+
+    // Then: it makes one exact-tool recovery Run and returns the declared
+    // OpenAI tool name rather than a 502.
+    expect(transport.opened).toHaveLength(2);
+    expect(result.tool_calls).toEqual([
+      {
+        id: 'c2',
+        type: 'function',
+        function: { name: 'echo_value', arguments: '{"value":"seed"}' },
+      },
+    ]);
+  });
+
+  it('bounds repeated builtin misselection with an actionable error', async () => {
+    // Given: Composer selects a builtin on both the original and exact-tool
+    // recovery Runs.
+    const request: ChatCompletionRequest = {
+      ...parallelToolRequest(),
+      tool_choice: 'required',
+    };
+    const transport = new ScriptedTransport((stream) => {
+      stream.emit('response', { ':status': 200 });
+      stream.emit('data', builtinShellCall());
+    });
+
+    // When/Then: recovery is bounded and tells the client how to relax the
+    // request if the external tool is optional.
+    await expect(collect(backend(transport), request)).rejects.toThrow(
+      /retry with tool_choice="auto"/,
+    );
+    expect(transport.opened).toHaveLength(2);
+  });
+
+  it('retries a builtin misselection when multiple external tools are required', async () => {
+    // Given: multiple external tools are declared, but the first required
+    // Run selects a Cursor builtin instead of any external tool.
+    const base = parallelToolRequest();
+    const request: ChatCompletionRequest = {
+      ...base,
+      tools: [
+        ...(base.tools ?? []),
+        {
+          type: 'function',
+          function: {
+            name: 'lookup_code',
+            parameters: {
+              type: 'object',
+              properties: { key: { type: 'string' } },
+              required: ['key'],
+            },
+          },
+        },
+      ],
+      tool_choice: 'required',
+    };
+    const externalName = wireToolName(request);
+    const transport = new ScriptedTransport((stream) => {
+      stream.emit('response', { ':status': 200 });
+      stream.emit(
+        'data',
+        transport.opened.length === 1
+          ? builtinShellCall()
+          : callBatch(externalName, 'c2', 'recovered'),
+      );
+    });
+
+    // When: the bridge handles the pre-visible builtin misselection.
+    const result = await backend(transport).complete(request);
+
+    // Then: one bounded retry returns a declared external call instead of 502.
+    expect(transport.opened).toHaveLength(2);
+    expect(result.tool_calls).toEqual([
+      {
+        id: 'c2',
+        type: 'function',
+        function: { name: 'echo_value', arguments: '{"value":"recovered"}' },
+      },
+    ]);
   });
 
   it('advertises no tools upstream when tool_choice is none', async () => {
@@ -162,3 +237,13 @@ describe('cursor-api undeclared tool-call guard', () => {
     expect(stateSuccess.servers ?? []).toEqual([]);
   });
 });
+
+function builtinShellCall(): Buffer {
+  return update('toolCallStarted', {
+    callId: 'c1',
+    toolCall: {
+      tool: { case: 'shellToolCall', value: { args: { command: 'echo seed' } } },
+      toolCallId: 'c1',
+    },
+  });
+}

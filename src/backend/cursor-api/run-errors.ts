@@ -1,7 +1,22 @@
 import { CursorBackendError } from '../cursor-cli.js';
 import type { CursorRunTransportDiagnostics } from './transport.js';
 
+export type CursorRunPhase =
+  | 'awaiting_upstream'
+  | 'settling_tool_calls'
+  | 'awaiting_client_tool_results'
+  | 'resumed_after_tool_results';
+
 export interface CursorRunTimeoutDiagnostics {
+  readonly phase: CursorRunPhase;
+  readonly toolResultsSent: number;
+  readonly bufferedFrames: number;
+  readonly streamState: {
+    readonly destroyed: boolean;
+    readonly writableEnded: boolean;
+  };
+  readonly toolCallsAnnounced: number;
+  readonly toolCallsCompleted: number;
   readonly lastInteractionCase: string | null;
   readonly lastInteractionAgoMs: number;
   readonly outputBytes: number;

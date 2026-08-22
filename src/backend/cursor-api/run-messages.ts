@@ -17,6 +17,15 @@ class CursorUndeclaredToolCallError extends CursorBackendError {
   }
 }
 
+export class CursorBuiltinToolCallError extends CursorBackendError {
+  readonly name = 'CursorBuiltinToolCallError';
+  readonly code = 'ERR_CURSOR_BUILTIN_TOOL_CALL';
+
+  constructor(message = 'Cursor selected a builtin instead of the required external tool') {
+    super(message);
+  }
+}
+
 function attemptedToolName(update: Dict): string {
   const toolCall = dict(update.toolCall);
   const tool = dict(toolCall?.tool);
@@ -137,18 +146,19 @@ export class CursorRunMessages {
         );
         return false;
       }
-      if (!attempted && dict(update.toolCall) && this.options.request.tool_choice === 'required') {
+      if (
+        !attempted &&
+        dict(update.toolCall) &&
+        (this.options.request.tool_choice === 'required' ||
+          typeof this.options.request.tool_choice === 'object')
+      ) {
         // toolCall is present but not a nameable mcpToolCall (live builtin
         // attempts decode this way — the descriptor set keeps only
         // mcpToolCall). It can never satisfy tool_choice: required, and the
         // model stalls after it (live capture) until the run timeout. Bare
         // announcements (no toolCall payload yet) pass through; their
         // mcpArgs is guarded separately.
-        this.options.finish(
-          new CursorUndeclaredToolCallError(
-            "tool_choice 'required' cannot be satisfied by a builtin tool call",
-          ),
-        );
+        this.options.finish(new CursorBuiltinToolCallError());
         return false;
       }
       traceStage(this.options.trace, 'tool_decision');

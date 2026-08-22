@@ -130,4 +130,38 @@ describe('cursor-api tool wire names', () => {
     expect(mapped.request.messages).toHaveLength(1);
     expect(mapped.request.messages[0]?.role).toBe('user');
   });
+
+  it('strengthens a single required tool into an exact wire-name choice', () => {
+    // Given: OpenAI required mode has exactly one possible external tool.
+    const request: ChatCompletionRequest = {
+      model: 'composer-2.5',
+      messages: [{ role: 'user', content: 'run the command' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'bash',
+            parameters: {
+              type: 'object',
+              properties: { command: { type: 'string' } },
+              required: ['command'],
+            },
+          },
+        },
+      ],
+      tool_choice: 'required',
+    };
+
+    // When: the request is mapped onto Cursor's external MCP channel.
+    const mapped = mapCursorApiToolRequest(request);
+    const wireName = mapped.request.tools?.[0]?.function.name;
+
+    // Then: the generic requirement becomes the semantically equivalent,
+    // stronger exact external choice.
+    expect(wireName).toBeTruthy();
+    expect(mapped.request.tool_choice).toEqual({
+      type: 'function',
+      function: { name: wireName },
+    });
+  });
 });

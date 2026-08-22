@@ -35,6 +35,8 @@ export interface TraceRecord {
   cancelled?: boolean;
   quiescent?: boolean;
   terminal?: TraceTerminal;
+  tool_calls_announced?: number;
+  tool_calls_completed?: number;
 }
 
 export interface TraceSafeFields {
@@ -43,6 +45,8 @@ export interface TraceSafeFields {
   usageSource?: UsageSource;
   quiescent?: boolean;
   terminal?: TraceTerminal;
+  toolCallsAnnounced?: number;
+  toolCallsCompleted?: number;
 }
 
 export type TraceSink = (record: TraceRecord) => void;
@@ -97,6 +101,8 @@ const safeFieldNames = new Set<keyof TraceSafeFields>([
   'usageSource',
   'quiescent',
   'terminal',
+  'toolCallsAnnounced',
+  'toolCallsCompleted',
 ]);
 
 interface TraceableRequest {
@@ -138,6 +144,15 @@ export function assertSafeTraceFields(fields: unknown): asserts fields is TraceS
   }
   if (values.quiescent !== undefined && typeof values.quiescent !== 'boolean') {
     throw new TypeError('trace quiescence must be a boolean');
+  }
+  for (const key of ['toolCallsAnnounced', 'toolCallsCompleted'] as const) {
+    const count = values[key];
+    if (
+      count !== undefined &&
+      (typeof count !== 'number' || !Number.isInteger(count) || count < 0)
+    ) {
+      throw new TypeError(`trace ${key} must be a non-negative integer`);
+    }
   }
   if (
     values.terminal !== undefined &&
@@ -202,6 +217,12 @@ export function traceStage(
     stage,
     offset_ms: Math.max(0, trace.now() - trace.startedAt),
     ...(trace.retryKind === undefined ? {} : { retry_kind: trace.retryKind }),
+    ...(fields.toolCallsAnnounced === undefined
+      ? {}
+      : { tool_calls_announced: fields.toolCallsAnnounced }),
+    ...(fields.toolCallsCompleted === undefined
+      ? {}
+      : { tool_calls_completed: fields.toolCallsCompleted }),
     ...(fields.terminal === undefined
       ? {}
       : {
