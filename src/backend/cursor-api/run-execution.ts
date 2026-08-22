@@ -12,7 +12,12 @@ import { CursorRunTimeoutError, type CursorRunPhase } from './run-errors.js';
 import { CursorRunMessages } from './run-messages.js';
 import type { RunEmitter, RunOutcome } from './run-types.js';
 import { boundedInteger, type CursorApiRuntime } from './runtime.js';
-import { heldExecToKey, type HeldRun, type ToolResultInput } from './sticky-run-store.js';
+import {
+  stickyKey,
+  trailingToolResults,
+  type HeldRun,
+  type ToolResultInput,
+} from './sticky-run-store.js';
 import { CursorApiHttpError } from './transport.js';
 
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -46,11 +51,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
   const { runtime, request, signal, trace } = options;
   if (signal?.aborted) throw new CursorCommandAbortedError();
 
-  const toolResults: ToolResultInput[] = request.messages.flatMap((message) =>
-    message.role === 'tool' && typeof message.tool_call_id === 'string'
-      ? [{ id: message.tool_call_id, content: message.content ?? '' }]
-      : [],
-  );
+  const toolResults: ToolResultInput[] = trailingToolResults(request);
   const resumed = toolResults.length > 0 ? runtime.stickyRuns.take(request) : undefined;
   if (resumed) {
     return new Promise<RunOutcome>((resolve, reject) => {
@@ -86,7 +87,8 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     let settled = false;
     let parked = false;
     let outputBytes = 0;
-    let surfacedCount = 0;
+    const surfacedCallIds = new Set<string>();
+    let surfacedTextLength = 0;
     let phase: CursorRunPhase = 'awaiting_upstream';
     let toolResultsSent = 0;
     let currentResolve: (outcome: RunOutcome) => void = resolve;
@@ -108,7 +110,11 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       runtime.activeStreams.delete(stream);
     };
     const completedCalls = () =>
-      enforceNativeToolChoice(messages.toolStream.completedCalls(), request);
+      enforceNativeToolChoice(
+        messages.toolStream.completedCalls().filter((call) => !surfacedCallIds.has(call.id)),
+        request,
+      );
+    const freshText = () => messages.text.slice(surfacedTextLength);
     const traceToolBatch = () => {
       const counts = messages.toolStream.frameCounts();
       traceStage(trace, 'tool_batch_complete', {
@@ -123,8 +129,8 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       // Calls surfaced by an earlier hold (sequential tool rounds) must not be
       // re-sent to the client on resume; only the newly completed ones.
       return {
-        text: messages.text,
-        toolCalls: completedCalls().slice(surfacedCount),
+        text: freshText(),
+        toolCalls: completedCalls(),
         usage: messages.usageAttribution.usage,
         usageSource: messages.usageAttribution.source,
       };
@@ -140,7 +146,34 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       }
       currentResolve(outcome());
     };
-    const hold = () => {
+    function surfaceBatch(): void {
+      const calls = completedCalls();
+      if (calls.length === 0) return;
+      parked = true;
+      phase = 'awaiting_client_tool_results';
+      clearHoldTimer();
+      for (const call of calls) surfacedCallIds.add(call.id);
+      const text = freshText();
+      surfacedTextLength = messages.text.length;
+      runtime.stickyRuns.park(createHeld(stickyKey(calls.map((call) => call.id))));
+      if (messages.toolStream.batchComplete(request.parallel_tool_calls !== false)) {
+        traceToolBatch();
+      }
+      currentResolve({
+        text,
+        toolCalls: calls,
+        usage: messages.usageAttribution.usage,
+        usageSource: messages.usageAttribution.source,
+      });
+    }
+    function drain(): void {
+      if (completedCalls().length > 0) {
+        surfaceBatch();
+        return;
+      }
+      if (turnEnded || streamEnded) finish();
+    }
+    function hold(): void {
       if (parked || settled || heldExecs.length === 0) return;
       if (messages.toolStream.hasIncompleteStartedCalls()) {
         // A sibling call was announced (start/delta streamed) but its
@@ -150,11 +183,11 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
         scheduleHold();
         return;
       }
-      parked = true;
-      phase = 'awaiting_client_tool_results';
-      clearHoldTimer();
-      const held: HeldRun = {
-        key: heldExecToKey(heldExecs),
+      drain();
+    }
+    function createHeld(key: string): HeldRun {
+      return {
+        key,
         resume(nextResolve, nextReject, results, nextEmit) {
           if (settled) return;
           parked = false;
@@ -164,20 +197,21 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
           messages.setEmit(nextEmit);
           runtime.activeStreams.add(stream);
           for (const result of results) {
-            const target = heldExecs.find((held) => {
-              const message = held.exec.message as Dict | undefined;
+            const targetIndex = heldExecs.findIndex((candidate) => {
+              const message = candidate.exec.message as Dict | undefined;
               const value = message?.value as Dict | undefined;
               return String(value?.toolCallId ?? '') === result.id;
             });
+            const target = heldExecs[targetIndex];
             if (target) {
               sendMcpToolResult(writeMessage, target.exec, result.content);
+              heldExecs.splice(targetIndex, 1);
               toolResultsSent += 1;
             }
           }
-          heldExecs.length = 0;
           const replay = parkedPayloads.splice(0);
           for (const payload of replay) turnEnded = messages.handle(payload) || turnEnded;
-          if (turnEnded || streamEnded) finish();
+          drain();
         },
         release(error) {
           if (settled) return;
@@ -188,20 +222,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
           currentReject(error ?? new CursorCommandAbortedError());
         },
       };
-      runtime.stickyRuns.park(held);
-      const all = completedCalls();
-      const fresh = all.slice(surfacedCount);
-      surfacedCount = all.length;
-      if (messages.toolStream.batchComplete(request.parallel_tool_calls !== false)) {
-        traceToolBatch();
-      }
-      currentResolve({
-        text: messages.text,
-        toolCalls: fresh,
-        usage: messages.usageAttribution.usage,
-        usageSource: messages.usageAttribution.source,
-      });
-    };
+    }
     const scheduleHold = () => {
       if (parked || settled) return;
       clearHoldTimer();
@@ -323,7 +344,8 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
           else if (frame.payload) turnEnded = messages.handle(frame.payload) || turnEnded;
         }
         if (settled || parked) return;
-        if (turnEnded || streamEnded) finish();
+        if (streamEnded) finish();
+        else if (turnEnded) drain();
       } catch (error) {
         stream.destroy(errorValue(error));
         finish(error);

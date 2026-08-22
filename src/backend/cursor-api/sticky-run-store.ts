@@ -20,12 +20,19 @@ export interface HeldRun {
   release(error?: Error): void;
 }
 
-function resultMessages(request: { readonly messages: readonly ChatMessage[] }): ToolResultInput[] {
-  return request.messages.flatMap((message) =>
-    message.role === 'tool' && typeof message.tool_call_id === 'string'
-      ? [{ id: message.tool_call_id, content: message.content ?? '' }]
-      : [],
-  );
+export function trailingToolResults(request: {
+  readonly messages: readonly ChatMessage[];
+}): ToolResultInput[] {
+  if (request.messages.at(-1)?.role !== 'tool') return [];
+  const results: ToolResultInput[] = [];
+  for (let index = request.messages.length - 1; index >= 0; index -= 1) {
+    const message = request.messages[index];
+    if (message?.role !== 'tool') break;
+    if (typeof message.tool_call_id === 'string') {
+      results.unshift({ id: message.tool_call_id, content: message.content ?? '' });
+    }
+  }
+  return results;
 }
 
 /**
@@ -48,7 +55,7 @@ export class StickyRunStore {
 
   /** Pops the held Run whose parked mcpArgs match these tool messages. */
   take(request: { readonly messages: readonly ChatMessage[] }): HeldRun | undefined {
-    const results = resultMessages(request);
+    const results = trailingToolResults(request);
     if (results.length === 0) return undefined;
     const wanted = results
       .map((result) => result.id)

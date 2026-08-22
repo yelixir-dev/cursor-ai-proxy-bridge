@@ -243,7 +243,7 @@ Bridge는 completion을 반환하기 전에 선언된 tool schema와 일치하�
 | `required`   | `tool_choice: "required"`                                      | 선언된 tool call을 하나 이상 요구합니다.                  |
 | `none`       | `tool_choice: "none"`                                          | Tool call을 억제하고 일반 text를 반환합니다.              |
 
-선언된 tool이 하나뿐이면 `tool_choice: "required"`를 의미상 같은 named-function choice로 내부 강화합니다. 모든 required 요청에서 client에 output이 전달되기 전에 Composer가 Cursor builtin을 선택하면 허용된 external tool 목록을 명시해 한 번 retry합니다. 두 번째에도 builtin을 선택하면 tool이 optional일 때 `tool_choice: "auto"`를 사용하라는 actionable error를 반환하며, builtin 실행을 선언된 function으로 조용히 대체하지 않습니다. Parallel batch는 upstream Run을 park하기 전에 늦게 발표되는 sibling을 1,000ms 동안 기다리며, `CURSOR_BRIDGE_STICKY_SETTLE_MS`로 이 window를 바꿀 수 있습니다.
+선언된 tool이 하나뿐이면 `tool_choice: "required"`를 의미상 같은 named-function choice로 내부 강화합니다. 모든 required 요청에서 client에 output이 전달되기 전에 Composer가 Cursor builtin을 선택하면 허용된 external tool 목록을 명시해 한 번 retry합니다. 두 번째에도 builtin을 선택하면 tool이 optional일 때 `tool_choice: "auto"`를 사용하라는 actionable error를 반환하며, builtin 실행을 선언된 function으로 조용히 대체하지 않습니다. Parallel batch는 upstream Run을 park하기 전에 늦게 발표되는 sibling을 1,000ms 동안 기다리며, `CURSOR_BRIDGE_STICKY_SETTLE_MS`로 이 window를 바꿀 수 있습니다. Upstream이 `parallel_tool_calls: false` 요청에 여러 call을 발표하면 bridge는 같은 Run에 보존하고 각 result가 도착할 때마다 OpenAI response 하나당 call 하나씩 노출합니다.
 
 Bridge는 tool-history follow-up에서 OpenAI 표준인 `assistant.content: null`을 받고, replay가 가능하도록 `tool_calls`와 함께 `content: ""`를 반환합니다. `content`를 문자열로만 검증하는 LiteLLM 같은 앞단 proxy는 이 replay를 `messages[N].content`에서 400으로 거절하고 이 process까지 요청을 보내지 않습니다. 그 ingress에서 `null`을 `""`로 바꾸고 `tool_calls[].id`는 그대로 두세요.
 

@@ -5,14 +5,79 @@ import {
   backend,
   callBatch,
   collect,
+  mcpArgsFrame,
   parallelToolRequest,
   ScriptedTransport,
+  toolCall,
   trailer,
   update,
   wireToolName,
 } from './support/cursor-api-scripted.js';
 
 describe('cursor-api sticky hold with an incomplete sibling', () => {
+  it('does not replay pre-tool text into the final serial JSON response', async () => {
+    vi.useFakeTimers();
+    try {
+      // Given: Composer emits explanatory text before pre-announcing serial
+      // calls A and B on one native Run.
+      const request = { ...parallelToolRequest(), parallel_tool_calls: false };
+      const wireName = wireToolName(request);
+      const transport = new ScriptedTransport((stream) => {
+        stream.emit('response', { ':status': 200 });
+        stream.emit(
+          'data',
+          Buffer.concat([
+            update('textDelta', { text: 'starting serial sequence\n' }),
+            callBatch(wireName, 'call-a', 'A'),
+            callBatch(wireName, 'call-b', 'B'),
+          ]),
+        );
+      });
+      const cursor = backend(transport);
+      const firstPromise = cursor.complete(request);
+      const run = await transport.firstRun;
+      await vi.advanceTimersByTimeAsync(5);
+      const first = await firstPromise;
+      const callA = first.tool_calls?.[0];
+      if (!callA) throw new Error('missing first serial call');
+      expect(first.content).toBeNull();
+
+      const historyAfterA = [
+        ...request.messages,
+        { role: 'assistant' as const, content: '', tool_calls: [callA] },
+        { role: 'tool' as const, tool_call_id: callA.id, content: 'result-A' },
+      ];
+      const second = await cursor.complete({ ...request, messages: historyAfterA });
+      const callB = second.tool_calls?.[0];
+      if (!callB) throw new Error('missing second serial call');
+      expect(second.content).toBeNull();
+
+      // When: B's result lets the native Run produce its final text.
+      const finalPromise = cursor.complete({
+        ...request,
+        messages: [
+          ...historyAfterA,
+          { role: 'assistant', content: '', tool_calls: [callB] },
+          { role: 'tool', tool_call_id: callB.id, content: 'result-B' },
+        ],
+      });
+      run.stream.emit(
+        'data',
+        Buffer.concat([
+          update('textDelta', { text: 'SERIAL_FINAL' }),
+          update('turnEnded', { inputTokens: 4, outputTokens: 2 }),
+          trailer(),
+        ]),
+      );
+
+      // Then: text discarded by the earlier tool responses is not replayed.
+      expect((await finalPromise).content).toBe('SERIAL_FINAL');
+      expect(transport.opened).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('surfaces one serial call while preserving upstream announced counts and sticky resume', async () => {
     vi.useFakeTimers();
     try {
@@ -69,24 +134,53 @@ describe('cursor-api sticky hold with an incomplete sibling', () => {
       });
       expect(records.find((record) => record.stage === 'tool_batch_complete')).toMatchObject({
         tool_calls_announced: 2,
-        tool_calls_completed: 1,
+        tool_calls_completed: 2,
       });
 
       // When: the client returns the only call it was given.
-      const resumed = Promise.withResolvers<'resumed'>();
-      run.stream.once('write', () => resumed.resolve('resumed'));
-      const continuation = collect(cursor, {
+      const resumedA = Promise.withResolvers<'resumed'>();
+      run.stream.once('write', () => resumedA.resolve('resumed'));
+      const historyAfterA = [
+        ...request.messages,
+        { role: 'assistant' as const, content: '', tool_calls: [completed.call] },
+        { role: 'tool' as const, tool_call_id: completed.call.id, content: 'result-A' },
+      ];
+      const second = collect(cursor, {
         ...request,
-        messages: [
-          ...request.messages,
-          { role: 'assistant', content: '', tool_calls: [completed.call] },
-          { role: 'tool', tool_call_id: completed.call.id, content: 'result-A' },
-        ],
+        messages: historyAfterA,
       });
 
-      // Then: the held Run accepts that result instead of opening a
-      // replacement whose key includes the unsurfaced second call.
-      expect(await Promise.race([resumed.promise, openedReplacement.promise])).toBe('resumed');
+      // Then: the held Run accepts A and surfaces the already-completed B as
+      // a separate OpenAI response without opening a replacement Run.
+      expect(await Promise.race([resumedA.promise, openedReplacement.promise])).toBe('resumed');
+      const secondEvents = await second;
+      const completedB = secondEvents.find((event) => event.type === 'tool_call_complete');
+      if (completedB?.type !== 'tool_call_complete') {
+        throw new Error('missing deferred serial tool call');
+      }
+      expect(
+        secondEvents
+          .filter((event) => event.type === 'tool_call_complete')
+          .map((event) => event.call.id),
+      ).toEqual(['call-b']);
+      expect(secondEvents.at(-1)).toMatchObject({
+        type: 'done',
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        usage_source: 'unknown',
+      });
+
+      // When: the client returns B after the earlier A history.
+      const resumedB = Promise.withResolvers<'resumed'>();
+      run.stream.once('write', () => resumedB.resolve('resumed'));
+      const final = collect(cursor, {
+        ...request,
+        messages: [
+          ...historyAfterA,
+          { role: 'assistant', content: '', tool_calls: [completedB.call] },
+          { role: 'tool', tool_call_id: completedB.call.id, content: 'result-B' },
+        ],
+      });
+      expect(await Promise.race([resumedB.promise, openedReplacement.promise])).toBe('resumed');
       run.stream.emit(
         'data',
         Buffer.concat([
@@ -95,7 +189,7 @@ describe('cursor-api sticky hold with an incomplete sibling', () => {
           trailer(),
         ]),
       );
-      const continuedEvents = await continuation;
+      const continuedEvents = await final;
       expect(continuedEvents).toContainEqual({ type: 'content', text: 'continued' });
       expect(continuedEvents.at(-1)).toMatchObject({
         type: 'done',
@@ -211,6 +305,148 @@ describe('cursor-api sticky hold with an incomplete sibling', () => {
       expect(
         events.filter((event) => event.type === 'tool_call_complete').map((event) => event.call.id),
       ).toEqual(['call-a', 'call-b']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('replays a serial sibling buffered while the first call is parked', async () => {
+    vi.useFakeTimers();
+    try {
+      // Given: A is surfaced first and B arrives only after the native Run is
+      // parked waiting for A's result.
+      const request = { ...parallelToolRequest(), parallel_tool_calls: false };
+      const wireName = wireToolName(request);
+      const transport = new ScriptedTransport((stream) => {
+        stream.emit('response', { ':status': 200 });
+        stream.emit('data', callBatch(wireName, 'call-a', 'A'));
+      });
+      const cursor = backend(transport);
+      const first = collect(cursor, request);
+      const run = await transport.firstRun;
+      await vi.advanceTimersByTimeAsync(5);
+      const firstEvents = await first;
+      const completedA = firstEvents.find((event) => event.type === 'tool_call_complete');
+      if (completedA?.type !== 'tool_call_complete') throw new Error('missing first serial call');
+
+      run.stream.emit('data', callBatch(wireName, 'call-b', 'B'));
+
+      // When: A's result resumes the Run and replays the parked B frames.
+      const historyAfterA = [
+        ...request.messages,
+        { role: 'assistant' as const, content: '', tool_calls: [completedA.call] },
+        { role: 'tool' as const, tool_call_id: completedA.call.id, content: 'result-A' },
+      ];
+      const second = collect(cursor, { ...request, messages: historyAfterA });
+      await vi.advanceTimersByTimeAsync(5);
+      const secondEvents = await second;
+      const completedB = secondEvents.find((event) => event.type === 'tool_call_complete');
+      if (completedB?.type !== 'tool_call_complete') {
+        throw new Error('missing buffered serial sibling');
+      }
+      expect(completedB.call.id).toBe('call-b');
+
+      // Then: B's result resumes the same Run and permits the final answer.
+      const final = collect(cursor, {
+        ...request,
+        messages: [
+          ...historyAfterA,
+          { role: 'assistant', content: '', tool_calls: [completedB.call] },
+          { role: 'tool', tool_call_id: completedB.call.id, content: 'result-B' },
+        ],
+      });
+      run.stream.emit(
+        'data',
+        Buffer.concat([
+          update('textDelta', { text: 'buffered continued' }),
+          update('turnEnded', { inputTokens: 4, outputTokens: 2 }),
+          trailer(),
+        ]),
+      );
+      const finalEvents = await final;
+      expect(finalEvents).toContainEqual({ type: 'content', text: 'buffered continued' });
+      expect(transport.opened).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('waits for a hidden serial sibling that completes after the first result', async () => {
+    vi.useFakeTimers();
+    try {
+      // Given: A completes, while hidden B has only start/partial frames when
+      // the serial response parks on A.
+      const request = { ...parallelToolRequest(), parallel_tool_calls: false };
+      const wireName = wireToolName(request);
+      const transport = new ScriptedTransport((stream) => {
+        stream.emit('response', { ':status': 200 });
+        stream.emit(
+          'data',
+          Buffer.concat([
+            callBatch(wireName, 'call-a', 'A'),
+            update('toolCallStarted', {
+              callId: 'call-b',
+              toolCall: {
+                tool: {
+                  case: 'mcpToolCall',
+                  value: { args: toolCall(wireName, 'call-b', '') },
+                },
+                toolCallId: 'call-b',
+              },
+            }),
+            update('partialToolCall', {
+              callId: 'call-b',
+              argsTextDelta: '{"value":"B"}',
+            }),
+          ]),
+        );
+      });
+      const cursor = backend(transport);
+      const first = collect(cursor, request);
+      const run = await transport.firstRun;
+      await vi.advanceTimersByTimeAsync(5);
+      const firstEvents = await first;
+      const completedA = firstEvents.find((event) => event.type === 'tool_call_complete');
+      if (completedA?.type !== 'tool_call_complete') throw new Error('missing first serial call');
+
+      // When: A's result resumes the Run before B's authoritative mcpArgs.
+      const resumed = Promise.withResolvers<void>();
+      run.stream.once('write', () => resumed.resolve());
+      const historyAfterA = [
+        ...request.messages,
+        { role: 'assistant' as const, content: '', tool_calls: [completedA.call] },
+        { role: 'tool' as const, tool_call_id: completedA.call.id, content: 'result-A' },
+      ];
+      const second = collect(cursor, { ...request, messages: historyAfterA });
+      await resumed.promise;
+      run.stream.emit('data', mcpArgsFrame(toolCall(wireName, 'call-b', 'B')));
+      await vi.advanceTimersByTimeAsync(5);
+      const secondEvents = await second;
+      const completedB = secondEvents.find((event) => event.type === 'tool_call_complete');
+      if (completedB?.type !== 'tool_call_complete') {
+        throw new Error('missing late authoritative serial sibling');
+      }
+      expect(completedB.call.id).toBe('call-b');
+
+      // Then: B also resumes on the original Run.
+      const final = collect(cursor, {
+        ...request,
+        messages: [
+          ...historyAfterA,
+          { role: 'assistant', content: '', tool_calls: [completedB.call] },
+          { role: 'tool', tool_call_id: completedB.call.id, content: 'result-B' },
+        ],
+      });
+      run.stream.emit(
+        'data',
+        Buffer.concat([
+          update('textDelta', { text: 'late serial continued' }),
+          update('turnEnded', { inputTokens: 4, outputTokens: 2 }),
+          trailer(),
+        ]),
+      );
+      expect(await final).toContainEqual({ type: 'content', text: 'late serial continued' });
+      expect(transport.opened).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }

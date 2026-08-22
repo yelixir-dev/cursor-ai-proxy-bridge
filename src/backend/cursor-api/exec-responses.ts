@@ -175,7 +175,7 @@ export function handleExecResponse(
         value: {
           result: {
             case: 'error',
-            value: { error: 'Tool call exceeds the parallel_tool_calls limit' },
+            value: { error: 'Tool call could not be reconciled with the declared tools' },
           },
         },
         omitExecId: true,

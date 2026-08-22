@@ -19,6 +19,8 @@ type ToolSlot = {
   name: string;
   arguments: string;
   started: boolean;
+  emittedStart: boolean;
+  emittedArguments: string;
   call?: ToolCall;
 };
 
@@ -102,7 +104,10 @@ export class CursorToolStream {
     }
     this.announcedEnvelopeIds.add(identity.envelopeId);
     const slot = this.slot(identity);
-    if (slot) this.emitStart(slot);
+    if (slot) {
+      slot.started = true;
+      this.flushSlot(slot);
+    }
   }
 
   partial(value: Dict): void {
@@ -115,7 +120,7 @@ export class CursorToolStream {
     }
     const slot = identity ? this.slot(identity) : this.aliases.get(envelopeId);
     if (!slot) return;
-    this.emitStart(slot);
+    slot.started = true;
     const snapshot = stringField(value.argsTextDelta);
     if (!snapshot) return;
     const delta = snapshot.startsWith(slot.arguments)
@@ -123,14 +128,7 @@ export class CursorToolStream {
       : snapshot;
     if (!delta) return;
     slot.arguments += delta;
-    if (slot.started) {
-      this.emit?.({
-        type: 'tool_call_arguments_delta',
-        index: slot.index,
-        id: slot.id,
-        delta,
-      });
-    }
+    this.flushSlot(slot);
   }
 
   completeUpdate(value: Dict): void {
@@ -171,16 +169,17 @@ export class CursorToolStream {
   batchComplete(parallel: boolean): boolean {
     const completed = this.completedCalls().length;
     if (!parallel) return completed > 0;
-    return this.slots.length > 0 && completed === this.slots.length;
+    const visible = this.visibleSlots();
+    return visible.length > 0 && completed === visible.length;
   }
 
   /** A started slot whose completing exec has not arrived yet. */
   hasIncompleteStartedCalls(): boolean {
-    return this.slots.some((slot) => slot.started && !slot.call);
+    return this.visibleSlots().some((slot) => slot.started && !slot.call);
   }
 
   get emitted(): boolean {
-    return this.emit !== undefined && this.slots.some((slot) => slot.started);
+    return this.emit !== undefined && this.visibleSlots().some((slot) => slot.emittedStart);
   }
 
   private slot(identity: ToolIdentity): ToolSlot | undefined {
@@ -203,7 +202,6 @@ export class CursorToolStream {
       }
       return existing;
     }
-    if (this.slots.length >= this.maximumCalls) return undefined;
     const slot: ToolSlot = {
       index: this.slots.length,
       envelopeId: identity.envelopeId,
@@ -211,6 +209,8 @@ export class CursorToolStream {
       name: identity.name,
       arguments: '',
       started: false,
+      emittedStart: false,
+      emittedArguments: '',
     };
     this.slots.push(slot);
     this.bindAlias(identity.envelopeId, slot);
@@ -235,11 +235,11 @@ export class CursorToolStream {
   }
 
   private emitStart(slot: ToolSlot): void {
-    if (slot.started) return;
-    slot.started = true;
+    if (slot.emittedStart) return;
+    slot.emittedStart = true;
     this.emit?.({
       type: 'tool_call_start',
-      index: slot.index,
+      index: this.outputIndex(slot),
       id: slot.id,
       name: slot.name,
     });
@@ -257,20 +257,11 @@ export class CursorToolStream {
       }
       return;
     }
-    this.emitStart(slot);
+    slot.started = true;
     let call = canonical;
     if (slot.arguments) {
       if (canonical.function.arguments.startsWith(slot.arguments)) {
-        const delta = canonical.function.arguments.slice(slot.arguments.length);
-        if (delta) {
-          slot.arguments += delta;
-          this.emit?.({
-            type: 'tool_call_arguments_delta',
-            index: slot.index,
-            id: slot.id,
-            delta,
-          });
-        }
+        // flushSlot emits any authoritative suffix when this slot is visible.
       } else if (semanticallyEqual(slot.arguments, canonical.function.arguments)) {
         call = {
           ...canonical,
@@ -281,13 +272,36 @@ export class CursorToolStream {
       }
     } else {
       slot.arguments = canonical.function.arguments;
-      this.emit?.({
-        type: 'tool_call_arguments_delta',
-        index: slot.index,
-        id: slot.id,
-        delta: slot.arguments,
-      });
     }
     slot.call = call;
+    this.flushSlot(slot);
+  }
+
+  private visibleSlots(): ToolSlot[] {
+    return Number.isFinite(this.maximumCalls) ? this.slots.slice(0, this.maximumCalls) : this.slots;
+  }
+
+  private outputIndex(slot: ToolSlot): number {
+    return slot.index;
+  }
+
+  private flushSlot(slot: ToolSlot): void {
+    if (!this.emit || !this.visibleSlots().includes(slot) || !slot.started) return;
+    this.emitStart(slot);
+    const argumentsJson = slot.call?.function.arguments ?? slot.arguments;
+    if (argumentsJson === slot.emittedArguments) return;
+    if (!argumentsJson.startsWith(slot.emittedArguments)) {
+      throw new ToolCallReconciliationError(slot.id);
+    }
+    const delta = argumentsJson.slice(slot.emittedArguments.length);
+    slot.emittedArguments = argumentsJson;
+    if (delta) {
+      this.emit({
+        type: 'tool_call_arguments_delta',
+        index: this.outputIndex(slot),
+        id: slot.id,
+        delta,
+      });
+    }
   }
 }
