@@ -21,6 +21,7 @@ type ToolSlot = {
   started: boolean;
   emittedStart: boolean;
   emittedArguments: string;
+  execId?: string;
   call?: ToolCall;
 };
 
@@ -87,6 +88,7 @@ export class CursorToolStream {
     emit: ToolEmitter | undefined,
     private readonly allowedNames: ReadonlySet<string>,
     private readonly maximumCalls: number,
+    private readonly callIdPrefix?: string,
   ) {
     this.emit = emit;
   }
@@ -151,12 +153,17 @@ export class CursorToolStream {
       ? this.slot({ envelopeId: compatible.envelopeId, id: call.id, name: call.function.name })
       : this.slot({ envelopeId: call.id, id: call.id, name: call.function.name });
     if (!slot) return false;
+    slot.execId ??= call.id;
     this.completeSlot(slot, call);
     return true;
   }
 
   completedCalls(): ToolCall[] {
     return this.slots.flatMap((slot) => (slot.call ? [slot.call] : []));
+  }
+
+  execIdFor(callId: string): string | undefined {
+    return this.aliases.get(callId)?.execId;
   }
 
   frameCounts(): { announced: number; completed: number } {
@@ -192,20 +199,23 @@ export class CursorToolStream {
     if (existing) {
       this.bindAlias(identity.envelopeId, existing);
       this.bindAlias(identity.id, existing);
-      if (existing.started && this.emit) {
+      if (existing.emittedStart) {
         if (existing.name !== identity.name) {
           throw new ToolCallReconciliationError(existing.id);
         }
       } else {
-        existing.id = identity.id;
+        if (!this.callIdPrefix) existing.id = identity.id;
         existing.name = identity.name;
       }
       return existing;
     }
+    const index = this.slots.length;
     const slot: ToolSlot = {
-      index: this.slots.length,
+      index,
       envelopeId: identity.envelopeId,
-      id: identity.id,
+      id: this.callIdPrefix
+        ? `call_${this.callIdPrefix.replaceAll('-', '')}_${index}`
+        : identity.id,
       name: identity.name,
       arguments: '',
       started: false,
@@ -215,6 +225,7 @@ export class CursorToolStream {
     this.slots.push(slot);
     this.bindAlias(identity.envelopeId, slot);
     this.bindAlias(identity.id, slot);
+    this.bindAlias(slot.id, slot);
     return slot;
   }
 

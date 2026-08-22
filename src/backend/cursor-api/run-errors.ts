@@ -20,6 +20,7 @@ export interface CursorRunTimeoutDiagnostics {
   readonly lastInteractionCase: string | null;
   readonly lastInteractionAgoMs: number;
   readonly outputBytes: number;
+  readonly decodedOutputBytes: number;
   readonly sawTurnEnded: boolean;
   readonly sawTrailer: boolean;
   readonly transport: CursorRunTransportDiagnostics;

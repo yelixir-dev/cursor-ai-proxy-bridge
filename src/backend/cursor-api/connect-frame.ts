@@ -7,6 +7,7 @@ export interface ConnectFrame {
   flags: number;
   payload?: Buffer;
   trailer?: Record<string, unknown>;
+  error?: ConnectRpcError;
 }
 
 export class ConnectRpcError extends Error {
@@ -14,6 +15,7 @@ export class ConnectRpcError extends Error {
     message: string,
     readonly code?: string,
     readonly details?: unknown,
+    readonly terminal = false,
   ) {
     super(message);
     this.name = 'ConnectRpcError';
@@ -36,43 +38,110 @@ export function encodeConnectFrame(
 
 export class ConnectFrameDecoder {
   private buffered = Buffer.alloc(0);
+  private decodedBytes = 0;
+  private encodedBytes = 0;
+  private ended = false;
+
+  constructor(private readonly maxPayloadBytes = 8_388_608) {}
+
+  get rawOutputBytes(): number {
+    return this.encodedBytes;
+  }
 
   push(chunk: Uint8Array): ConnectFrame[] {
+    if (this.ended) return [];
+    const previousBufferedLength = this.buffered.length;
+    this.encodedBytes += chunk.byteLength;
     this.buffered = Buffer.concat([this.buffered, Buffer.from(chunk)]);
     const frames: ConnectFrame[] = [];
+    let consumedBytes = 0;
     while (this.buffered.length >= 5) {
-      const flags = this.buffered[0]!;
+      const flags = this.buffered.readUInt8(0);
+      if (flags & ~(CONNECT_FLAG_COMPRESSED | CONNECT_FLAG_END_STREAM)) {
+        throw new ConnectRpcError('Connect frame has unsupported flag bits');
+      }
       const length = this.buffered.readUInt32BE(1);
       if (this.buffered.length < length + 5) break;
+      consumedBytes += length + 5;
       let payload = this.buffered.subarray(5, length + 5);
       this.buffered = this.buffered.subarray(length + 5);
+      const remainingBytes = this.maxPayloadBytes - this.decodedBytes;
+      if (remainingBytes < 0) {
+        throw new ConnectRpcError(
+          `Connect frame decoded payload exceeds ${this.maxPayloadBytes} bytes`,
+        );
+      }
       if (flags & CONNECT_FLAG_COMPRESSED) {
         try {
-          payload = gunzipSync(payload);
+          payload = gunzipSync(payload, { maxOutputLength: Math.max(1, remainingBytes) });
         } catch (error) {
+          if (
+            error instanceof Error &&
+            error.message.includes('Cannot create a Buffer larger than')
+          ) {
+            throw new ConnectRpcError(
+              `Connect frame decoded payload exceeds ${this.maxPayloadBytes} bytes`,
+            );
+          }
           throw new ConnectRpcError(
             `Invalid gzip Connect frame: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
       }
+      if (payload.length > remainingBytes) {
+        throw new ConnectRpcError(
+          `Connect frame decoded payload exceeds ${this.maxPayloadBytes} bytes`,
+        );
+      }
+      this.decodedBytes += payload.length;
       if (flags & CONNECT_FLAG_END_STREAM) {
-        let trailer: Record<string, unknown>;
+        const acceptedFromChunk = Math.max(
+          0,
+          Math.min(chunk.byteLength, consumedBytes - previousBufferedLength),
+        );
+        this.encodedBytes -= chunk.byteLength - acceptedFromChunk;
+        let trailer: Record<string, unknown> = {};
+        let error: ConnectRpcError | undefined;
         try {
-          trailer = JSON.parse(payload.toString('utf8') || '{}') as Record<string, unknown>;
+          const decoded: unknown = JSON.parse(payload.toString('utf8') || '{}');
+          if (decoded === null || typeof decoded !== 'object' || Array.isArray(decoded)) {
+            error = new ConnectRpcError(
+              'Invalid Connect end-stream trailer object',
+              undefined,
+              undefined,
+              true,
+            );
+          } else {
+            trailer = decoded as Record<string, unknown>;
+          }
         } catch {
-          throw new ConnectRpcError('Invalid Connect end-stream trailer JSON');
+          error = new ConnectRpcError(
+            'Invalid Connect end-stream trailer JSON',
+            undefined,
+            undefined,
+            true,
+          );
         }
         const rpcError = trailer.error as
           | { code?: unknown; message?: unknown; details?: unknown }
           | undefined;
-        if (rpcError) {
-          throw new ConnectRpcError(
+        if (!error && rpcError) {
+          error = new ConnectRpcError(
             typeof rpcError.message === 'string' ? rpcError.message : 'Cursor Connect RPC failed',
             typeof rpcError.code === 'string' ? rpcError.code : undefined,
             rpcError.details,
+            true,
           );
         }
-        frames.push({ flags, trailer });
+        this.ended = true;
+        this.buffered = Buffer.alloc(0);
+        if (error && frames.length === 0) throw error;
+        frames.push({
+          flags,
+          trailer,
+          error,
+        });
+        break;
       } else {
         frames.push({ flags, payload: Buffer.from(payload) });
       }

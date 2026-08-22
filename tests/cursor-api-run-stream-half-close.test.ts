@@ -185,6 +185,7 @@ describe('Run stream HTTP/2 half-close', () => {
       } as unknown as CursorApiDiscovery,
       request,
       accessToken: 'token',
+      credentialId: 'test-credential',
       history: buildCursorHistory(request, runtime.codec),
       signal: controller.signal,
     });

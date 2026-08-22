@@ -1,4 +1,4 @@
-# Cursor Composer Parity — Current Status (2026-08-20)
+# Cursor Composer Parity — Current Status (2026-08-22)
 
 Scope: deterministic native Cursor Composer vs yorha bridge benchmark, bridge
 remediation, and final verification. Plan:
@@ -28,10 +28,34 @@ FAIL verdicts. No bridge-product defect was found in any retained failure.
 
 ## Quality numbers
 
-- `npm run verify`: PASS — typecheck, lint, format, strict gate, **508/508 tests**, build
+- `npm run verify`: PASS — typecheck, lint, format, strict gate, **666/666 tests**, build
 - Final audits: F1 PASS, F2 PASS (post-remediation), F4 PASS
 - No commits were made during the plan; the result was committed atomically
   afterwards (5 commits, HEAD `2cddd5b`).
+
+## Sticky-run hardening update (2026-08-22)
+
+- Deterministic verification on the release candidate: 73 files, 666 tests,
+  typecheck, lint, format, strict-assertion gate, and build all pass.
+- Current live reliability campaign: SSE serial continuation 5/5 exact,
+  parallel tools 10/10 exact, and ten concurrent serial chains 10/10 exact.
+  The 45 HTTP requests reused 25 logical upstream Runs as intended; internal
+  retries and terminal errors were both zero.
+- Current pinned E2E: 23/24. The historical reserved-`Shell` failure passed.
+  One forced-function trial returned a transient 502; an immediate isolated
+  rerun returned 200 with the exact `FORCED_REAL_7319` argument, one upstream
+  Run, no retry, and terminal success.
+- In the post-review named-choice campaign, all three trials selected a
+  builtin on both the initial and recovery Runs. Each request made exactly one
+  bounded retry, then returned an actionable error instructing the client to
+  retry with `tool_choice="auto"` when the external tool is optional.
+- The pinned E2E trace-deadline harness now rejects a slow subscription as a
+  scenario failure instead of leaking an unhandled rejection. Its regression
+  is included in the 666-test total.
+- Latest retained CI metrics (`task-12-ci-sticky.json`) pass all 82 lane
+  checks across 41 paired latency gates. The artifact remains overall FAIL
+  because one correctness gate recorded an upstream transport failure and
+  another recorded invalid tool arguments owned by tool scheduling.
 
 ## Retained live failures (accepted, NOT green)
 
@@ -69,7 +93,8 @@ preserved byte-for-byte.
 ~~The bridge is **not yet live-parity green** on yorha multi-tool rounds and
 active-abort cancellation.~~ **Closed 2026-08-20 — see the resolution section
 below.** See `docs/NEXT-PARITY-PLAN.md` for the remaining work: the full
-wire-shape parity goal (RE lane) and P3 latency.
+wire-shape parity goal (RE lane). The latest retained CI artifact passes the
+latency gate set.
 
 ## Resolution round (2026-08-20, final)
 
@@ -87,8 +112,9 @@ cutoff). Final full ci benchmark
 - The previously retained FAILs are gone: parallel/sequential tool rounds
   complete in the expected 2 runs; cancellation aborts with terminal=abort
   and clean CANCEL + GOAWAY on the wire.
-- Latency gates still fail at ~1.4-2.2x thresholds (P3) — the one retained,
-  user-accepted gap; re-measure after any RE-lane turn-structure change.
+- This round's latency gates failed at ~1.4-2.2x thresholds. The later
+  `task-12-ci-sticky.json` rerun passes all 82 lane checks across 41 paired
+  latency gates; re-measure after any RE-lane turn-structure change.
 
 Fix commits: `71174c7` (abort half-close), `f49fb83` (graceful shutdown
 ordering), `1d96c2b`/`1914ab7`/`d3dfc1b` (mcpArgs answer groundwork),

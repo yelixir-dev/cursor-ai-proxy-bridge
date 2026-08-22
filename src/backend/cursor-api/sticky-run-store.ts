@@ -2,6 +2,14 @@ import type { ChatMessage } from '../types.js';
 import type { RunEmitter, RunOutcome } from './run-types.js';
 
 type Dict = Record<string, unknown>;
+export const DEFAULT_MAX_HELD_RUNS = 128;
+
+export class StickyRunCapacityError extends Error {
+  constructor(readonly capacity: number) {
+    super(`Cursor sticky Run capacity ${capacity} exceeded`);
+    this.name = 'StickyRunCapacityError';
+  }
+}
 
 export type ToolResultInput = {
   readonly id: string;
@@ -10,12 +18,14 @@ export type ToolResultInput = {
 
 export interface HeldRun {
   readonly key: string;
+  readonly credentialId: string;
   /** Resumes the held Run: sends each result as mcpResult, then streams to OpenAI. */
   resume(
     resolve: (outcome: RunOutcome) => void,
     reject: (error: unknown) => void,
     results: readonly ToolResultInput[],
     emit?: RunEmitter,
+    signal?: AbortSignal,
   ): void;
   release(error?: Error): void;
 }
@@ -42,6 +52,8 @@ export function trailingToolResults(request: {
 export class StickyRunStore {
   private readonly held = new Map<string, HeldRun>();
 
+  constructor(private readonly capacity = DEFAULT_MAX_HELD_RUNS) {}
+
   size(): number {
     return this.held.size;
   }
@@ -49,6 +61,13 @@ export class StickyRunStore {
   park(run: HeldRun): string[] {
     const existing = this.held.get(run.key);
     if (existing) existing.release();
+    else if (this.held.size >= this.capacity) {
+      const oldest = this.held.values().next();
+      if (!oldest.done) {
+        this.held.delete(oldest.value.key);
+        oldest.value.release(new StickyRunCapacityError(this.capacity));
+      }
+    }
     this.held.set(run.key, run);
     return [run.key];
   }
@@ -57,13 +76,23 @@ export class StickyRunStore {
   take(request: { readonly messages: readonly ChatMessage[] }): HeldRun | undefined {
     const results = trailingToolResults(request);
     if (results.length === 0) return undefined;
-    const wanted = results
-      .map((result) => result.id)
-      .sort()
-      .join('');
-    const run = this.held.get(wanted);
-    if (run) this.held.delete(wanted);
+    const wanted = results.map((result) => result.id).sort();
+    const key = stickyKey(wanted);
+    const run = this.held.get(key);
+    if (run) this.held.delete(key);
     return run;
+  }
+
+  releaseToolCalls(ids: readonly string[], error?: Error): boolean {
+    const run = this.held.get(stickyKey(ids));
+    return run ? this.release(run, error) : false;
+  }
+
+  release(run: HeldRun, error?: Error): boolean {
+    if (this.held.get(run.key) !== run) return false;
+    this.held.delete(run.key);
+    run.release(error);
+    return true;
   }
 
   forEach(fn: (run: HeldRun) => void): void {
@@ -77,7 +106,7 @@ export class StickyRunStore {
 }
 
 export function stickyKey(ids: readonly string[]): string {
-  return [...ids].sort().join('');
+  return JSON.stringify([...ids].sort());
 }
 
 export function heldExecToKey(execs: ReadonlyArray<{ readonly exec: Dict }>): string {

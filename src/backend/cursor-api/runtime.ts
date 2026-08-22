@@ -106,7 +106,7 @@ export function createCursorApiRuntime(
     timers,
     wait,
     activeStreams: new Set(),
-    stickyRuns: new StickyRunStore(),
+    stickyRuns: new StickyRunStore(boundedInteger(environment.CURSOR_BRIDGE_MAX_HELD_RUNS, 128)),
     credentialRouter:
       dependencies.credentialRouter ??
       new CursorCredentialRouter({

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { type RequestTrace, traceStage } from '../../trace.js';
+import { traceCredentialSlot, type RequestTrace, traceStage } from '../../trace.js';
 import { CursorBackendError, CursorCommandAbortedError } from '../cursor-cli.js';
 import type { ChatCompletionRequest } from '../types.js';
-import { ConnectFrameDecoder, encodeConnectFrame } from './connect-frame.js';
+import { ConnectFrameDecoder, ConnectRpcError, encodeConnectFrame } from './connect-frame.js';
 import type { CursorApiDiscovery } from './discovery.js';
 import { sendMcpToolResult } from './exec-responses.js';
 import type { CursorHistory } from './history.js';
@@ -12,12 +12,7 @@ import { CursorRunTimeoutError, type CursorRunPhase } from './run-errors.js';
 import { CursorRunMessages } from './run-messages.js';
 import type { RunEmitter, RunOutcome } from './run-types.js';
 import { boundedInteger, type CursorApiRuntime } from './runtime.js';
-import {
-  stickyKey,
-  trailingToolResults,
-  type HeldRun,
-  type ToolResultInput,
-} from './sticky-run-store.js';
+import { stickyKey, type HeldRun, trailingToolResults } from './sticky-run-store.js';
 import { CursorApiHttpError } from './transport.js';
 
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -32,10 +27,19 @@ export interface CursorRunExecutionOptions {
   readonly request: ChatCompletionRequest;
   readonly accessToken: string;
   readonly history: CursorHistory;
+  readonly credentialId: string;
   readonly signal?: AbortSignal;
   readonly emit?: RunEmitter;
   readonly trace?: RequestTrace;
   readonly resolveModel?: (model: string, effort?: string) => RequestedModel | undefined;
+}
+
+export interface CursorRunResumeOptions {
+  readonly runtime: CursorApiRuntime;
+  readonly request: ChatCompletionRequest;
+  readonly signal?: AbortSignal;
+  readonly emit?: RunEmitter;
+  readonly trace?: RequestTrace;
 }
 
 class CursorRunClosedError extends CursorBackendError {
@@ -47,17 +51,23 @@ function errorValue(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
+export function resumeCursorRun(options: CursorRunResumeOptions): Promise<RunOutcome> | undefined {
+  const toolResults = trailingToolResults(options.request);
+  if (toolResults.length === 0) return undefined;
+  const resumed = options.runtime.stickyRuns.take(options.request);
+  if (!resumed) return undefined;
+  traceCredentialSlot(options.trace, resumed.credentialId);
+  return new Promise<RunOutcome>((resolve, reject) => {
+    resumed.resume(resolve, reject, toolResults, options.emit, options.signal);
+  });
+}
+
 export async function executeCursorRun(options: CursorRunExecutionOptions): Promise<RunOutcome> {
   const { runtime, request, signal, trace } = options;
   if (signal?.aborted) throw new CursorCommandAbortedError();
 
-  const toolResults: ToolResultInput[] = trailingToolResults(request);
-  const resumed = toolResults.length > 0 ? runtime.stickyRuns.take(request) : undefined;
-  if (resumed) {
-    return new Promise<RunOutcome>((resolve, reject) => {
-      resumed.resume(resolve, reject, toolResults, options.emit);
-    });
-  }
+  const resumed = resumeCursorRun(options);
+  if (resumed) return resumed;
 
   const requestId = randomUUID();
   const stream = await runtime.transport.openRun(
@@ -67,12 +77,12 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     trace,
   );
   runtime.activeStreams.add(stream);
-  const decoder = new ConnectFrameDecoder();
   const blobs = new Map<string, Buffer>(options.history.blobs);
   const maxOutputBytes = boundedInteger(
     runtime.environment.CURSOR_BRIDGE_MAX_OUTPUT_BYTES,
     DEFAULT_MAX_OUTPUT_BYTES,
   );
+  const decoder = new ConnectFrameDecoder(maxOutputBytes);
   const timeoutMs = boundedInteger(
     runtime.environment.CURSOR_BRIDGE_CURSOR_TIMEOUT_MS,
     DEFAULT_TIMEOUT_MS,
@@ -86,16 +96,24 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
   return new Promise<RunOutcome>((resolve, reject) => {
     let settled = false;
     let parked = false;
+    let activeSignal = signal;
     let outputBytes = 0;
+    let decodedOutputBytes = 0;
     const surfacedCallIds = new Set<string>();
     let surfacedTextLength = 0;
+    let surfacedOutputEventCount = 0;
     let phase: CursorRunPhase = 'awaiting_upstream';
     let toolResultsSent = 0;
     let currentResolve: (outcome: RunOutcome) => void = resolve;
     let currentReject: (error: unknown) => void = reject;
     const heldExecs: Array<{ exec: Dict }> = [];
-    const parkedPayloads: Buffer[] = [];
+    let parkedRun: HeldRun | undefined;
     let holdTimer: ReturnType<typeof runtime.timers.setTimeout> | undefined;
+    const timerHandles: {
+      heartbeat?: ReturnType<typeof runtime.timers.setInterval>;
+      timeout?: ReturnType<typeof runtime.timers.setTimeout>;
+      idleWatchdog?: ReturnType<typeof runtime.timers.setInterval>;
+    } = {};
 
     const clearHoldTimer = () => {
       if (holdTimer !== undefined) runtime.timers.clearTimeout(holdTimer);
@@ -103,11 +121,21 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     };
     const cleanup = () => {
       clearHoldTimer();
-      runtime.timers.clearInterval(heartbeat);
-      runtime.timers.clearInterval(idleWatchdog);
-      runtime.timers.clearTimeout(timeout);
-      signal?.removeEventListener('abort', onAbort);
+      if (timerHandles.heartbeat !== undefined) {
+        runtime.timers.clearInterval(timerHandles.heartbeat);
+      }
+      if (timerHandles.idleWatchdog !== undefined) {
+        runtime.timers.clearInterval(timerHandles.idleWatchdog);
+      }
+      if (timerHandles.timeout !== undefined) {
+        runtime.timers.clearTimeout(timerHandles.timeout);
+      }
+      activeSignal?.removeEventListener('abort', onAbort);
       runtime.activeStreams.delete(stream);
+    };
+    const closeTransport = () => {
+      runtime.activeStreams.delete(stream);
+      if (!stream.destroyed) stream.close();
     };
     const completedCalls = () =>
       enforceNativeToolChoice(
@@ -147,15 +175,25 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       currentResolve(outcome());
     };
     function surfaceBatch(): void {
+      if (settled || parked) return;
       const calls = completedCalls();
       if (calls.length === 0) return;
-      parked = true;
-      phase = 'awaiting_client_tool_results';
       clearHoldTimer();
       for (const call of calls) surfacedCallIds.add(call.id);
       const text = freshText();
       surfacedTextLength = messages.text.length;
-      runtime.stickyRuns.park(createHeld(stickyKey(calls.map((call) => call.id))));
+      surfacedOutputEventCount = messages.outputEvents.length;
+      const holdForResults = (!streamEnded && !turnEnded) || completedCalls().length > 0;
+      if (holdForResults) {
+        parked = true;
+        phase = 'awaiting_client_tool_results';
+        parkedRun = createHeld(stickyKey(calls.map((call) => call.id)));
+        runtime.stickyRuns.park(parkedRun);
+      } else {
+        settled = true;
+        cleanup();
+        if (!stream.destroyed && !stream.writableEnded) stream.end();
+      }
       if (messages.toolStream.batchComplete(request.parallel_tool_calls !== false)) {
         traceToolBatch();
       }
@@ -167,11 +205,22 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       });
     }
     function drain(): void {
+      if (settled || parked) return;
+      if ((streamEnded || turnEnded) && messages.toolStream.hasIncompleteStartedCalls()) {
+        finish(new CursorBackendError('Cursor API run ended with incomplete tool call'));
+        return;
+      }
       if (completedCalls().length > 0) {
         surfaceBatch();
         return;
       }
-      if (turnEnded || streamEnded) finish();
+      if (turnEnded || streamEnded) {
+        if (freshText().length === 0) {
+          finish(new CursorBackendError('Cursor API run ended without content or tool calls'));
+          return;
+        }
+        finish();
+      }
     }
     function hold(): void {
       if (parked || settled || heldExecs.length === 0) return;
@@ -186,42 +235,63 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       drain();
     }
     function createHeld(key: string): HeldRun {
-      return {
+      const held: HeldRun = {
         key,
-        resume(nextResolve, nextReject, results, nextEmit) {
+        credentialId: options.credentialId,
+        resume(nextResolve, nextReject, results, nextEmit, nextSignal) {
           if (settled) return;
+          if (parkedRun === held) parkedRun = undefined;
           parked = false;
           phase = 'resumed_after_tool_results';
           currentResolve = nextResolve;
           currentReject = nextReject;
           messages.setEmit(nextEmit);
+          bindSignal(nextSignal);
+          if (settled) return;
+          const bufferedEvents = messages.outputEvents.slice(surfacedOutputEventCount);
+          if (bufferedEvents.length > 0 && nextEmit) {
+            for (const event of bufferedEvents) nextEmit(event);
+            surfacedOutputEventCount = messages.outputEvents.length;
+            surfacedTextLength = messages.text.length;
+          }
           runtime.activeStreams.add(stream);
           for (const result of results) {
+            const execId = messages.toolStream.execIdFor(result.id) ?? result.id;
             const targetIndex = heldExecs.findIndex((candidate) => {
               const message = candidate.exec.message as Dict | undefined;
               const value = message?.value as Dict | undefined;
-              return String(value?.toolCallId ?? '') === result.id;
+              return String(value?.toolCallId ?? '') === execId;
             });
             const target = heldExecs[targetIndex];
             if (target) {
-              sendMcpToolResult(writeMessage, target.exec, result.content);
+              if (!streamEnded && !turnEnded) {
+                sendMcpToolResult(writeMessage, target.exec, result.content);
+                toolResultsSent += 1;
+              }
               heldExecs.splice(targetIndex, 1);
-              toolResultsSent += 1;
             }
           }
-          const replay = parkedPayloads.splice(0);
-          for (const payload of replay) turnEnded = messages.handle(payload) || turnEnded;
           drain();
         },
         release(error) {
           if (settled) return;
           if (!parked) return;
+          parked = false;
           // Full teardown: a released hold leaves no stream or timers behind.
           cleanup();
           if (!stream.destroyed) stream.destroy(error ?? new CursorCommandAbortedError());
           currentReject(error ?? new CursorCommandAbortedError());
         },
       };
+      return held;
+    }
+    function releaseParked(error: Error): void {
+      const held = parkedRun;
+      parkedRun = undefined;
+      if (held && runtime.stickyRuns.release(held, error)) return;
+      cleanup();
+      if (!stream.destroyed) stream.destroy(error);
+      currentReject(error);
     }
     const scheduleHold = () => {
       if (parked || settled) return;
@@ -231,15 +301,24 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       // OpenAI tool_calls response instead of a dead held Run.
       holdTimer = runtime.timers.setTimeout(hold, settleMs);
     };
-    const onAbort = () => {
+    function onAbort(): void {
       if (parked) {
-        runtime.stickyRuns.clear(new CursorCommandAbortedError());
+        releaseParked(new CursorCommandAbortedError());
         return;
       }
       const error = new CursorCommandAbortedError();
       if (!stream.destroyed && !stream.writableEnded) stream.end();
       finish(error);
-    };
+    }
+    function bindSignal(nextSignal: AbortSignal | undefined): void {
+      activeSignal?.removeEventListener('abort', onAbort);
+      activeSignal = nextSignal;
+      if (activeSignal?.aborted) {
+        onAbort();
+        return;
+      }
+      activeSignal?.addEventListener('abort', onAbort, { once: true });
+    }
     const writeMessage = (message: Dict, compressed?: boolean) => {
       if (settled || stream.destroyed || stream.writableEnded) return;
       const payload = runtime.codec.encode('agent.v1.AgentClientMessage', message);
@@ -248,6 +327,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     const messages = new CursorRunMessages({
       codec: runtime.codec,
       request,
+      callIdPrefix: requestId,
       trace,
       emit: options.emit,
       blobs,
@@ -261,11 +341,15 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       onInteraction: (updateCase) => {
         lastInteractionAt = Date.now();
         lastInteractionCase = updateCase ?? null;
+        if (heldExecs.length > 0 && !parked && !settled) scheduleHold();
       },
     });
 
-    const heartbeat = runtime.timers.setInterval(() => writeMessage(heartbeatMessage()), 5_000);
-    const timeout = runtime.timers.setTimeout(() => {
+    timerHandles.heartbeat = runtime.timers.setInterval(
+      () => writeMessage(heartbeatMessage()),
+      5_000,
+    );
+    timerHandles.timeout = runtime.timers.setTimeout(() => {
       const error = new CursorRunTimeoutError(
         parked
           ? `Cursor API run held for a client tool result timed out after ${timeoutMs}ms`
@@ -274,7 +358,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
         {
           phase,
           toolResultsSent,
-          bufferedFrames: parkedPayloads.length,
+          bufferedFrames: 0,
           streamState: {
             destroyed: stream.destroyed,
             writableEnded: stream.writableEnded,
@@ -284,6 +368,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
           lastInteractionCase,
           lastInteractionAgoMs: Math.max(0, Date.now() - lastInteractionAt),
           outputBytes,
+          decodedOutputBytes,
           sawTurnEnded: turnEnded,
           sawTrailer: streamEnded,
           transport: stream.diagnostics?.() ?? {},
@@ -291,18 +376,19 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       );
       stream.destroy(error);
       if (parked) {
-        runtime.stickyRuns.clear(error);
+        releaseParked(error);
         return;
       }
       finish(error);
     }, timeoutMs);
-    signal?.addEventListener('abort', onAbort, { once: true });
+    bindSignal(activeSignal);
+    if (settled) return;
 
     let turnEnded = false;
     let streamEnded = false;
     let lastInteractionAt = Date.now();
     let lastInteractionCase: string | null = null;
-    const idleWatchdog = runtime.timers.setInterval(() => {
+    timerHandles.idleWatchdog = runtime.timers.setInterval(() => {
       if (settled || parked) return;
       if (Date.now() - lastInteractionAt <= idleMs) return;
       // Silent stall (e.g. the model wants a tool it cannot map to a
@@ -323,38 +409,109 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     });
     stream.on('data', (chunk) => {
       if (settled) return;
-      if (parked) {
-        for (const frame of decoder.push(chunk)) {
-          if (frame.payload) parkedPayloads.push(frame.payload);
-          if (frame.trailer) parkedPayloads.push(frame.payload ?? Buffer.alloc(0));
-        }
-        return;
-      }
-      outputBytes += chunk.length;
-      if (outputBytes > maxOutputBytes) {
-        const error = new CursorBackendError('output limit exceeded');
-        stream.destroy(error);
-        finish(error);
-        return;
-      }
       try {
-        for (const frame of decoder.push(chunk)) {
-          traceStage(trace, 'first_event');
-          if (frame.trailer) streamEnded = true;
-          else if (frame.payload) turnEnded = messages.handle(frame.payload) || turnEnded;
+        const frames = decoder.push(chunk);
+        outputBytes = decoder.rawOutputBytes;
+        if (outputBytes > maxOutputBytes) {
+          throw new CursorBackendError('output limit exceeded');
         }
-        if (settled || parked) return;
-        if (streamEnded) finish();
-        else if (turnEnded) drain();
+        const decodedBytes = frames.reduce(
+          (total, frame) =>
+            total +
+            (frame.payload?.length ??
+              (frame.trailer ? Buffer.byteLength(JSON.stringify(frame.trailer)) : 0)),
+          0,
+        );
+        if (decodedOutputBytes + decodedBytes > maxOutputBytes) {
+          throw new CursorBackendError('output limit exceeded');
+        }
+        decodedOutputBytes += decodedBytes;
+        if (parked) {
+          messages.setEmit(undefined);
+          for (const frame of frames) {
+            if (settled) break;
+            if (frame.trailer) {
+              streamEnded = true;
+              if (frame.error) {
+                if (completedCalls().length === 0) {
+                  releaseParked(frame.error);
+                } else {
+                  closeTransport();
+                }
+                return;
+              }
+            } else if (frame.payload) {
+              try {
+                turnEnded = messages.handle(frame.payload) || turnEnded;
+              } catch (error) {
+                if (completedCalls().length === 0) throw error;
+                streamEnded = true;
+                closeTransport();
+                return;
+              }
+            }
+          }
+          if (settled) {
+            const held = parkedRun;
+            parkedRun = undefined;
+            if (held) runtime.stickyRuns.release(held);
+          } else if ((streamEnded || turnEnded) && completedCalls().length === 0) {
+            releaseParked(new CursorRunClosedError('held Run ended before client tool result'));
+          }
+          if (streamEnded) closeTransport();
+          return;
+        }
+        for (const frame of frames) {
+          traceStage(trace, 'first_event');
+          if (frame.trailer) {
+            streamEnded = true;
+            if (frame.error) throw frame.error;
+          } else if (frame.payload) turnEnded = messages.handle(frame.payload) || turnEnded;
+        }
+        if (settled || parked) {
+          if (streamEnded) closeTransport();
+          return;
+        }
+        if (streamEnded || turnEnded) drain();
+        if (streamEnded) closeTransport();
       } catch (error) {
-        stream.destroy(errorValue(error));
-        finish(error);
+        outputBytes = decoder.rawOutputBytes;
+        const caught = errorValue(error);
+        if (
+          parked &&
+          caught instanceof ConnectRpcError &&
+          caught.terminal &&
+          completedCalls().length > 0
+        ) {
+          streamEnded = true;
+          closeTransport();
+        } else if (parked) releaseParked(caught);
+        else {
+          stream.destroy(caught);
+          finish(caught);
+        }
       }
     });
-    stream.once('error', (error) => finish(error));
+    stream.once('error', (error) => {
+      if (parked) {
+        if (completedCalls().length > 0) {
+          streamEnded = true;
+          runtime.activeStreams.delete(stream);
+          return;
+        }
+        releaseParked(error);
+        return;
+      }
+      finish(error);
+    });
     stream.once('close', () => {
       if (parked) {
-        runtime.stickyRuns.clear(new CursorRunClosedError('held Run stream closed'));
+        if (completedCalls().length > 0) {
+          streamEnded = true;
+          runtime.activeStreams.delete(stream);
+          return;
+        }
+        releaseParked(new CursorRunClosedError('held Run stream closed'));
         return;
       }
       if (!settled)
@@ -370,6 +527,6 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       ),
       false,
     );
-    if (signal?.aborted) onAbort();
+    if (activeSignal?.aborted) onAbort();
   });
 }

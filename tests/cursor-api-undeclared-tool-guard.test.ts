@@ -114,9 +114,40 @@ describe('cursor-api undeclared tool-call guard', () => {
     expect(transport.opened).toHaveLength(2);
     expect(result.tool_calls).toEqual([
       {
-        id: 'c2',
+        id: expect.stringMatching(/^call_[a-f0-9]{32}_0$/),
         type: 'function',
         function: { name: 'echo_value', arguments: '{"value":"seed"}' },
+      },
+    ]);
+  });
+
+  it('retries a builtin misselection for an exact function choice', async () => {
+    // Given: one external tool is selected by name, but the first Run selects
+    // Cursor's builtin shell tool instead.
+    const request: ChatCompletionRequest = {
+      ...parallelToolRequest(),
+      tool_choice: { type: 'function', function: { name: 'echo_value' } },
+      messages: [{ role: 'user', content: 'Call echo_value.' }],
+    };
+    const externalName = wireToolName(request);
+    const transport = new ScriptedTransport((stream) => {
+      stream.emit('response', { ':status': 200 });
+      stream.emit(
+        'data',
+        transport.opened.length === 1 ? builtinShellCall() : callBatch(externalName, 'c2', 'exact'),
+      );
+    });
+
+    // When: the bridge handles the pre-visible builtin misselection.
+    const result = await backend(transport).complete(request);
+
+    // Then: one bounded recovery Run preserves the exact function policy.
+    expect(transport.opened).toHaveLength(2);
+    expect(result.tool_calls).toEqual([
+      {
+        id: expect.stringMatching(/^call_[a-f0-9]{32}_0$/),
+        type: 'function',
+        function: { name: 'echo_value', arguments: '{"value":"exact"}' },
       },
     ]);
   });
@@ -163,7 +194,7 @@ describe('cursor-api undeclared tool-call guard', () => {
     expect(transport.opened).toHaveLength(2);
     expect(result.tool_calls).toEqual([
       {
-        id: 'c2',
+        id: expect.stringMatching(/^call_[a-f0-9]{32}_0$/),
         type: 'function',
         function: { name: 'echo_value', arguments: '{"value":"recovered"}' },
       },

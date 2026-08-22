@@ -80,9 +80,11 @@ CLI reverse engineering is in scope if needed.
   `openai_surface_tax` / upstream variance, previously accepted via user
   override (`task-12-user-override-closure.json`).
 - **CLOSED (2026-08-22, task-12-ci-sticky.json):** post-sticky full ci shows
-  **all 82 latency gates passing** — the per-request Run setup was the
-  residual overhead, and one Run per flow removed it. Remaining trial
-  failures in that run are model/upstream flakes on both lanes.
+  **all 82 lane checks passing across 41 paired latency gates** — the
+  per-request Run setup was the residual overhead, and one Run per flow
+  removed it. The two remaining correctness failures are one upstream
+  transport failure and one invalid tool-argument outcome owned by tool
+  scheduling.
 
 ## Reverse-engineering lane (if wire capture shows unexplained divergence)
 
@@ -117,7 +119,7 @@ S2 spike (worktree `cursor-cli-re`, 3/3 live) proved one Cursor Run can be
 held across two OpenAI HTTP requests. Transplant: `mcpArgs` is no longer
 empty-answered — the Run is parked in `StickyRunStore`
 (`src/backend/cursor-api/sticky-run-store.ts`) after a settle window
-(`CURSOR_BRIDGE_STICKY_SETTLE_MS`, default 250 ms, lets serialized parallel
+(`CURSOR_BRIDGE_STICKY_SETTLE_MS`, default 1,000 ms, lets serialized parallel
 siblings join the same response), the OpenAI response returns the tool
 calls, and the next request's `role: tool` messages resume the same Run
 with a populated `mcpResult`. The empty-answer derail cutoff is gone.

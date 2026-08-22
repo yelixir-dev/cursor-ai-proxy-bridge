@@ -4,7 +4,6 @@ import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
 import { AutoCursorBackend } from '../src/backend/auto.js';
 import { CursorAuthProvider } from '../src/backend/cursor-api/auth.js';
-import { encodeConnectFrame } from '../src/backend/cursor-api/connect-frame.js';
 import { CursorApiBackend } from '../src/backend/cursor-api/index.js';
 import {
   CursorApiHttpError,
@@ -29,6 +28,7 @@ import {
   type TraceRecord,
 } from '../src/trace.js';
 import type { BridgeConfig } from '../src/config.js';
+import { trailer, update } from './support/cursor-api-scripted.js';
 
 const config: BridgeConfig = {
   host: '127.0.0.1',
@@ -154,7 +154,10 @@ class RetryingTraceTransport implements CursorApiTransport {
       });
     }
     return new TraceRunStream((stream) => {
-      stream.emit('data', encodeConnectFrame(Buffer.from('{}'), { trailer: true }));
+      stream.emit(
+        'data',
+        Buffer.concat([update('textDelta', { text: 'trace complete' }), trailer()]),
+      );
     });
   }
 }

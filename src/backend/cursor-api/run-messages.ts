@@ -1,6 +1,6 @@
 import { type RequestTrace, traceStage } from '../../trace.js';
 import { CursorBackendError } from '../cursor-cli.js';
-import type { ChatCompletionRequest } from '../types.js';
+import type { ChatCompletionRequest, CompletionStreamEvent } from '../types.js';
 import { handleExecResponse } from './exec-responses.js';
 import type { ProtoCodec } from './protobuf.js';
 import type { RunEmitter } from './run-types.js';
@@ -38,6 +38,7 @@ function attemptedToolName(update: Dict): string {
 export interface CursorRunMessageOptions {
   readonly codec: ProtoCodec;
   readonly request: ChatCompletionRequest;
+  readonly callIdPrefix?: string;
   readonly trace?: RequestTrace;
   readonly emit?: RunEmitter;
   readonly blobs: Map<string, Buffer>;
@@ -60,18 +61,24 @@ function bytes(value: unknown): Buffer {
 
 export class CursorRunMessages {
   readonly toolStream: CursorToolStream;
+  readonly outputEvents: Array<Extract<CompletionStreamEvent, { type: 'content' | 'thinking' }>> =
+    [];
   text = '';
   usageAttribution = cursorUsageAttribution();
+  private emit: RunEmitter | undefined;
 
   constructor(private readonly options: CursorRunMessageOptions) {
+    this.emit = options.emit;
     this.toolStream = new CursorToolStream(
-      options.request.tool_choice === 'none' ? undefined : options.emit,
+      options.request.tool_choice === 'none' ? undefined : this.emit,
       new Set((options.request.tools ?? []).map((tool) => tool.function.name)),
       options.request.parallel_tool_calls === false ? 1 : Number.POSITIVE_INFINITY,
+      options.callIdPrefix,
     );
   }
 
   setEmit(emit: RunEmitter | undefined): void {
+    this.emit = emit;
     this.toolStream.setEmit(this.options.request.tool_choice === 'none' ? undefined : emit);
   }
 
@@ -116,12 +123,20 @@ export class CursorRunMessages {
     if (updateCase === 'textDelta') {
       const delta = typeof update.text === 'string' ? update.text : '';
       this.text += delta;
-      if (delta) this.options.emit?.({ type: 'content', text: delta });
+      if (delta) {
+        const event = { type: 'content' as const, text: delta };
+        this.outputEvents.push(event);
+        this.emit?.(event);
+      }
       return false;
     }
     if (updateCase === 'thinkingDelta') {
       const delta = typeof update.text === 'string' ? update.text : '';
-      if (delta) this.options.emit?.({ type: 'thinking', text: delta });
+      if (delta) {
+        const event = { type: 'thinking' as const, text: delta };
+        this.outputEvents.push(event);
+        this.emit?.(event);
+      }
       return false;
     }
     if (updateCase === 'toolCallStarted') {

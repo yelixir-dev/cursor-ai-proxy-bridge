@@ -6,7 +6,7 @@ import {
   validateToolCallArguments,
 } from '../tool-arguments.js';
 import { parseToolCallsFromText } from '../tool-call-parse.js';
-import type { ChatCompletionRequest, CompletionStreamEvent } from '../types.js';
+import type { ChatCompletionRequest, CompletionStreamEvent, ToolCall } from '../types.js';
 import { enforceNativeToolChoice } from './mapper.js';
 import { CursorBuiltinToolCallError } from './run-messages.js';
 import type { CursorRun, RunEmitter, RunLifecycle, RunOutcome } from './run-types.js';
@@ -17,6 +17,7 @@ export interface ValidatedRunOptions {
   readonly request: ChatCompletionRequest;
   readonly lifecycle: RunLifecycle;
   readonly run: CursorRun;
+  readonly onToolValidationFailure?: (calls: readonly ToolCall[], error: Error) => void;
 }
 
 function retryFeedback(failure: ToolArgumentValidationFailure): string {
@@ -28,11 +29,17 @@ function builtinRecoveryRequest(
   error: unknown,
 ): ChatCompletionRequest | undefined {
   const tools = request.tools ?? [];
-  if (!(error instanceof CursorBuiltinToolCallError) || request.tool_choice !== 'required') {
+  if (!(error instanceof CursorBuiltinToolCallError) || !choiceRequiresTool(request)) {
     return undefined;
   }
-  const tool = tools.length === 1 ? tools[0] : undefined;
   if (tools.length === 0) return undefined;
+  const exactName =
+    typeof request.tool_choice === 'object' ? request.tool_choice.function.name : undefined;
+  const tool = exactName
+    ? tools.find((candidate) => candidate.function.name === exactName)
+    : tools.length === 1
+      ? tools[0]
+      : undefined;
   const names = tools.map((candidate) => candidate.function.name);
   return {
     ...request,
@@ -58,23 +65,45 @@ export function choiceRequiresTool(request: ChatCompletionRequest): boolean {
 function mappedStreamEvent(
   event: CompletionStreamEvent,
   restoreToolName: (name: string) => string,
+  responseIndex: (id: string) => number,
+  request: ChatCompletionRequest,
 ): CompletionStreamEvent {
+  const forbidden = () =>
+    new CursorBackendError('Cursor returned a tool call forbidden by the current request');
+  const allows = (name: string): boolean => {
+    if (request.tool_choice === 'none') return false;
+    if (!(request.tools ?? []).some((tool) => tool.function.name === name)) return false;
+    return typeof request.tool_choice !== 'object' || request.tool_choice.function.name === name;
+  };
   switch (event.type) {
     case 'thinking':
     case 'content':
-    case 'tool_call_arguments_delta':
     case 'done':
       return event;
-    case 'tool_call_start':
-      return { ...event, name: restoreToolName(event.name) };
-    case 'tool_call_complete':
+    case 'tool_call_arguments_delta':
+      if (request.tool_choice === 'none') throw forbidden();
+      return { ...event, index: responseIndex(event.id) };
+    case 'tool_call_start': {
+      const name = restoreToolName(event.name);
+      if (!allows(name)) throw forbidden();
       return {
         ...event,
+        index: responseIndex(event.id),
+        name,
+      };
+    }
+    case 'tool_call_complete': {
+      const name = restoreToolName(event.call.function.name);
+      if (!allows(name)) throw forbidden();
+      return {
+        ...event,
+        index: responseIndex(event.call.id),
         call: {
           ...event.call,
-          function: { ...event.call.function, name: restoreToolName(event.call.function.name) },
+          function: { ...event.call.function, name },
         },
       };
+    }
     default: {
       const exhaustive: never = event;
       return exhaustive;
@@ -87,12 +116,22 @@ export async function runValidatedCursorCompletion(
 ): Promise<RunOutcome> {
   const { request, lifecycle } = options;
   const gate = createSemanticOutputGate();
+  const responseIndexes = new Map<string, number>();
+  const responseIndex = (id: string): number => {
+    const existing = responseIndexes.get(id);
+    if (existing !== undefined) return existing;
+    const index = responseIndexes.size;
+    responseIndexes.set(id, index);
+    return index;
+  };
   const runMapped = async (candidateRequest: ChatCompletionRequest): Promise<RunOutcome> => {
     const mapped = mapCursorApiToolRequest(candidateRequest);
     const mappedEmit: RunEmitter | undefined = lifecycle.emit
       ? Object.assign(
           (event: CompletionStreamEvent) =>
-            lifecycle.emit?.(mappedStreamEvent(event, mapped.restoreToolName)),
+            lifecycle.emit?.(
+              mappedStreamEvent(event, mapped.restoreToolName, responseIndex, candidateRequest),
+            ),
           { reset: lifecycle.emit.reset },
         )
       : undefined;
@@ -123,10 +162,23 @@ export async function runValidatedCursorCompletion(
       );
     }
   }
+  const policyCalls = enforceNativeToolChoice(outcome.toolCalls, request);
+  if (
+    policyCalls.length !== outcome.toolCalls.length ||
+    policyCalls.some((call, index) => call.id !== outcome.toolCalls[index]?.id)
+  ) {
+    const policyError = new CursorBackendError(
+      'Cursor returned a tool call forbidden by the current request',
+    );
+    options.onToolValidationFailure?.(outcome.toolCalls, policyError);
+    throw policyError;
+  }
   if (outcome.toolCalls.length) {
     const failure = validateToolCallArguments(outcome.toolCalls, request.tools);
     if (failure) {
-      if (gate.delivered) throw new ToolArgumentValidationError(failure);
+      const validationError = new ToolArgumentValidationError(failure);
+      options.onToolValidationFailure?.(outcome.toolCalls, validationError);
+      if (gate.delivered) throw validationError;
       traceRetry(lifecycle.trace, 'tool_validation');
       outcome = await runMapped({
         ...request,
@@ -139,14 +191,18 @@ export async function runValidatedCursorCompletion(
         });
       }
       const retryFailure = validateToolCallArguments(outcome.toolCalls, request.tools);
-      if (retryFailure) throw new ToolArgumentValidationError(retryFailure);
+      if (retryFailure) {
+        const retryError = new ToolArgumentValidationError(retryFailure);
+        options.onToolValidationFailure?.(outcome.toolCalls, retryError);
+        throw retryError;
+      }
     }
   }
   if (choiceRequiresTool(request) && outcome.toolCalls.length === 0) {
     throw new CursorBackendError('Cursor did not return the required tool call');
   }
-  for (const [index, call] of outcome.toolCalls.entries()) {
-    lifecycle.emit?.({ type: 'tool_call_complete', index, call });
+  for (const call of outcome.toolCalls) {
+    lifecycle.emit?.({ type: 'tool_call_complete', index: responseIndex(call.id), call });
   }
   return outcome;
 }

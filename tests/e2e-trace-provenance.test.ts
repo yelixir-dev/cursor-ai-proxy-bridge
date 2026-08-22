@@ -124,6 +124,45 @@ describe('pinned E2E bridge trace provenance', () => {
     });
   });
 
+  it('rejects promptly when the trace deadline expires before the trigger settles', async () => {
+    // Given: a trigger that remains in flight past the trace subscription deadline.
+    const tempRoot = await mkdtemp(join(tmpdir(), 'e2e-trace-trigger-pending-'));
+    roots.push(tempRoot);
+    const provenance = await createTraceProvenance({ tempRoot });
+    const controller = new AbortController();
+    let settleTrigger = (): void => {};
+    const triggerPending = new Promise<void>((resolve) => {
+      settleTrigger = resolve;
+    });
+    const waiting = triggerAndAwaitAbortQuiescence({
+      provenance,
+      signal: controller.signal,
+      trigger: () => triggerPending,
+    });
+    let outcome: 'pending' | 'resolved' | 'rejected' = 'pending';
+    const captured = waiting.then(
+      () => {
+        outcome = 'resolved';
+      },
+      () => {
+        outcome = 'rejected';
+      },
+    );
+
+    // When: the subscription is cancelled while the trigger is still pending.
+    controller.abort();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    const outcomeBeforeTriggerSettled = outcome;
+    settleTrigger();
+    await captured;
+
+    // Then: the helper rejects instead of leaving an unhandled internal promise.
+    expect(outcomeBeforeTriggerSettled).toBe('rejected');
+  });
+
   it('cancels an unmet trace subscription without sleeps or polling', async () => {
     // Given: an exact future-record subscription.
     const tempRoot = await mkdtemp(join(tmpdir(), 'e2e-trace-cancel-'));

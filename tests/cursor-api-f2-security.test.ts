@@ -2,7 +2,11 @@ import { EventEmitter } from 'node:events';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import { CursorAuthProvider } from '../src/backend/cursor-api/auth.js';
-import { ConnectRpcError, encodeConnectFrame } from '../src/backend/cursor-api/connect-frame.js';
+import {
+  ConnectFrameDecoder,
+  ConnectRpcError,
+  encodeConnectFrame,
+} from '../src/backend/cursor-api/connect-frame.js';
 import { CursorCredentialRouter } from '../src/backend/cursor-api/credentials.js';
 import { CursorApiBackend } from '../src/backend/cursor-api/index.js';
 import {
@@ -155,6 +159,16 @@ function toolCall(name: string, id: string, value: string): Record<string, unkno
 }
 
 describe('cursor-api F2 lifecycle boundaries', () => {
+  it('accepts an empty trailer at the exact decoded payload limit', () => {
+    const decoder = new ConnectFrameDecoder(64);
+
+    expect(() => decoder.push(encodeConnectFrame(Buffer.alloc(64)))).not.toThrow();
+    expect(() =>
+      decoder.push(encodeConnectFrame(Buffer.alloc(0), { trailer: true })),
+    ).not.toThrow();
+    expect(() => decoder.finish()).not.toThrow();
+  });
+
   it('keeps the successful failover Run sticky through the client tool result', async () => {
     // Given: the first credential fails before output, the second credential
     // opens a Run and parks on one external tool call.
@@ -321,8 +335,10 @@ describe('cursor-api F2 lifecycle boundaries', () => {
       'tool_call_arguments_delta',
     ]);
     expect(
-      events.filter((event) => event.type === 'tool_call_complete').map((event) => event.call.id),
-    ).toEqual(['call-a', 'call-b']);
+      events
+        .filter((event) => event.type === 'tool_call_complete')
+        .map((event) => JSON.parse(event.call.function.arguments).value),
+    ).toEqual(['A', 'B']);
     expect(transport.attempts).toEqual(['only-token']);
   });
 

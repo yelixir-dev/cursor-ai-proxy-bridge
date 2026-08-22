@@ -412,6 +412,31 @@ function jwt(exp: number): string {
 }
 
 describe('Cursor API Connect framing', () => {
+  it('rejects frames with unsupported flag bits', () => {
+    const decoder = new ConnectFrameDecoder();
+    const frame = encodeConnectFrame(Buffer.from('payload'));
+    frame[0] = 0x04;
+
+    expect(() => decoder.push(frame)).toThrow('unsupported flag bits');
+  });
+
+  it('rejects compressed frames whose decoded payload exceeds the configured bound', () => {
+    const decoder = new ConnectFrameDecoder(64);
+    const compressed = encodeConnectFrame(Buffer.alloc(1_024, 0x61), { compressed: true });
+
+    expect(() => decoder.push(compressed)).toThrow('decoded payload exceeds 64 bytes');
+  });
+
+  it('rejects cumulative decoded payloads within one compressed chunk', () => {
+    const decoder = new ConnectFrameDecoder(64);
+    const compressed = Buffer.concat([
+      encodeConnectFrame(Buffer.alloc(40, 0x61), { compressed: true }),
+      encodeConnectFrame(Buffer.alloc(40, 0x62), { compressed: true }),
+    ]);
+
+    expect(() => decoder.push(compressed)).toThrow('decoded payload exceeds 64 bytes');
+  });
+
   it('round-trips split plain and gzip frames and maps trailer errors', () => {
     const decoder = new ConnectFrameDecoder();
     const plain = encodeConnectFrame(Buffer.from('plain'));
@@ -431,6 +456,18 @@ describe('Cursor API Connect framing', () => {
       ),
     ).toThrowError(ConnectRpcError);
     expect(() => failed.finish()).not.toThrow();
+
+    for (const invalid of ['[]', 'null']) {
+      const malformed = new ConnectFrameDecoder();
+      expect(() =>
+        malformed.push(
+          encodeConnectFrame(Buffer.from(invalid), {
+            trailer: true,
+          }),
+        ),
+      ).toThrowError(ConnectRpcError);
+      expect(() => malformed.finish()).not.toThrow();
+    }
 
     const structured = new ConnectFrameDecoder();
     let structuredError: unknown;
@@ -1075,7 +1112,7 @@ describe('Cursor API mapping and Run lifecycle', () => {
     const result = await backendWith(toolTransport).complete(toolRequest);
     expect(result.tool_calls).toEqual([
       {
-        id: 'call_native_1',
+        id: expect.stringMatching(/^call_[a-f0-9]{32}_0$/),
         type: 'function',
         function: { name: 'echo_value', arguments: '{"value":"NATIVE_OK"}' },
       },
@@ -1154,23 +1191,29 @@ describe('Cursor API mapping and Run lifecycle', () => {
 
     const events = [];
     for await (const event of backendWith(transport).completeStream(request)) events.push(event);
+    const starts = events.filter((event) => event.type === 'tool_call_start');
+    const idA = starts[0]?.id;
+    const idB = starts[1]?.id;
+    expect(idA).toMatch(/^call_[a-f0-9]{32}_0$/);
+    expect(idB).toMatch(/^call_[a-f0-9]{32}_1$/);
+    expect(idA).not.toBe(idB);
 
     expect(events).toEqual([
-      { type: 'tool_call_start', index: 0, id: 'call_a', name: 'echo_value' },
-      { type: 'tool_call_start', index: 1, id: 'call_b', name: 'echo_value' },
-      { type: 'tool_call_arguments_delta', index: 0, id: 'call_a', delta: '{"value":' },
+      { type: 'tool_call_start', index: 0, id: idA, name: 'echo_value' },
+      { type: 'tool_call_start', index: 1, id: idB, name: 'echo_value' },
+      { type: 'tool_call_arguments_delta', index: 0, id: idA, delta: '{"value":' },
       {
         type: 'tool_call_arguments_delta',
         index: 1,
-        id: 'call_b',
+        id: idB,
         delta: '{"value":"B"}',
       },
-      { type: 'tool_call_arguments_delta', index: 0, id: 'call_a', delta: '"A"}' },
+      { type: 'tool_call_arguments_delta', index: 0, id: idA, delta: '"A"}' },
       {
         type: 'tool_call_complete',
         index: 0,
         call: {
-          id: 'call_a',
+          id: idA,
           type: 'function',
           function: { name: 'echo_value', arguments: '{"value":"A"}' },
         },
@@ -1179,7 +1222,7 @@ describe('Cursor API mapping and Run lifecycle', () => {
         type: 'tool_call_complete',
         index: 1,
         call: {
-          id: 'call_b',
+          id: idB,
           type: 'function',
           function: { name: 'echo_value', arguments: '{"value":"B"}' },
         },
@@ -1193,8 +1236,10 @@ describe('Cursor API mapping and Run lifecycle', () => {
     ]);
     const nonStream = await backendWith(new FakeTransport(script)).complete(request);
     expect(
-      events.filter((event) => event.type === 'tool_call_complete').map((event) => event.call),
-    ).toEqual(nonStream.tool_calls);
+      events
+        .filter((event) => event.type === 'tool_call_complete')
+        .map((event) => event.call.function),
+    ).toEqual(nonStream.tool_calls?.map((call) => call.function));
   });
 
   it('drains one decoded chunk before settling a staggered parallel tool batch over HTTP SSE', async () => {
@@ -1340,18 +1385,23 @@ describe('Cursor API mapping and Run lifecycle', () => {
     expect(status).toBe(200);
     expect(transport.openRunCount).toBe(1);
     expect(transport.dataChunkCount).toBe(1);
-    expect(typedEvents.filter((event) => event.type === 'tool_call_start')).toEqual([
-      { type: 'tool_call_start', index: 0, id: 'call_a_start', name: 'echo_value' },
-      { type: 'tool_call_start', index: 1, id: 'call_b_start', name: 'echo_value' },
+    const typedStarts = typedEvents.filter((event) => event.type === 'tool_call_start');
+    const idA = typedStarts[0]?.id;
+    const idB = typedStarts[1]?.id;
+    expect(idA).toMatch(/^call_[a-f0-9]{32}_0$/);
+    expect(idB).toMatch(/^call_[a-f0-9]{32}_1$/);
+    expect(typedStarts).toEqual([
+      { type: 'tool_call_start', index: 0, id: idA, name: 'echo_value' },
+      { type: 'tool_call_start', index: 1, id: idB, name: 'echo_value' },
     ]);
     expect([...calls.values()]).toEqual([
       {
-        id: 'call_a_start',
+        id: idA,
         type: 'function',
         function: { name: 'echo_value', arguments: argsA },
       },
       {
-        id: 'call_b_start',
+        id: idB,
         type: 'function',
         function: { name: 'echo_value', arguments: argsB },
       },
@@ -1361,8 +1411,8 @@ describe('Cursor API mapping and Run lifecycle', () => {
         .filter((event) => event.type === 'tool_call_complete')
         .map((event) => ({ index: event.index, id: event.call.id })),
     ).toEqual([
-      { index: 0, id: 'call_a_start' },
-      { index: 1, id: 'call_b_start' },
+      { index: 0, id: idA },
+      { index: 1, id: idB },
     ]);
     expect(body.match(/"finish_reason":"tool_calls"/g)).toHaveLength(1);
     expect(frames.find((frame) => frame.choices?.length === 0)?.usage).toEqual({
@@ -2237,7 +2287,20 @@ describe('Cursor API structured history', () => {
     );
     expect(blob.role).toBe('system');
 
-    stream.emit('data', encodeConnectFrame(Buffer.alloc(0), { trailer: true }));
-    await expect(completion).resolves.toMatchObject({ content: null });
+    stream.emit(
+      'data',
+      Buffer.concat([
+        encodeConnectFrame(
+          transport.codec.encode(
+            'agent.v1.AgentServerMessage',
+            serverMessage('interactionUpdate', {
+              message: { case: 'textDelta', value: { text: 'history ready' } },
+            }),
+          ),
+        ),
+        encodeConnectFrame(Buffer.alloc(0), { trailer: true }),
+      ]),
+    );
+    await expect(completion).resolves.toMatchObject({ content: 'history ready' });
   });
 });

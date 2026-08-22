@@ -93,15 +93,15 @@ describe('cursor-api mcpArgs exec answer', () => {
     // handed to OpenAI, and the Run stays parked for the next request.
     const results = mcpResultMessages(decodeExecClientMessages(runWrites(transport)));
     expect(results).toEqual([]);
-    expect(
-      events.filter((event) => event.type === 'tool_call_complete').map((event) => event.call),
-    ).toEqual([
-      {
-        id: 'call-a',
+    const completed = events.find((event) => event.type === 'tool_call_complete');
+    expect(completed).toMatchObject({
+      type: 'tool_call_complete',
+      call: {
+        id: expect.stringMatching(/^call_[a-f0-9]{32}_0$/),
         type: 'function',
         function: { name: 'echo_value', arguments: '{"value":"A"}' },
       },
-    ]);
+    });
     expect(events.at(-1)?.type).toBe('done');
   });
 
@@ -116,6 +116,8 @@ describe('cursor-api mcpArgs exec answer', () => {
     const cursor = backend(transport);
     const first = await collect(cursor, request);
     expect(first.at(-1)?.type).toBe('done');
+    const completed = first.find((event) => event.type === 'tool_call_complete');
+    if (completed?.type !== 'tool_call_complete') throw new Error('missing held client call');
 
     // When: request 2 carries the tool result and, once answered in band, the
     // model continues with text and ends the turn.
@@ -126,15 +128,9 @@ describe('cursor-api mcpArgs exec answer', () => {
         {
           role: 'assistant',
           content: '',
-          tool_calls: [
-            {
-              id: 'call-a',
-              type: 'function',
-              function: { name: 'echo_value', arguments: '{"value":"A"}' },
-            },
-          ],
+          tool_calls: [completed.call],
         },
-        { role: 'tool', tool_call_id: 'call-a', content: 'result-A' },
+        { role: 'tool', tool_call_id: completed.call.id, content: 'result-A' },
       ],
     };
     const secondPromise = collect(cursor, followUp);
@@ -175,16 +171,16 @@ describe('cursor-api mcpArgs exec answer', () => {
       }),
     ]);
 
-    // When: the Run handles the unknown tool exec.
-    const events = await collect(backend(transport), request);
+    // When: the Run handles the unknown tool exec without producing an
+    // assistant-visible response.
+    const completion = collect(backend(transport), request);
 
     // Then: no success is claimed, the exec is answered with a typed error so
-    // upstream fails fast instead of stalling, and the stream still settles.
+    // upstream fails fast instead of stalling, and the empty completion is rejected.
+    await expect(completion).rejects.toThrow('ended without content or tool calls');
     const results = mcpResultMessages(decodeExecClientMessages(runWrites(transport)));
     expect(results.filter((exec) => mcpResultCase(exec) === 'success')).toEqual([]);
     expect(results.filter((exec) => mcpResultCase(exec) === 'error')).toHaveLength(1);
-    expect(events.filter((event) => event.type === 'tool_call_complete')).toEqual([]);
-    expect(events.at(-1)?.type).toBe('done');
   });
 
   it('handles malformed mcpArgs fields without crashing or claiming success', async () => {
@@ -199,15 +195,14 @@ describe('cursor-api mcpArgs exec answer', () => {
       }),
     ]);
 
-    // When: the Run decodes that exec.
-    const events = await collect(backend(transport), request);
+    // When: the Run decodes that exec without producing assistant-visible output.
+    const completion = collect(backend(transport), request);
 
     // Then: typed error handling answers the exec, claims no success, and
-    // the stream reaches a normal terminal.
+    // the empty completion is rejected instead of becoming content:null.
+    await expect(completion).rejects.toThrow('ended without content or tool calls');
     const results = mcpResultMessages(decodeExecClientMessages(runWrites(transport)));
     expect(results.filter((exec) => mcpResultCase(exec) === 'success')).toEqual([]);
     expect(results.filter((exec) => mcpResultCase(exec) === 'error')).toHaveLength(1);
-    expect(events.filter((event) => event.type === 'tool_call_complete')).toEqual([]);
-    expect(events.at(-1)?.type).toBe('done');
   });
 });

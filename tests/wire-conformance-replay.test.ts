@@ -338,6 +338,14 @@ function scriptedUpstream(stream: CapturingStream): void {
         codec.encode('agent.v1.AgentServerMessage', {
           message: {
             case: 'interactionUpdate',
+            value: { message: { case: 'textDelta', value: { text: 'replay complete' } } },
+          },
+        }),
+      ),
+      encodeConnectFrame(
+        codec.encode('agent.v1.AgentServerMessage', {
+          message: {
+            case: 'interactionUpdate',
             value: { message: { case: 'turnEnded', value: { inputTokens: 1, outputTokens: 1 } } },
           },
         }),

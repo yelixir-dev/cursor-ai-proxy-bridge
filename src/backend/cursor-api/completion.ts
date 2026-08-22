@@ -7,7 +7,7 @@ import type { CursorApiDiscovery } from './discovery.js';
 import { buildCursorHistory } from './history.js';
 import { cursorRetryFailureKind } from './retry.js';
 import { CursorRunTimeoutError } from './run-errors.js';
-import { executeCursorRun } from './run-execution.js';
+import { executeCursorRun, resumeCursorRun } from './run-execution.js';
 import type { RunEmitter, RunLifecycle, RunOutcome } from './run-types.js';
 import { boundedInteger, type CursorApiRuntime } from './runtime.js';
 import { choiceRequiresTool, runValidatedCursorCompletion } from './validated-run.js';
@@ -31,6 +31,11 @@ export class CursorApiCompletion {
       request,
       lifecycle: { signal, trace },
       run: (candidate, lifecycle) => this.run(candidate, lifecycle),
+      onToolValidationFailure: (calls, error) =>
+        this.runtime.stickyRuns.releaseToolCalls(
+          calls.map((call) => call.id),
+          error,
+        ),
     });
     return outcome.toolCalls.length
       ? {
@@ -59,6 +64,11 @@ export class CursorApiCompletion {
         request,
         lifecycle,
         run: (candidate, nestedLifecycle) => this.run(candidate, nestedLifecycle),
+        onToolValidationFailure: (calls, error) =>
+          this.runtime.stickyRuns.releaseToolCalls(
+            calls.map((call) => call.id),
+            error,
+          ),
       });
     if (request.tools?.length && choiceRequiresTool(request)) {
       const outcome = await validated({ signal, trace });
@@ -172,14 +182,23 @@ export class CursorApiCompletion {
       this.runtime.environment.CURSOR_BRIDGE_RETRY_RUN_TIMEOUT?.trim() === '1';
     for (;;) {
       try {
+        const resumed = resumeCursorRun({
+          runtime: this.runtime,
+          request,
+          signal: lifecycle.signal,
+          emit: trackedEmit,
+          trace: lifecycle.trace,
+        });
+        if (resumed) return await resumed;
         return await withCursorCredential(this.runtime, {
-          operation: async (_credential, accessToken) =>
+          operation: async (credential, accessToken) =>
             executeCursorRun({
               runtime: this.runtime,
               discovery: this.discovery,
               request,
               accessToken,
               history,
+              credentialId: credential.id,
               signal: lifecycle.signal,
               emit: trackedEmit,
               trace: lifecycle.trace,

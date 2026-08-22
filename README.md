@@ -249,6 +249,8 @@ The bridge accepts OpenAI-standard `assistant.content: null` on a tool-history f
 
 A tool-call response can report zero usage with internal source `unknown`: the upstream Run parks on `mcpArgs` before its authoritative `turnEnded` token totals exist. After the client submits the tool result, the final continuation reports the complete `turnEnded` usage for that Run. The bridge does not invent prompt-token estimates for the intermediate response.
 
+`CURSOR_BRIDGE_MAX_HELD_RUNS` caps concurrently parked Runs (default `128`). `CURSOR_BRIDGE_MAX_OUTPUT_BYTES` bounds both raw wire bytes and cumulative decoded Connect payload bytes for each Run. Timeout diagnostics report both `outputBytes` and `decodedOutputBytes`, so compressed expansion and ordinary wire growth remain distinguishable.
+
 ### Dashboard
 
 Open `http://127.0.0.1:9997/dashboard` to manage the running bridge. The console shows status, active backend, credential state, and model state. It supports add, update, weight, enable, disable, and delete actions for managed credentials, plus per-model and bulk model family toggles. Full API keys are never returned to the console.

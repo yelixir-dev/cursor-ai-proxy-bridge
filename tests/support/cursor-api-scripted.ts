@@ -30,6 +30,7 @@ const codec = new ProtoCodec(loadProtoDescriptors());
 export class ScriptedStream extends EventEmitter implements CursorRunStream {
   destroyed = false;
   writableEnded = false;
+  closeCalls = 0;
   readonly writes: Buffer[] = [];
   #started = false;
 
@@ -60,6 +61,7 @@ export class ScriptedStream extends EventEmitter implements CursorRunStream {
   }
 
   close(): void {
+    this.closeCalls += 1;
     if (this.writableEnded) return;
     this.writableEnded = true;
     this.emit('close');
@@ -111,6 +113,18 @@ export function update(caseName: string, value: Record<string, unknown>): Buffer
         value: { message: { case: caseName, value } },
       },
     }),
+  );
+}
+
+export function compressedUpdate(caseName: string, value: Record<string, unknown>): Buffer {
+  return encodeConnectFrame(
+    codec.encode('agent.v1.AgentServerMessage', {
+      message: {
+        case: 'interactionUpdate',
+        value: { message: { case: caseName, value } },
+      },
+    }),
+    { compressed: true },
   );
 }
 
@@ -186,13 +200,14 @@ export function backend(
   transport: CursorApiTransport,
   credentials = [{ id: 'only', apiKey: 'only-token' }],
   environment: Record<string, string> = {},
+  credentialRouter = new CursorCredentialRouter({ credentials }),
 ): CursorApiBackend {
   const auth = new CursorAuthProvider({ environment: {} });
   vi.spyOn(auth, 'getToken').mockImplementation(async (credential) => credential?.apiKey ?? '');
   return new CursorApiBackend(config, {
     auth,
     transport,
-    credentialRouter: new CursorCredentialRouter({ credentials }),
+    credentialRouter,
     environment: {
       CURSOR_BRIDGE_CURSOR_RETRY_BASE_MS: '1',
       CURSOR_BRIDGE_STICKY_SETTLE_MS: '5',

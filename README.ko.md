@@ -249,6 +249,8 @@ Bridge는 tool-history follow-up에서 OpenAI 표준인 `assistant.content: null
 
 Tool-call response는 내부 source `unknown`과 함께 usage 0을 반환할 수 있습니다. Upstream Run이 authoritative token total을 담은 `turnEnded`보다 먼저 `mcpArgs`에서 park되기 때문입니다. Client가 tool result를 제출하면 마지막 continuation이 해당 Run 전체의 `turnEnded` usage를 반환합니다. Bridge는 중간 response의 prompt token을 임의로 추정하지 않습니다.
 
+`CURSOR_BRIDGE_MAX_HELD_RUNS`는 동시에 park할 수 있는 Run 수를 제한합니다(기본값 `128`). `CURSOR_BRIDGE_MAX_OUTPUT_BYTES`는 Run별 raw wire byte와 누적 decoded Connect payload byte를 모두 제한합니다. Timeout diagnostics에는 `outputBytes`와 `decodedOutputBytes`가 함께 포함되므로 compressed expansion과 일반 wire 증가를 구분할 수 있습니다.
+
 ### Dashboard
 
 실행 중인 bridge를 관리하려면 `http://127.0.0.1:9997/dashboard`를 여세요. Console에서 status, active backend, credential state, model state를 확인할 수 있습니다. 관리 credential의 add, update, weight, enable, disable, delete를 지원하며, model별 toggle과 model family bulk toggle도 제공합니다. 전체 API key는 console로 반환되지 않습니다.

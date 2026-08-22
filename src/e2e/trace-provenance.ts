@@ -68,8 +68,8 @@ export async function triggerAndAwaitAbortQuiescence(
       record.stage === 'terminal' && record.terminal === 'abort' && record.quiescent === true,
     options.signal,
   );
-  await options.trigger();
-  return observed;
+  const [record] = await Promise.all([observed, options.trigger()]);
+  return record;
 }
 
 /**
