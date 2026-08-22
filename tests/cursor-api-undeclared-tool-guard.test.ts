@@ -144,25 +144,7 @@ describe('cursor-api undeclared tool-call guard', () => {
   it('retries a builtin misselection when multiple external tools are required', async () => {
     // Given: multiple external tools are declared, but the first required
     // Run selects a Cursor builtin instead of any external tool.
-    const base = parallelToolRequest();
-    const request: ChatCompletionRequest = {
-      ...base,
-      tools: [
-        ...(base.tools ?? []),
-        {
-          type: 'function',
-          function: {
-            name: 'lookup_code',
-            parameters: {
-              type: 'object',
-              properties: { key: { type: 'string' } },
-              required: ['key'],
-            },
-          },
-        },
-      ],
-      tool_choice: 'required',
-    };
+    const request = multipleRequiredToolRequest();
     const externalName = wireToolName(request);
     const transport = new ScriptedTransport((stream) => {
       stream.emit('response', { ':status': 200 });
@@ -186,6 +168,22 @@ describe('cursor-api undeclared tool-call guard', () => {
         function: { name: 'echo_value', arguments: '{"value":"recovered"}' },
       },
     ]);
+  });
+
+  it('bounds repeated builtin misselection with multiple required external tools', async () => {
+    // Given: multiple external tools are required, but Composer selects a
+    // builtin on both the original and recovery Runs.
+    const request = multipleRequiredToolRequest();
+    const transport = new ScriptedTransport((stream) => {
+      stream.emit('response', { ':status': 200 });
+      stream.emit('data', builtinShellCall());
+    });
+
+    // When/Then: the multi-tool retry remains bounded and actionable.
+    await expect(collect(backend(transport), request)).rejects.toThrow(
+      /retry with tool_choice="auto"/,
+    );
+    expect(transport.opened).toHaveLength(2);
   });
 
   it('advertises no tools upstream when tool_choice is none', async () => {
@@ -246,4 +244,26 @@ function builtinShellCall(): Buffer {
       toolCallId: 'c1',
     },
   });
+}
+
+function multipleRequiredToolRequest(): ChatCompletionRequest {
+  const base = parallelToolRequest();
+  return {
+    ...base,
+    tools: [
+      ...(base.tools ?? []),
+      {
+        type: 'function',
+        function: {
+          name: 'lookup_code',
+          parameters: {
+            type: 'object',
+            properties: { key: { type: 'string' } },
+            required: ['key'],
+          },
+        },
+      },
+    ],
+    tool_choice: 'required',
+  };
 }

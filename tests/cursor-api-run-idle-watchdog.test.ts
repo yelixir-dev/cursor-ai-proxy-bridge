@@ -150,6 +150,16 @@ describe('cursor-api interaction idle watchdog', () => {
       };
       const externalName = wireToolName(request);
       const transport = new ScriptedTransport((stream) => {
+        Object.defineProperty(stream, 'diagnostics', {
+          value: () => ({
+            rstCode: 8,
+            goaway: {
+              errorCode: 11,
+              lastStreamId: 17,
+              opaqueDataLength: 4,
+            },
+          }),
+        });
         stream.emit('response', { ':status': 200 });
         stream.emit('data', callBatch(externalName, 'c1', 'seed'));
       });
@@ -196,6 +206,14 @@ describe('cursor-api interaction idle watchdog', () => {
           },
           toolCallsAnnounced: 1,
           toolCallsCompleted: 1,
+          transport: {
+            rstCode: 8,
+            goaway: {
+              errorCode: 11,
+              lastStreamId: 17,
+              opaqueDataLength: 4,
+            },
+          },
         },
       });
       expect(transport.opened).toHaveLength(1);
