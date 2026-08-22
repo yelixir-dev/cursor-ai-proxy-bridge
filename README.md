@@ -93,40 +93,29 @@ There are two separate key layers:
 - **Client access.** `CURSOR_BRIDGE_AUTH` accepts `on` or `off`. It defaults to `on` when `CURSOR_BRIDGE_API_KEY` is set, and to `off` with a startup warning when that key is unset. Explicit `CURSOR_BRIDGE_AUTH=on` without `CURSOR_BRIDGE_API_KEY` fails startup. Requests can use `Authorization: Bearer <key>` or `x-api-key: <key>`.
 - **Cursor access.** `CURSOR_API_KEY` is the Cursor Dashboard -> API Keys credential for headless hosts. Additional credentials can be created in `/dashboard`, assigned weights, enabled or disabled, and stored in the mode-0600 dashboard config. Auth failures put only the failed credential into cooldown and trigger one retry on another available credential.
 
-### OMO provider configuration
+### Models
 
-Merge the `yorha` entry below into the existing `providers` object in `~/.omo/agent/models.json`; keep every unrelated provider and model entry intact. Replace the example client key when bridge authentication is enabled.
+`GET /v1/models` exposes a compact model surface instead of Cursor's effort-specific variant slugs. Fast and thinking modes remain separate model IDs; reasoning strength is selected with the OpenAI-compatible `reasoning_effort` request field.
+
+| Family       | Advertised model IDs                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------------------- |
+| Composer 2.5 | `composer-2.5`, `composer-2.5-fast`                                                                           |
+| Fable 5      | `fable-5`, `fable-5-thinking`                                                                                 |
+| Sonnet 5     | `sonnet-5`, `sonnet-5-thinking`                                                                               |
+| Opus 5       | `opus-5`, `opus-5-fast`, `opus-5-thinking`, `opus-5-thinking-fast`                                            |
+| GPT-5.6      | `gpt-5.6-sol`, `gpt-5.6-sol-fast`, `gpt-5.6-terra`, `gpt-5.6-terra-fast`, `gpt-5.6-luna`, `gpt-5.6-luna-fast` |
+| Grok 4.6     | `grok-4.6`, `grok-4.6-fast`                                                                                   |
+| Other        | `kimi-k3`, `glm-5.2`, plus `default` or `auto` when the Cursor account advertises them                        |
+
+Supported effort names are `none`, `low`, `medium`, `high`, `xhigh`, and `max`, subject to the variants available for the selected account and family. The default is `medium`; `kimi-k3` and `glm-5.2`, which do not expose a medium variant, default to `high`. If the requested effort is unavailable, the resolver falls back to the family's default or another available variant.
+
+Legacy Cursor slugs such as `claude-opus-5-thinking-max-fast`, `cursor-grok-4.6-high`, and `gpt-5.6-sol-xhigh-fast` remain valid on requests. Legacy dashboard overrides are migrated to their unified IDs at startup and on configuration updates.
 
 ```json
 {
-  "providers": {
-    "yorha": {
-      "baseUrl": "http://127.0.0.1:9997/v1",
-      "api": "openai-completions",
-      "apiKey": "replace-with-your-bridge-client-key",
-      "models": [
-        {
-          "id": "composer-2.5",
-          "name": "Composer 2.5",
-          "upstreamModelId": "composer-2.5",
-          "reasoning": false,
-          "input": ["text"],
-          "cost": {
-            "input": 0,
-            "output": 0,
-            "cacheRead": 0,
-            "cacheWrite": 0
-          },
-          "contextWindow": 200000,
-          "maxTokens": 64000,
-          "compat": {
-            "supportsStore": false,
-            "supportsDeveloperRole": false
-          }
-        }
-      ]
-    }
-  }
+  "model": "opus-5-thinking-fast",
+  "reasoning_effort": "max",
+  "messages": [{ "role": "user", "content": "Reply exactly: OK" }]
 }
 ```
 
@@ -199,7 +188,7 @@ The bridge accepts OpenAI-standard `assistant.content: null` on a tool-history f
 
 Open `http://127.0.0.1:9997/dashboard` to manage the running bridge. The console shows status, active backend, credential state, and model state. It supports add, update, weight, enable, disable, and delete actions for managed credentials, plus per-model and bulk model family toggles. Full API keys are never returned to the console.
 
-The model policy enables top-tier families by default and hides other discovered models until an override is set. The policy patterns cover `composer-2.5`, `cursor-grok-4.6-*`, `claude-opus-5-*`, `claude-sonnet-5-*`, `claude-fable-5-*`, `gpt-5.6-(sol|terra|luna)-*`, `kimi-k3-*`, `glm-5.2-*`, `default`, and `auto`.
+The dashboard intentionally shows only `composer-2.5` and `composer-2.5-fast`, plus any model with an explicit override. This is a display filter only: the unified models advertised by `/v1/models` remain enabled and usable through the API unless their unified ID is explicitly disabled.
 
 ## How it works
 

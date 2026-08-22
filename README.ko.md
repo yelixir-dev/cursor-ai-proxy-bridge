@@ -93,40 +93,29 @@ CURSOR_BRIDGE_BACKEND=cursor-api npm start
 - **Client access.** `CURSOR_BRIDGE_AUTH`는 `on` 또는 `off`를 받습니다. 기본값은 `on`이며 `CURSOR_BRIDGE_API_KEY`가 설정된 경우입니다. key가 없으면 startup warning과 함께 `off`가 됩니다. `CURSOR_BRIDGE_AUTH=on`을 `CURSOR_BRIDGE_API_KEY` 없이 명시하면 startup에 실패합니다. 요청은 `Authorization: Bearer <key>` 또는 `x-api-key: <key>`를 사용할 수 있습니다.
 - **Cursor access.** `CURSOR_API_KEY`는 headless host용 Cursor Dashboard -> API Keys credential입니다. `/dashboard`에서 추가 credential을 만들고 weight를 지정하거나 enable, disable할 수 있으며 mode-0600 dashboard config에 저장됩니다. 인증 실패는 해당 credential만 cooldown에 넣고 사용 가능한 다른 credential로 한 번 retry합니다.
 
-### OMO provider 설정
+### 모델
 
-아래 `yorha` entry를 `~/.omo/agent/models.json`의 기존 `providers` object에 병합하고, 관련 없는 provider와 model entry는 그대로 유지하세요. Bridge 인증을 사용한다면 예시 client key를 교체하세요.
+`GET /v1/models`는 Cursor의 effort별 긴 variant slug 대신 간결한 통합 모델 표면을 제공합니다. Fast와 thinking mode는 별도 모델 ID로 유지하고, reasoning 강도는 OpenAI-compatible `reasoning_effort` 요청 필드로 선택합니다.
+
+| Family       | 노출되는 모델 ID                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------- |
+| Composer 2.5 | `composer-2.5`, `composer-2.5-fast`                                                                           |
+| Fable 5      | `fable-5`, `fable-5-thinking`                                                                                 |
+| Sonnet 5     | `sonnet-5`, `sonnet-5-thinking`                                                                               |
+| Opus 5       | `opus-5`, `opus-5-fast`, `opus-5-thinking`, `opus-5-thinking-fast`                                            |
+| GPT-5.6      | `gpt-5.6-sol`, `gpt-5.6-sol-fast`, `gpt-5.6-terra`, `gpt-5.6-terra-fast`, `gpt-5.6-luna`, `gpt-5.6-luna-fast` |
+| Grok 4.6     | `grok-4.6`, `grok-4.6-fast`                                                                                   |
+| 기타         | `kimi-k3`, `glm-5.2`, 그리고 Cursor 계정이 제공할 때의 `default` 또는 `auto`                                  |
+
+지원 effort 이름은 `none`, `low`, `medium`, `high`, `xhigh`, `max`이며, 선택한 계정과 family에 실제로 존재하는 variant가 적용됩니다. 기본값은 `medium`이고 medium variant가 없는 `kimi-k3`와 `glm-5.2`는 `high`가 기본입니다. 요청한 effort가 없으면 family 기본값 또는 다른 가용 variant로 fallback합니다.
+
+`claude-opus-5-thinking-max-fast`, `cursor-grok-4.6-high`, `gpt-5.6-sol-xhigh-fast` 같은 기존 Cursor slug도 요청에서 계속 사용할 수 있습니다. 기존 dashboard override는 startup과 configuration update 때 통합 ID로 자동 migrate됩니다.
 
 ```json
 {
-  "providers": {
-    "yorha": {
-      "baseUrl": "http://127.0.0.1:9997/v1",
-      "api": "openai-completions",
-      "apiKey": "replace-with-your-bridge-client-key",
-      "models": [
-        {
-          "id": "composer-2.5",
-          "name": "Composer 2.5",
-          "upstreamModelId": "composer-2.5",
-          "reasoning": false,
-          "input": ["text"],
-          "cost": {
-            "input": 0,
-            "output": 0,
-            "cacheRead": 0,
-            "cacheWrite": 0
-          },
-          "contextWindow": 200000,
-          "maxTokens": 64000,
-          "compat": {
-            "supportsStore": false,
-            "supportsDeveloperRole": false
-          }
-        }
-      ]
-    }
-  }
+  "model": "opus-5-thinking-fast",
+  "reasoning_effort": "max",
+  "messages": [{ "role": "user", "content": "Reply exactly: OK" }]
 }
 ```
 
@@ -199,7 +188,7 @@ Bridge는 tool-history follow-up에서 OpenAI 표준인 `assistant.content: null
 
 실행 중인 bridge를 관리하려면 `http://127.0.0.1:9997/dashboard`를 여세요. Console에서 status, active backend, credential state, model state를 확인할 수 있습니다. 관리 credential의 add, update, weight, enable, disable, delete를 지원하며, model별 toggle과 model family bulk toggle도 제공합니다. 전체 API key는 console로 반환되지 않습니다.
 
-Model policy는 기본적으로 top-tier family를 활성화하고, 다른 discovered model은 override를 설정하기 전까지 숨깁니다. Policy pattern은 `composer-2.5`, `cursor-grok-4.6-*`, `claude-opus-5-*`, `claude-sonnet-5-*`, `claude-fable-5-*`, `gpt-5.6-(sol|terra|luna)-*`, `kimi-k3-*`, `glm-5.2-*`, `default`, `auto`를 대상으로 합니다.
+Dashboard에는 의도적으로 `composer-2.5`, `composer-2.5-fast`와 명시적인 override가 있는 모델만 표시됩니다. 이것은 표시 filter일 뿐이며, `/v1/models`가 노출하는 통합 모델은 해당 통합 ID를 명시적으로 disable하지 않는 한 API에서 계속 활성화되고 사용할 수 있습니다.
 
 ## 동작 방식
 
