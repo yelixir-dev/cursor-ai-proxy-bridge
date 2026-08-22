@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ChatCompletionRequest } from '../src/backend/types.js';
 import {
   backend,
@@ -10,6 +10,41 @@ import {
 } from './support/cursor-api-scripted.js';
 
 describe('cursor-api interaction idle watchdog', () => {
+  it('allows a 300-second run by default while the idle watchdog stays independent', async () => {
+    vi.useFakeTimers();
+    try {
+      // Given: an active upstream run with the idle watchdog configured above
+      // the overall ceiling so only the default run timeout can settle it.
+      const transport = new ScriptedTransport((stream) => {
+        stream.emit('response', { ':status': 200 });
+      });
+      const completion = collect(
+        backend(transport, undefined, { CURSOR_BRIDGE_RUN_IDLE_MS: '600000' }),
+        { model: 'composer-2.5', messages: [{ role: 'user', content: 'work' }] },
+      );
+      let outcome = 'pending';
+      void completion.then(
+        () => {
+          outcome = 'resolved';
+        },
+        (error: unknown) => {
+          outcome = error instanceof Error ? error.message : String(error);
+        },
+      );
+      await transport.firstRun;
+
+      // When: the old 120-second ceiling passes.
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      // Then: the run remains alive until the new 300-second ceiling.
+      expect(outcome).toBe('pending');
+      await vi.advanceTimersByTimeAsync(180_000);
+      expect(outcome).toBe('Cursor API run timed out after 300000ms');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('fails fast when the run produces no interaction frames at all', async () => {
     // Given: a required tool call the model cannot map to a declared tool —
     // upstream answers the Run open, then never sends any interaction update

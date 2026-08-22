@@ -47,6 +47,17 @@ npm start
 
 The default address is `http://127.0.0.1:9997`. Set `CURSOR_BRIDGE_API_KEY` before using `CURSOR_BRIDGE_AUTH=on`; when the client key is unset, auth defaults to `off` and startup logs a warning. `CURSOR_BRIDGE_BACKEND=auto` is the default. Set it to `cursor-api` or `cursor-cli` to force a backend.
 
+### Runtime timeouts
+
+The overall Run ceiling and the no-output watchdog are separate controls:
+
+| Variable                          | Default  | Purpose                                                                              |
+| --------------------------------- | -------- | ------------------------------------------------------------------------------------ |
+| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS` | `300000` | Hard ceiling for one upstream Cursor Run, including reasoning and multi-tool rounds. |
+| `CURSOR_BRIDGE_RUN_IDLE_MS`       | `30000`  | Fails a Run that produces no model interaction frames for the configured interval.   |
+
+Reasoning-heavy models such as `composer-2.5` can exceed the previous 120-second ceiling during cold starts and multi-tool work, truncating the stream and dropping partially emitted tool calls. Keep the overall ceiling above the idle watchdog; the 300-second default gives active work time to finish while the 30-second watchdog still rejects dead Runs quickly. Both values can be overridden independently in `.env`.
+
 ### Descriptor snapshot for headless hosts
 
 `cursor-api` connects directly to Cursor's service and needs a descriptor snapshot. The private repository includes the current snapshot, so a headless host can clone, build, and run without installing `cursor-agent`.

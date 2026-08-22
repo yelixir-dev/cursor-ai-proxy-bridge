@@ -47,6 +47,17 @@ npm start
 
 기본 주소는 `http://127.0.0.1:9997`입니다. `CURSOR_BRIDGE_API_KEY`를 설정한 뒤 `CURSOR_BRIDGE_AUTH=on`을 사용하세요. client key가 없으면 auth 기본값은 `off`이고 startup warning이 기록됩니다. `CURSOR_BRIDGE_BACKEND=auto`가 기본값이며, `cursor-api` 또는 `cursor-cli`로 설정해 backend를 강제할 수 있습니다.
 
+### Runtime timeout
+
+전체 Run 상한과 무출력 watchdog은 서로 독립적인 설정입니다.
+
+| Variable                          | 기본값   | 용도                                                                                 |
+| --------------------------------- | -------- | ------------------------------------------------------------------------------------ |
+| `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS` | `300000` | Reasoning과 multi-tool round를 포함한 단일 upstream Cursor Run의 절대 상한입니다.    |
+| `CURSOR_BRIDGE_RUN_IDLE_MS`       | `30000`  | 설정된 시간 동안 model interaction frame이 하나도 없으면 해당 Run을 실패 처리합니다. |
+
+`composer-2.5` 같은 reasoning-heavy 모델은 cold start와 multi-tool 작업 중 기존 120초 상한을 넘어서 stream이 잘리고 일부 tool call이 유실될 수 있습니다. 전체 상한은 idle watchdog보다 길게 유지하세요. 기본 300초는 활성 작업이 끝날 시간을 제공하고, 30초 watchdog은 실제로 멈춘 Run을 계속 빠르게 종료합니다. 두 값은 `.env`에서 각각 독립적으로 바꿀 수 있습니다.
+
 ### Headless 호스트용 descriptor snapshot
 
 `cursor-api`는 Cursor service에 직접 연결하며 descriptor snapshot이 필요합니다. Private repository에 현재 snapshot을 포함하므로 headless 호스트는 `cursor-agent` 설치 없이 clone, build, 실행할 수 있습니다.

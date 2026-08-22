@@ -14,7 +14,7 @@ import { boundedInteger, type CursorApiRuntime } from './runtime.js';
 import { heldExecToKey, type HeldRun, type ToolResultInput } from './sticky-run-store.js';
 import { CursorApiHttpError } from './transport.js';
 
-const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 8_388_608;
 
 type Dict = Record<string, unknown>;
