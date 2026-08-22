@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import http2, { type ClientHttp2Stream, type OutgoingHttpHeaders } from 'node:http2';
-import type { CursorRunStream } from './transport.js';
+import type { CursorRunStream, CursorRunTransportDiagnostics } from './transport.js';
 
 const DEFAULT_MAX_SESSIONS = 8;
 const FINGERPRINT_DOMAIN = 'cursor-h2-credential-v1\0';
@@ -11,7 +11,10 @@ export interface H2ClientSession {
   request(headers: OutgoingHttpHeaders): CursorRunStream;
   close(): void;
   on(event: 'error', listener: (error: Error) => void): this;
-  once(event: 'close' | 'goaway', listener: () => void): this;
+  once(
+    event: 'close' | 'goaway',
+    listener: (errorCode?: number, lastStreamId?: number, opaqueData?: Buffer) => void,
+  ): this;
 }
 
 export type H2Connector = (endpoint: string) => H2ClientSession;
@@ -30,6 +33,7 @@ interface SessionEntry {
   readonly streams: Set<CursorRunStream>;
   usable: boolean;
   closeRequested: boolean;
+  goaway?: CursorRunTransportDiagnostics['goaway'];
 }
 
 export class H2SessionPoolClosedError extends Error {
@@ -48,13 +52,36 @@ function isClientHttp2Stream(stream: CursorRunStream): stream is ClientHttp2Stre
   return 'session' in stream;
 }
 
-function wrapClientHttp2Stream(inner: ClientHttp2Stream): CursorRunStream {
+function streamRstCode(stream: CursorRunStream): number | undefined {
+  const value = Reflect.get(stream, 'rstCode');
+  return typeof value === 'number' ? value : undefined;
+}
+
+function diagnosticsFor(
+  stream: CursorRunStream,
+  sessionDiagnostics: () => CursorRunTransportDiagnostics['goaway'],
+): CursorRunTransportDiagnostics {
+  const rstCode = streamRstCode(stream);
+  const goaway = sessionDiagnostics();
+  return {
+    ...(rstCode === undefined ? {} : { rstCode }),
+    ...(goaway === undefined ? {} : { goaway }),
+  };
+}
+
+function wrapClientHttp2Stream(
+  inner: ClientHttp2Stream,
+  sessionDiagnostics: () => CursorRunTransportDiagnostics['goaway'],
+): CursorRunStream {
   const wrapped: CursorRunStream = {
     get destroyed() {
       return inner.destroyed;
     },
     get writableEnded() {
       return inner.writableEnded;
+    },
+    diagnostics() {
+      return diagnosticsFor(inner, sessionDiagnostics);
     },
     write(chunk) {
       return inner.write(chunk);
@@ -82,8 +109,18 @@ function wrapClientHttp2Stream(inner: ClientHttp2Stream): CursorRunStream {
   return wrapped;
 }
 
-function adaptRunStream(stream: CursorRunStream): CursorRunStream {
-  return isClientHttp2Stream(stream) ? wrapClientHttp2Stream(stream) : stream;
+function adaptRunStream(
+  stream: CursorRunStream,
+  sessionDiagnostics: () => CursorRunTransportDiagnostics['goaway'],
+): CursorRunStream {
+  if (isClientHttp2Stream(stream)) return wrapClientHttp2Stream(stream, sessionDiagnostics);
+  Object.defineProperty(stream, 'diagnostics', {
+    configurable: false,
+    enumerable: false,
+    value: () => diagnosticsFor(stream, sessionDiagnostics),
+    writable: false,
+  });
+  return stream;
 }
 
 export class H2SessionPool {
@@ -106,7 +143,7 @@ export class H2SessionPool {
     const key = `${endpoint}\0${request.credentialFingerprint}`;
     const entry = this.usableEntry(key) ?? this.createEntry(key, endpoint, request);
     try {
-      const stream = adaptRunStream(entry.session.request(request.headers));
+      const stream = adaptRunStream(entry.session.request(request.headers), () => entry.goaway);
       entry.streams.add(stream);
       stream.once('close', () => entry.streams.delete(stream));
       request.onStreamOpen?.();
@@ -163,7 +200,12 @@ export class H2SessionPool {
     };
     this.entries.set(key, entry);
     this.sessions.add(entry);
-    session.once('goaway', () => {
+    session.once('goaway', (errorCode, lastStreamId, opaqueData) => {
+      entry.goaway = {
+        errorCode: errorCode ?? 0,
+        lastStreamId: lastStreamId ?? 0,
+        opaqueDataLength: opaqueData?.length ?? 0,
+      };
       this.drain(entry, true);
     });
     session.on('error', (error) => {

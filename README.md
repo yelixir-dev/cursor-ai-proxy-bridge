@@ -58,6 +58,8 @@ The overall Run ceiling and the no-output watchdog are separate controls:
 
 Reasoning-heavy models such as `composer-2.5` can exceed the previous 120-second ceiling during cold starts and multi-tool work, truncating the stream and dropping partially emitted tool calls. Keep the overall ceiling above the idle watchdog; the 300-second default gives active work time to finish while the 30-second watchdog still rejects dead Runs quickly. Both values can be overridden independently in `.env`.
 
+Every HTTP response includes an `x-request-id` that matches the bridge log entry. A Cursor Run timeout also includes the upstream `request_id` in the JSON or SSE error payload. The timeout log records the last interaction kind and age, output bytes, terminal-frame state, stream reset code, and any HTTP/2 GOAWAY metadata so operators can distinguish an open-but-unterminated Run from a closed transport.
+
 ### Hermes provider configuration (Composer)
 
 `composer-2.5` and `composer-2.5-fast` can have a long cold-start and thinking phase. When Hermes is the client, two independent ceilings must allow enough time:

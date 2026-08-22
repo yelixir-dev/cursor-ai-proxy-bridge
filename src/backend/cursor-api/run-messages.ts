@@ -36,7 +36,7 @@ export interface CursorRunMessageOptions {
   readonly finish: (error: unknown) => void;
   readonly onHeld?: () => void;
   readonly heldExecs?: Array<{ exec: Dict }>;
-  readonly onInteraction?: () => void;
+  readonly onInteraction?: (updateCase: string | undefined) => void;
 }
 
 function dict(value: unknown): Dict | undefined {
@@ -100,9 +100,10 @@ export class CursorRunMessages {
       return false;
     }
     if (messageCase !== 'interactionUpdate') return false;
-    this.options.onInteraction?.();
     const update = dict(dict(value.message)?.value) ?? {};
-    const updateCase = dict(value.message)?.case;
+    const rawUpdateCase = dict(value.message)?.case;
+    const updateCase = typeof rawUpdateCase === 'string' ? rawUpdateCase : undefined;
+    this.options.onInteraction?.(updateCase);
     if (updateCase === 'textDelta') {
       const delta = typeof update.text === 'string' ? update.text : '';
       this.text += delta;

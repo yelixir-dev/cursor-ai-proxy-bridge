@@ -8,6 +8,7 @@ import { sendMcpToolResult } from './exec-responses.js';
 import type { CursorHistory } from './history.js';
 import { enforceNativeToolChoice, heartbeatMessage, runRequestMessage } from './mapper.js';
 import type { RequestedModel } from './requested-models.js';
+import { CursorRunTimeoutError } from './run-errors.js';
 import { CursorRunMessages } from './run-messages.js';
 import type { RunEmitter, RunOutcome } from './run-types.js';
 import { boundedInteger, type CursorApiRuntime } from './runtime.js';
@@ -212,17 +213,27 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       finish,
       onHeld: scheduleHold,
       heldExecs,
-      onInteraction: () => {
+      onInteraction: (updateCase) => {
         lastInteractionAt = Date.now();
+        lastInteractionCase = updateCase ?? null;
       },
     });
 
     const heartbeat = runtime.timers.setInterval(() => writeMessage(heartbeatMessage()), 5_000);
     const timeout = runtime.timers.setTimeout(() => {
-      const error = new CursorBackendError(
+      const error = new CursorRunTimeoutError(
         parked
           ? `Cursor API run held for a client tool result timed out after ${timeoutMs}ms`
           : `Cursor API run timed out after ${timeoutMs}ms`,
+        requestId,
+        {
+          lastInteractionCase,
+          lastInteractionAgoMs: Math.max(0, Date.now() - lastInteractionAt),
+          outputBytes,
+          sawTurnEnded: turnEnded,
+          sawTrailer: streamEnded,
+          transport: stream.diagnostics?.() ?? {},
+        },
       );
       stream.destroy(error);
       if (parked) {
@@ -236,6 +247,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     let turnEnded = false;
     let streamEnded = false;
     let lastInteractionAt = Date.now();
+    let lastInteractionCase: string | null = null;
     const idleWatchdog = runtime.timers.setInterval(() => {
       if (settled || parked) return;
       if (Date.now() - lastInteractionAt <= idleMs) return;

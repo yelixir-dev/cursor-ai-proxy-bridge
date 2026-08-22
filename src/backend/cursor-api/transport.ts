@@ -22,9 +22,19 @@ interface CursorRunStreamEvents {
   readonly close: [];
 }
 
+export interface CursorRunTransportDiagnostics {
+  readonly rstCode?: number;
+  readonly goaway?: {
+    readonly errorCode: number;
+    readonly lastStreamId: number;
+    readonly opaqueDataLength: number;
+  };
+}
+
 export interface CursorRunStream {
   readonly destroyed: boolean;
   readonly writableEnded: boolean;
+  diagnostics?(): CursorRunTransportDiagnostics;
   write(chunk: Uint8Array): boolean;
   end(): void;
   destroy(error?: Error): void;

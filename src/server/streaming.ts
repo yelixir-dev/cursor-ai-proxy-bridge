@@ -10,6 +10,7 @@ import type {
 import { filterToolCallsToAllowed, parseToolCallsFromText } from '../backend/tool-call-parse.js';
 import { TOOL_CALL_MARKER, ToolTextStreamFilter } from '../backend/tool-call-stream.js';
 import { CursorBackendError } from '../backend/cursor-cli.js';
+import { cursorRunDiagnostics, cursorRunRequestId } from '../backend/cursor-api/run-errors.js';
 import { OpenAiToolStreamAccumulator, type OpenAiToolCallDelta } from '../openai-tool-stream.js';
 import { traceUsageSource, type RequestTrace } from '../trace.js';
 import { backendErrorMessage, completionChunk, openAiError, sseData } from './responses.js';
@@ -124,6 +125,7 @@ export async function streamChatCompletion(input: StreamRequest): Promise<Stream
     reply.raw.setHeader('Cache-Control', 'no-cache');
     reply.raw.setHeader('Connection', 'keep-alive');
     reply.raw.setHeader('X-Accel-Buffering', 'no');
+    reply.raw.setHeader('x-request-id', reply.request.id);
     reply.hijack();
     reply.raw.flushHeaders();
     started = true;
@@ -183,8 +185,19 @@ export async function streamChatCompletion(input: StreamRequest): Promise<Stream
   } catch (error) {
     if (!started) throw error;
     if (!signal.aborted && !reply.raw.destroyed && !reply.raw.writableEnded) {
-      reply.request.log.warn({ err: error }, 'cursor backend stream failed after SSE started');
-      await writeSse(reply, sseData(openAiError(backendErrorMessage(error), 'backend_error')));
+      const upstreamRequestId = cursorRunRequestId(error);
+      reply.request.log.warn(
+        {
+          err: error,
+          upstreamRequestId,
+          runDiagnostics: cursorRunDiagnostics(error),
+        },
+        'cursor backend stream failed after SSE started',
+      );
+      await writeSse(
+        reply,
+        sseData(openAiError(backendErrorMessage(error), 'backend_error', upstreamRequestId)),
+      );
       reply.raw.end();
     }
     return { reply, terminal: signal.aborted ? 'abort' : 'error' };

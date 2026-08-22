@@ -1565,8 +1565,60 @@ describe('cursor-ai-bridge server', () => {
     });
 
     expect(response.statusCode).toBe(502);
+    expect(response.headers['x-request-id']).toMatch(/^req-/);
     expect(response.json()).toEqual({
       error: { type: 'backend_error', message: 'output limit exceeded' },
+    });
+  });
+
+  it('includes the upstream Run request id in timeout JSON and SSE errors', async () => {
+    const timeoutError = () =>
+      Object.assign(new CursorBackendError('Cursor API run timed out after 300000ms'), {
+        runRequestId: 'upstream-run-123',
+      });
+    const backend: CursorBackend = {
+      ...createMockBackend(),
+      async complete() {
+        throw timeoutError();
+      },
+      async *completeStream() {
+        yield { type: 'content' as const, text: 'partial' };
+        throw timeoutError();
+      },
+    };
+    const server = await buildServer({ config: baseConfig, backend });
+
+    const json = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer ***' },
+      payload: { messages: [{ role: 'user', content: 'timeout' }] },
+    });
+    const sse = await server.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer ***' },
+      payload: { stream: true, messages: [{ role: 'user', content: 'timeout' }] },
+    });
+    const errorFrame = sse.body
+      .split('\n\n')
+      .find((frame) => frame.startsWith('data: {') && frame.includes('"error"'));
+
+    expect(json.statusCode).toBe(502);
+    expect(sse.headers['x-request-id']).toMatch(/^req-/);
+    expect(json.json()).toEqual({
+      error: {
+        type: 'backend_error',
+        message: 'Cursor API run timed out after 300000ms',
+        request_id: 'upstream-run-123',
+      },
+    });
+    expect(JSON.parse(errorFrame?.slice(6) ?? '{}')).toEqual({
+      error: {
+        type: 'backend_error',
+        message: 'Cursor API run timed out after 300000ms',
+        request_id: 'upstream-run-123',
+      },
     });
   });
 

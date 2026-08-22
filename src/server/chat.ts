@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { cursorRunDiagnostics, cursorRunRequestId } from '../backend/cursor-api/run-errors.js';
 import { ToolHistoryValidationError, assertValidToolHistory } from '../backend/tool-history.js';
 import { unifiedFromSlug } from '../backend/cursor-api/unified-models.js';
 import {
@@ -109,8 +110,18 @@ export function registerChatRoutes(context: ServerContext): void {
         return reply;
       }
       terminal = 'error';
-      request.log.warn({ err: error }, 'cursor backend completion failed');
-      return reply.code(502).send(openAiError(backendErrorMessage(error), 'backend_error'));
+      const upstreamRequestId = cursorRunRequestId(error);
+      request.log.warn(
+        {
+          err: error,
+          upstreamRequestId,
+          runDiagnostics: cursorRunDiagnostics(error),
+        },
+        'cursor backend completion failed',
+      );
+      return reply
+        .code(502)
+        .send(openAiError(backendErrorMessage(error), 'backend_error', upstreamRequestId));
     } finally {
       const finalTerminal = requestAbort.signal.aborted ? 'abort' : (terminal ?? 'error');
       requestAbort.cleanup();

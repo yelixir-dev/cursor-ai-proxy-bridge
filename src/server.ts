@@ -48,8 +48,9 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
       },
     },
   });
-  app.addHook('onRequest', async (_request, reply) => {
+  app.addHook('onRequest', async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
+    reply.header('x-request-id', request.id);
   });
   await app.register(cors, {
     origin: false,

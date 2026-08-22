@@ -33,6 +33,7 @@ const config: BridgeConfig = {
 class FakeStream extends EventEmitter implements CursorRunStream {
   destroyed = false;
   writableEnded = false;
+  rstCode = 0;
 
   write(): boolean {
     return true;
@@ -78,8 +79,8 @@ class FakeSession extends EventEmitter {
     this.emit('close');
   }
 
-  goaway(): void {
-    this.emit('goaway', 0, 0, Buffer.alloc(0));
+  goaway(errorCode = 0, lastStreamId = 0, opaqueData = Buffer.alloc(0)): void {
+    this.emit('goaway', errorCode, lastStreamId, opaqueData);
   }
 
   fail(error: Error): void {
@@ -230,6 +231,28 @@ describe('Node Cursor API HTTP/2 session reuse', () => {
       if (event === 'error') expect(surviving.destroyed).toBe(true);
     },
   );
+
+  it('retains GOAWAY and stream reset metadata for Run timeout diagnostics', async () => {
+    // Given: one active Run receives a session-level GOAWAY and has an H2
+    // reset code available on its stream.
+    const { sessions, transport } = transportFixture();
+    const stream = await open(transport, 'diagnostic-run');
+    const inner = sessions[0]?.streams[0];
+    if (!inner) throw new Error('expected active stream');
+    inner.rstCode = 8;
+
+    // When: the upstream session announces GOAWAY without ending the Run.
+    sessions[0]?.goaway(11, 37, Buffer.from('meta'));
+
+    // Then: the Run keeps a secret-safe transport snapshot for a later
+    // timeout error, even after the pooled session is drained.
+    const diagnostics = Reflect.get(stream, 'diagnostics');
+    expect(typeof diagnostics).toBe('function');
+    expect(typeof diagnostics === 'function' ? diagnostics() : undefined).toEqual({
+      rstCode: 8,
+      goaway: { errorCode: 11, lastStreamId: 37, opaqueDataLength: 4 },
+    });
+  });
 
   it('releases remote-close ownership before transport shutdown', async () => {
     // Given

@@ -58,6 +58,8 @@ npm start
 
 `composer-2.5` 같은 reasoning-heavy 모델은 cold start와 multi-tool 작업 중 기존 120초 상한을 넘어서 stream이 잘리고 일부 tool call이 유실될 수 있습니다. 전체 상한은 idle watchdog보다 길게 유지하세요. 기본 300초는 활성 작업이 끝날 시간을 제공하고, 30초 watchdog은 실제로 멈춘 Run을 계속 빠르게 종료합니다. 두 값은 `.env`에서 각각 독립적으로 바꿀 수 있습니다.
 
+모든 HTTP response에는 bridge log entry와 일치하는 `x-request-id`가 포함됩니다. Cursor Run timeout의 JSON 또는 SSE error payload에는 upstream `request_id`도 포함됩니다. Timeout log는 마지막 interaction 종류와 경과 시간, output byte, terminal-frame 상태, stream reset code, HTTP/2 GOAWAY metadata를 기록하므로 열린 채 terminal이 오지 않은 Run과 닫힌 transport를 구분할 수 있습니다.
+
 ### Hermes provider 설정 (Composer)
 
 `composer-2.5`와 `composer-2.5-fast`는 cold-start와 thinking 구간이 길 수 있습니다. Hermes를 client로 사용할 때는 서로 독립적인 두 상한을 모두 충분히 길게 설정해야 합니다.

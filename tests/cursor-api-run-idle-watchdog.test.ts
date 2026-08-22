@@ -23,11 +23,13 @@ describe('cursor-api interaction idle watchdog', () => {
         { model: 'composer-2.5', messages: [{ role: 'user', content: 'work' }] },
       );
       let outcome = 'pending';
+      let failure: unknown;
       void completion.then(
         () => {
           outcome = 'resolved';
         },
         (error: unknown) => {
+          failure = error;
           outcome = error instanceof Error ? error.message : String(error);
         },
       );
@@ -40,6 +42,18 @@ describe('cursor-api interaction idle watchdog', () => {
       expect(outcome).toBe('pending');
       await vi.advanceTimersByTimeAsync(180_000);
       expect(outcome).toBe('Cursor API run timed out after 300000ms');
+      expect(failure).toMatchObject({
+        code: 'ERR_CURSOR_RUN_TIMEOUT',
+        runRequestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        diagnostics: {
+          lastInteractionCase: null,
+          lastInteractionAgoMs: 300_000,
+          outputBytes: 0,
+          sawTurnEnded: false,
+          sawTrailer: false,
+          transport: {},
+        },
+      });
     } finally {
       vi.useRealTimers();
     }

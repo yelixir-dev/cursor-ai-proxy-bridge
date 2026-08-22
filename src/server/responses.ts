@@ -2,8 +2,8 @@ import type { ChatCompletionRequest, CompletionResult, CompletionUsage } from '.
 import { ToolArgumentValidationError } from '../backend/tool-arguments.js';
 import { CursorBackendError } from '../backend/cursor-cli.js';
 
-export function openAiError(message: string, type = 'invalid_request_error') {
-  return { error: { message, type } };
+export function openAiError(message: string, type = 'invalid_request_error', requestId?: string) {
+  return { error: { message, type, ...(requestId ? { request_id: requestId } : {}) } };
 }
 
 export function backendErrorMessage(error: unknown): string {
