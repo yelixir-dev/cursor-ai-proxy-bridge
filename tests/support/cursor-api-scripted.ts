@@ -2,7 +2,10 @@ import { EventEmitter } from 'node:events';
 import { vi } from 'vitest';
 import { CursorAuthProvider } from '../../src/backend/cursor-api/auth.js';
 import { encodeConnectFrame } from '../../src/backend/cursor-api/connect-frame.js';
-import { CursorCredentialRouter } from '../../src/backend/cursor-api/credentials.js';
+import {
+  type CursorCredentialRouter,
+  cursorCredentialsFromConfig,
+} from '../../src/backend/cursor-api/credentials.js';
 import { CursorApiBackend } from '../../src/backend/cursor-api/index.js';
 import {
   jsonToProtoValue,
@@ -16,7 +19,7 @@ import type {
 } from '../../src/backend/cursor-api/transport.js';
 import type { ChatCompletionRequest, CompletionStreamEvent } from '../../src/backend/types.js';
 import type { BridgeConfig } from '../../src/config.js';
-import { traceRunOpen, type RequestTrace } from '../../src/trace.js';
+import { type RequestTrace, traceRunOpen } from '../../src/trace.js';
 
 const config: BridgeConfig = {
   host: '127.0.0.1',
@@ -207,21 +210,24 @@ export function backend(
   transport: CursorApiTransport,
   credentials = [{ id: 'only', apiKey: 'only-token' }],
   environment: Record<string, string> = {},
-  credentialRouter = new CursorCredentialRouter({ credentials }),
+  credentialRouter?: CursorCredentialRouter,
 ): CursorApiBackend {
   const auth = new CursorAuthProvider({ environment: {} });
   vi.spyOn(auth, 'getToken').mockImplementation(async (credential) => credential?.apiKey ?? '');
-  return new CursorApiBackend(config, {
-    auth,
-    transport,
-    credentialRouter,
-    environment: {
-      CURSOR_BRIDGE_CURSOR_RETRY_BASE_MS: '1',
-      CURSOR_BRIDGE_STICKY_SETTLE_MS: '5',
-      ...environment,
+  return new CursorApiBackend(
+    { ...config, cursorApiCredentials: cursorCredentialsFromConfig({}, credentials) },
+    {
+      auth,
+      transport,
+      environment: {
+        CURSOR_BRIDGE_CURSOR_RETRY_BASE_MS: '1',
+        CURSOR_BRIDGE_STICKY_SETTLE_MS: '5',
+        ...environment,
+      },
+      wait: async () => undefined,
+      ...(credentialRouter === undefined ? {} : { credentialRouter }),
     },
-    wait: async () => undefined,
-  });
+  );
 }
 
 export async function collect(

@@ -1,13 +1,14 @@
 import type { BridgeConfig } from '../../config.js';
 import { CursorAuthProvider } from './auth.js';
+import { cursorCredentialPolicyFromEnv } from './credential-policy.js';
 import { CursorCredentialRouter, cursorCredentialsFromConfig } from './credentials.js';
 import { loadProtoDescriptors, ProtoCodec, type ProtoDescriptorSet } from './protobuf.js';
+import { StickyRunStore } from './sticky-run-store.js';
 import {
   type CursorApiTransport,
   type CursorRunStream,
   NodeCursorApiTransport,
 } from './transport.js';
-import { StickyRunStore } from './sticky-run-store.js';
 
 export interface CursorApiBackendDependencies {
   readonly descriptors?: ProtoDescriptorSet;
@@ -97,6 +98,7 @@ export function createCursorApiRuntime(
         }, delayMs);
         signal?.addEventListener('abort', onAbort, { once: true });
       }));
+  const credentialPolicy = cursorCredentialPolicyFromEnv(environment);
   return {
     config,
     codec,
@@ -115,6 +117,8 @@ export function createCursorApiRuntime(
           cursorCredentialsFromConfig(environment, config.dashboardConfig?.credentials ?? []),
         cooldownMs: boundedInteger(environment.CURSOR_BRIDGE_CREDENTIAL_COOLDOWN_MS, 300_000),
         now: dependencies.now,
+        routingPolicy: credentialPolicy.routingPolicy,
+        failoverOn: credentialPolicy.failoverOn,
       }),
   };
 }

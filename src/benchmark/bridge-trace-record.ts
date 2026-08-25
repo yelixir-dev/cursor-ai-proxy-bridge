@@ -11,6 +11,7 @@ const TRACE_STAGES = new Set([
   'first_event',
   'tool_decision',
   'tool_batch_complete',
+  'credential_failover',
   'retry',
   'upstream_error',
   'terminal',
@@ -20,6 +21,7 @@ const TRACE_STAGES = new Set([
 
 type RetryDeclined = 'flag_off' | 'post_visible' | 'retry_limit';
 type RetryReason = 'provider_5xx' | 'run_timeout';
+type CredentialExclusionReason = 'auth' | 'billing' | 'cooldown';
 
 function isRetryDeclined(value: unknown): value is RetryDeclined {
   return value === 'flag_off' || value === 'post_visible' || value === 'retry_limit';
@@ -27,6 +29,10 @@ function isRetryDeclined(value: unknown): value is RetryDeclined {
 
 function isRetryReason(value: unknown): value is RetryReason {
   return value === 'provider_5xx' || value === 'run_timeout';
+}
+
+function isCredentialExclusionReason(value: unknown): value is CredentialExclusionReason {
+  return value === 'auth' || value === 'billing' || value === 'cooldown';
 }
 
 export interface SanitizedBridgeTraceRecord {
@@ -48,6 +54,9 @@ export interface SanitizedBridgeTraceRecord {
   run_request_id?: string;
   retry_provider_5xx?: boolean;
   retry_declined?: RetryDeclined;
+  excluded_credential_slot_id?: string;
+  credential_exclusion_reason?: CredentialExclusionReason;
+  next_credential_slot_id?: string;
   usage_source?: UsageSource;
   final_backend_state?: string;
   cancelled?: boolean;
@@ -79,6 +88,9 @@ export function parseTraceRecord(
     'run_request_id',
     'retry_provider_5xx',
     'retry_declined',
+    'excluded_credential_slot_id',
+    'credential_exclusion_reason',
+    'next_credential_slot_id',
     'usage_source',
     'final_backend_state',
     'cancelled',
@@ -138,6 +150,25 @@ export function parseTraceRecord(
   const retryReason = raw.retry_reason;
   if (retryDeclined !== undefined && !isRetryDeclined(retryDeclined)) return null;
   if (retryReason !== undefined && !isRetryReason(retryReason)) return null;
+  const excludedCredentialSlotId = raw.excluded_credential_slot_id;
+  const credentialExclusionReason = raw.credential_exclusion_reason;
+  const nextCredentialSlotId = raw.next_credential_slot_id;
+  if (
+    (excludedCredentialSlotId !== undefined &&
+      (typeof excludedCredentialSlotId !== 'string' ||
+        !/^slot_[0-9a-f]{16}$/u.test(excludedCredentialSlotId))) ||
+    (credentialExclusionReason !== undefined &&
+      !isCredentialExclusionReason(credentialExclusionReason)) ||
+    (nextCredentialSlotId !== undefined &&
+      (typeof nextCredentialSlotId !== 'string' ||
+        !/^slot_[0-9a-f]{16}$/u.test(nextCredentialSlotId))) ||
+    (raw.stage === 'credential_failover' &&
+      (excludedCredentialSlotId === undefined ||
+        credentialExclusionReason === undefined ||
+        nextCredentialSlotId === undefined))
+  ) {
+    return null;
+  }
   if (
     raw.usage_source !== undefined &&
     !['turnEnded', 'cli_reported', 'estimated', 'unknown'].includes(String(raw.usage_source))
@@ -178,6 +209,15 @@ export function parseTraceRecord(
     ...(runRequestId === undefined ? {} : { run_request_id: runRequestId }),
     ...(retryProvider5xx === undefined ? {} : { retry_provider_5xx: retryProvider5xx }),
     ...(retryDeclined === undefined ? {} : { retry_declined: retryDeclined }),
+    ...(excludedCredentialSlotId === undefined
+      ? {}
+      : { excluded_credential_slot_id: excludedCredentialSlotId }),
+    ...(credentialExclusionReason === undefined
+      ? {}
+      : { credential_exclusion_reason: credentialExclusionReason }),
+    ...(nextCredentialSlotId === undefined
+      ? {}
+      : { next_credential_slot_id: nextCredentialSlotId }),
     ...(raw.usage_source === undefined ? {} : { usage_source: raw.usage_source as UsageSource }),
     ...(raw.final_backend_state === undefined
       ? {}

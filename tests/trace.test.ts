@@ -18,21 +18,21 @@ import type {
   CompletionStreamEvent,
   CursorBackend,
 } from '../src/backend/types.js';
+import type { BridgeConfig } from '../src/config.js';
 import { buildServer } from '../src/server.js';
 import {
   assertSafeTraceFields,
   attachRequestTrace,
   createRequestTrace,
+  type RequestTrace,
+  type TraceRecord,
   traceCredentialSlot,
   traceRetry,
   traceRetryProvider5xxPolicy,
   traceRunOpen,
   traceStage,
   traceUpstreamError,
-  type RequestTrace,
-  type TraceRecord,
 } from '../src/trace.js';
-import type { BridgeConfig } from '../src/config.js';
 import { trailer, update } from './support/cursor-api-scripted.js';
 
 const config: BridgeConfig = {
@@ -375,6 +375,36 @@ describe('bridge request tracing', () => {
     expect(slots[1]).not.toBe(slots[0]);
     expect(slots[2]).toBe(slots[0]);
     expect(JSON.stringify(records)).not.toMatch(/credential-alpha|credential-beta/);
+  });
+
+  it('records a redacted credential failover decision', () => {
+    const records: TraceRecord[] = [];
+    const trace = testTrace(records);
+
+    traceStage(trace, 'credential_failover', {
+      excludedCredentialSlotId: 'slot_1111111111111111',
+      credentialExclusionReason: 'billing',
+      nextCredentialSlotId: 'slot_2222222222222222',
+    });
+
+    expect(records).toEqual([
+      expect.objectContaining({
+        stage: 'credential_failover',
+        excluded_credential_slot_id: 'slot_1111111111111111',
+        credential_exclusion_reason: 'billing',
+        next_credential_slot_id: 'slot_2222222222222222',
+      }),
+    ]);
+  });
+
+  it('rejects malformed credential failover trace fields', () => {
+    expect(() =>
+      assertSafeTraceFields({
+        excludedCredentialSlotId: 'raw credential id',
+        credentialExclusionReason: 'quota',
+        nextCredentialSlotId: 'slot_2222222222222222',
+      }),
+    ).toThrow(/credential failover/i);
   });
 
   it('self-describes records with the provider 5xx retry policy once read', () => {

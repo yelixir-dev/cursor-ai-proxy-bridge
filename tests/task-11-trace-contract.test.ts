@@ -94,6 +94,24 @@ describe('task 11 benchmark trace contract', () => {
       retry_kind: 'server',
       retry_reason: 'provider_5xx',
     });
+
+    expect(
+      parseTraceRecord(
+        record('credential_failover', {
+          credential_slot_id: 'slot_1111111111111111',
+          excluded_credential_slot_id: 'slot_1111111111111111',
+          credential_exclusion_reason: 'cooldown',
+          next_credential_slot_id: 'slot_2222222222222222',
+        }),
+        9,
+      ),
+    ).toMatchObject({
+      sequence: 9,
+      stage: 'credential_failover',
+      excluded_credential_slot_id: 'slot_1111111111111111',
+      credential_exclusion_reason: 'cooldown',
+      next_credential_slot_id: 'slot_2222222222222222',
+    });
   });
 
   it('rejects malformed provider and retry telemetry values or unknown keys', () => {
@@ -115,6 +133,9 @@ describe('task 11 benchmark trace contract', () => {
       ['retry_provider_5xx', 'true'],
       ['retry_declined', 'unknown'],
       ['retry_reason', 'server'],
+      ['credential_exclusion_reason', 'quota'],
+      ['excluded_credential_slot_id', 'raw credential id'],
+      ['next_credential_slot_id', 'raw next id'],
       ['unexpected_trace_key', true],
     ] as const) {
       expect(parseTraceRecord({ ...base, [key]: value }, 1), key).toBeNull();

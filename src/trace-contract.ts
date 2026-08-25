@@ -10,6 +10,7 @@ export type TraceStage =
   | 'first_event'
   | 'tool_decision'
   | 'tool_batch_complete'
+  | 'credential_failover'
   | 'retry'
   | 'upstream_error'
   | 'terminal'
@@ -19,6 +20,7 @@ export type TraceStage =
 export type TraceRetryKind = 'server' | 'transport' | 'tool_validation';
 export type TraceRetryDecline = 'flag_off' | 'post_visible' | 'retry_limit';
 export type TraceRetryReason = 'provider_5xx' | 'run_timeout';
+export type TraceCredentialExclusionReason = 'auth' | 'billing' | 'cooldown';
 export type TraceTerminal = 'success' | 'error' | 'abort' | 'rate_limited';
 
 export interface TraceRecord {
@@ -33,6 +35,9 @@ export interface TraceRecord {
   retry_kind?: TraceRetryKind;
   retry_reason?: TraceRetryReason;
   retry_provider_5xx?: boolean;
+  excluded_credential_slot_id?: string;
+  credential_exclusion_reason?: TraceCredentialExclusionReason;
+  next_credential_slot_id?: string;
   usage_source?: UsageSource;
   final_backend_state?: string;
   cancelled?: boolean;
@@ -54,6 +59,9 @@ export interface TraceSafeFields {
   retryDeclined?: TraceRetryDecline;
   retryReason?: TraceRetryReason;
   retryProvider5xx?: boolean;
+  excludedCredentialSlotId?: string;
+  credentialExclusionReason?: TraceCredentialExclusionReason;
+  nextCredentialSlotId?: string;
   usageSource?: UsageSource;
   quiescent?: boolean;
   terminal?: TraceTerminal;
@@ -79,6 +87,7 @@ export const onceOnlyStages = new Set<TraceStage>([
 const retryKinds = new Set<TraceRetryKind>(['server', 'transport', 'tool_validation']);
 const retryDeclines = new Set<string>(['flag_off', 'post_visible', 'retry_limit']);
 const retryReasons = new Set<string>(['provider_5xx', 'run_timeout']);
+const credentialExclusionReasons = new Set<string>(['auth', 'billing', 'cooldown']);
 const usageSources = new Set<UsageSource>(['turnEnded', 'cli_reported', 'estimated', 'unknown']);
 const terminals = new Set<TraceTerminal>(['success', 'error', 'abort', 'rate_limited']);
 const safeFieldNames = new Set<keyof TraceSafeFields>([
@@ -87,6 +96,9 @@ const safeFieldNames = new Set<keyof TraceSafeFields>([
   'retryDeclined',
   'retryReason',
   'retryProvider5xx',
+  'excludedCredentialSlotId',
+  'credentialExclusionReason',
+  'nextCredentialSlotId',
   'usageSource',
   'quiescent',
   'terminal',
@@ -132,6 +144,22 @@ export function assertSafeTraceFields(fields: unknown): asserts fields is TraceS
   }
   if (values.retryProvider5xx !== undefined && typeof values.retryProvider5xx !== 'boolean') {
     throw new TypeError('trace retryProvider5xx must be a boolean');
+  }
+  const failoverFields = [
+    values.excludedCredentialSlotId,
+    values.credentialExclusionReason,
+    values.nextCredentialSlotId,
+  ];
+  if (
+    failoverFields.some((value) => value !== undefined) &&
+    (typeof values.excludedCredentialSlotId !== 'string' ||
+      !/^slot_[0-9a-f]{16}$/u.test(values.excludedCredentialSlotId) ||
+      typeof values.credentialExclusionReason !== 'string' ||
+      !credentialExclusionReasons.has(values.credentialExclusionReason) ||
+      typeof values.nextCredentialSlotId !== 'string' ||
+      !/^slot_[0-9a-f]{16}$/u.test(values.nextCredentialSlotId))
+  ) {
+    throw new TypeError('invalid credential failover trace fields');
   }
   if (
     values.usageSource !== undefined &&

@@ -146,6 +146,108 @@ describe('Cursor provider error integration', () => {
     expect(transport.opened.map((run) => run.accessToken)).toEqual(['key-a', 'key-a']);
   });
 
+  it('fails over a provider 503 before the same-credential retry loop when configured', async () => {
+    const records: TraceRecord[] = [];
+    const transport = new ScriptedTransport((stream) => {
+      stream.emit('response', { ':status': 200 });
+      stream.emit(
+        'data',
+        transport.opened.at(-1)?.accessToken === 'key-a'
+          ? providerErrorTrailer('503')
+          : Buffer.concat([update('textDelta', { text: 'recovered on b' }), trailer()]),
+      );
+    });
+    const cursor = backend(
+      transport,
+      [
+        { id: 'a', apiKey: 'key-a' },
+        { id: 'b', apiKey: 'key-b' },
+      ],
+      { CURSOR_BRIDGE_FAILOVER_ON: 'auth_or_quota_or_5xx' },
+    );
+
+    await expect(cursor.complete(tracedProviderRequest(records))).resolves.toMatchObject({
+      content: 'recovered on b',
+    });
+    expect(transport.opened.map((run) => run.accessToken)).toEqual(['key-a', 'key-b']);
+    expect(cursor.credentialStates()[0]).toMatchObject({
+      disabledReason: 'cooldown',
+    });
+    expect(records.find((record) => record.stage === 'credential_failover')).toMatchObject({
+      credential_exclusion_reason: 'cooldown',
+    });
+    expect(JSON.stringify(records)).not.toMatch(/"a"|"b"|key-a|key-b/u);
+  });
+
+  it('fails over a value-only usage limit as billing when configured', async () => {
+    const records: TraceRecord[] = [];
+    const quotaFailure = new ConnectRpcError(
+      'Usage limit',
+      'resource_exhausted',
+      [
+        {
+          type: 'aiserver.v1.ErrorDetails',
+          value: canonicalProviderDetailValue('400', 10),
+        },
+      ],
+      true,
+    );
+    const transport = new ScriptedTransport((stream) => {
+      if (transport.opened.at(-1)?.accessToken === 'key-a') {
+        stream.emit('error', quotaFailure);
+        return;
+      }
+      stream.emit('response', { ':status': 200 });
+      stream.emit(
+        'data',
+        Buffer.concat([update('textDelta', { text: 'quota recovered on b' }), trailer()]),
+      );
+    });
+    const cursor = backend(
+      transport,
+      [
+        { id: 'a', apiKey: 'key-a' },
+        { id: 'b', apiKey: 'key-b' },
+      ],
+      { CURSOR_BRIDGE_FAILOVER_ON: 'auth_or_quota' },
+    );
+
+    await expect(cursor.complete(tracedProviderRequest(records))).resolves.toMatchObject({
+      content: 'quota recovered on b',
+    });
+    expect(transport.opened.map((run) => run.accessToken)).toEqual(['key-a', 'key-b']);
+    expect(cursor.credentialStates()[0]).toMatchObject({
+      disabledReason: 'billing',
+    });
+    const failover = records.find((record) => record.stage === 'credential_failover');
+    expect(failover).toMatchObject({
+      credential_exclusion_reason: 'billing',
+    });
+    expect(failover?.excluded_credential_slot_id).toMatch(/^slot_[0-9a-f]{16}$/u);
+    expect(failover?.next_credential_slot_id).toMatch(/^slot_[0-9a-f]{16}$/u);
+    expect(failover?.next_credential_slot_id).not.toBe(failover?.excluded_credential_slot_id);
+    expect(JSON.stringify(records)).not.toMatch(/"a"|"b"|key-a|key-b/u);
+  });
+
+  it('keeps a provider 503 on the first credential under the auth default', async () => {
+    const transport = new ScriptedTransport((stream) => {
+      stream.emit('response', { ':status': 200 });
+      stream.emit('data', providerErrorTrailer('503'));
+    });
+    const cursor = backend(transport, [
+      { id: 'a', apiKey: 'key-a' },
+      { id: 'b', apiKey: 'key-b' },
+    ]);
+
+    await expect(cursor.complete(providerRequest)).rejects.toMatchObject({
+      code: 'resource_exhausted',
+    });
+    expect(transport.opened.map((run) => run.accessToken)).toEqual(['key-a']);
+    expect(cursor.credentialStates().some((state) => state.disabledReason !== undefined)).toBe(
+      false,
+    );
+  });
+
   it('preserves the inference error type response header', async () => {
     const transport = new ScriptedTransport((stream) => {
       stream.emit('response', {
@@ -285,6 +387,7 @@ describe('Cursor provider error integration', () => {
     });
     const cursor = backend(transport, undefined, {
       CURSOR_BRIDGE_RETRY_PROVIDER_5XX: '1',
+      CURSOR_BRIDGE_FAILOVER_ON: 'auth_or_quota_or_5xx',
     });
     const events: unknown[] = [];
 

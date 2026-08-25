@@ -1,3 +1,4 @@
+import { traceCredentialFailover } from '../../credential-trace.js';
 import { traceCredentialSlot, type RequestTrace } from '../../trace.js';
 import type { CursorApiCredential } from './credentials.js';
 import type { CursorApiRuntime } from './runtime.js';
@@ -19,7 +20,18 @@ export function withCursorCredential<T>(
       traceCredentialSlot(options.trace, credential.id);
       return options.operation(credential, await runtime.auth.getToken(credential, options.signal));
     },
-    options.canFailover,
-    options.preferredCredentialId,
+    {
+      ...(options.canFailover === undefined ? {} : { canFailover: options.canFailover }),
+      ...(options.preferredCredentialId === undefined
+        ? {}
+        : { preferredCredentialId: options.preferredCredentialId }),
+      onFailover: (decision) =>
+        traceCredentialFailover(
+          options.trace,
+          decision.excludedCredentialId,
+          decision.reason,
+          decision.nextCredentialId,
+        ),
+    },
   );
 }

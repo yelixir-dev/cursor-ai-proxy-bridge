@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import type { UsageSource } from './backend/types.js';
 import type { CursorProviderErrorDiagnostics } from './backend/cursor-api/provider-error.js';
-import { assertSafeTraceFields, onceOnlyStages } from './trace-contract.js';
+import type { UsageSource } from './backend/types.js';
 import type {
   TraceRecord,
   TraceRetryDecline,
@@ -12,8 +11,10 @@ import type {
   TraceStage,
   TraceTerminal,
 } from './trace-contract.js';
+import { assertSafeTraceFields, onceOnlyStages } from './trace-contract.js';
 
 export type {
+  TraceCredentialExclusionReason,
   TraceRecord,
   TraceRetryDecline,
   TraceRetryKind,
@@ -130,6 +131,15 @@ export function traceStage(
     ...(fields.retryDeclined === undefined ? {} : { retry_declined: fields.retryDeclined }),
     ...(fields.retryReason === undefined ? {} : { retry_reason: fields.retryReason }),
     ...(retryProvider5xx === undefined ? {} : { retry_provider_5xx: retryProvider5xx }),
+    ...(fields.excludedCredentialSlotId === undefined
+      ? {}
+      : { excluded_credential_slot_id: fields.excludedCredentialSlotId }),
+    ...(fields.credentialExclusionReason === undefined
+      ? {}
+      : { credential_exclusion_reason: fields.credentialExclusionReason }),
+    ...(fields.nextCredentialSlotId === undefined
+      ? {}
+      : { next_credential_slot_id: fields.nextCredentialSlotId }),
     ...(fields.toolCallsAnnounced === undefined
       ? {}
       : { tool_calls_announced: fields.toolCallsAnnounced }),
@@ -172,10 +182,13 @@ export function traceBackend(trace: RequestTrace | undefined, backend: string): 
   traceStage(trace, 'backend');
 }
 
-export function traceCredentialSlot(trace: RequestTrace | undefined, credentialId: string): void {
-  if (!trace) return;
+export function credentialSlotId(credentialId: string): string {
   const digest = createHash('sha256').update(credentialId).digest('hex').slice(0, 16);
-  trace.credentialSlotId = `slot_${digest}`;
+  return `slot_${digest}`;
+}
+
+export function traceCredentialSlot(trace: RequestTrace | undefined, credentialId: string): void {
+  if (trace) trace.credentialSlotId = credentialSlotId(credentialId);
 }
 
 export function traceRetryProvider5xxPolicy(

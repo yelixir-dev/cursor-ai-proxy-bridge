@@ -173,6 +173,18 @@ There are two separate key layers:
 - **Client access.** `CURSOR_BRIDGE_AUTH` accepts `on` or `off`. It defaults to `on` when `CURSOR_BRIDGE_API_KEY` is set, and to `off` with a startup warning when that key is unset. Explicit `CURSOR_BRIDGE_AUTH=on` without `CURSOR_BRIDGE_API_KEY` fails startup. Requests can use `Authorization: Bearer <key>` or `x-api-key: <key>`.
 - **Cursor access.** `CURSOR_API_KEY` is the Cursor Dashboard -> API Keys credential for headless hosts. Additional credentials can be created in `/dashboard`, assigned weights, enabled or disabled, and stored in the mode-0600 dashboard config. Auth failures put only the failed credential into cooldown and trigger one retry on another available credential.
 
+Credential selection and failure exclusion are independent controls:
+
+| Variable                               | Values                                          | Default                | Behavior                                                                                                                                                             |
+| -------------------------------------- | ----------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CURSOR_BRIDGE_CREDENTIAL_ROUTING`     | `weighted_round_robin`, `round_robin`           | `weighted_round_robin` | Weighted mode uses dashboard weights. Equal round-robin ignores weights and spreads picks across every healthy credential.                                           |
+| `CURSOR_BRIDGE_FAILOVER_ON`            | `auth`, `auth_or_quota`, `auth_or_quota_or_5xx` | `auth`                 | `auth` rotates ordinary 401/403/unauthenticated failures. The wider modes add billing/quota, then 429/5xx/typed provider `resource_exhausted` failures respectively. |
+| `CURSOR_BRIDGE_CREDENTIAL_COOLDOWN_MS` | positive milliseconds                           | `300000`               | Duration applied to an excluded credential before lazy recovery.                                                                                                     |
+
+The conservative default is backward-compatible: quota and transient provider failures stay on the selected credential unless an operator opts into a wider failover policy. A request fails over at most once and only before content or tool output reaches the client. If the second credential fails with an enabled failure class, it is also cooled down for later requests.
+
+With `CURSOR_BRIDGE_TRACE=1`, a credential switch emits a `credential_failover` JSONL record. It contains only hashed `excluded_credential_slot_id` and `next_credential_slot_id` values plus `credential_exclusion_reason` (`auth`, `billing`, or `cooldown`); raw credential IDs and keys are never traced. Invalid routing or failover values fail startup with the accepted value list.
+
 ### Models
 
 `GET /v1/models` exposes a compact model surface instead of Cursor's effort-specific variant slugs. Fast and thinking modes remain separate model IDs; reasoning strength is selected with the OpenAI-compatible `reasoning_effort` request field.

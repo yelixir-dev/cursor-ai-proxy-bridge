@@ -1,24 +1,22 @@
-import { ConnectRpcError } from './connect-frame.js';
-import { inspectCursorProviderError } from './provider-error.js';
-import { CursorApiHttpError } from './transport.js';
+import {
+  type CursorApiCredential,
+  type CursorApiCredentialInput,
+  normalizeCursorApiCredential,
+} from './credential-config.js';
+import {
+  type CredentialDisabledReason,
+  type CursorCredentialFailoverPolicy,
+  type CursorCredentialRoutingPolicy,
+  cursorCredentialFailureReason,
+} from './credential-policy.js';
 
-export type CredentialDisabledReason = 'auth' | 'cooldown';
-
-export interface CursorApiCredential {
-  id: string;
-  label?: string;
-  apiKey?: string;
-  weight: number;
-  enabled: boolean;
-}
-
-export interface CursorApiCredentialInput {
-  id: string;
-  label?: string;
-  apiKey?: string;
-  weight?: number;
-  enabled?: boolean;
-}
+export type { CursorApiCredential, CursorApiCredentialInput } from './credential-config.js';
+export { cursorCredentialsFromConfig } from './credential-config.js';
+export type {
+  CredentialDisabledReason,
+  CursorCredentialFailoverPolicy,
+  CursorCredentialRoutingPolicy,
+} from './credential-policy.js';
 
 export interface CursorApiCredentialStateView {
   id: string;
@@ -43,6 +41,20 @@ export interface CursorCredentialRouterOptions {
   credentials: CursorApiCredentialInput[];
   cooldownMs?: number;
   now?: () => number;
+  routingPolicy?: CursorCredentialRoutingPolicy;
+  failoverOn?: CursorCredentialFailoverPolicy;
+}
+
+export interface CursorCredentialFailoverDecision {
+  readonly excludedCredentialId: string;
+  readonly reason: CredentialDisabledReason;
+  readonly nextCredentialId: string;
+}
+
+export interface CursorCredentialRouteOptions {
+  readonly canFailover?: () => boolean;
+  readonly preferredCredentialId?: string;
+  readonly onFailover?: (decision: CursorCredentialFailoverDecision) => void;
 }
 
 export class NoAvailableCursorCredentialError extends Error {
@@ -52,64 +64,22 @@ export class NoAvailableCursorCredentialError extends Error {
   }
 }
 
-function positiveWeight(value: number | undefined): number {
-  return Number.isFinite(value) && value !== undefined && value > 0 ? value : 1;
-}
-
-function normalizeCredential(credential: CursorApiCredentialInput): CursorApiCredential {
-  const normalized: CursorApiCredential = {
-    id: credential.id,
-    weight: positiveWeight(credential.weight),
-    enabled: credential.enabled !== false,
-  };
-  if (credential.label !== undefined) normalized.label = credential.label;
-  if (credential.apiKey !== undefined) normalized.apiKey = credential.apiKey;
-  return normalized;
-}
-
-export function cursorCredentialsFromConfig(
-  environment: NodeJS.ProcessEnv | Record<string, string | undefined>,
-  dashboardCredentials: CursorApiCredentialInput[] = [],
-): CursorApiCredential[] {
-  const credentials: CursorApiCredential[] = [];
-  const envApiKey = environment.CURSOR_API_KEY?.trim();
-  if (envApiKey) credentials.push(normalizeCredential({ id: 'env', apiKey: envApiKey }));
-
-  const used = new Set(credentials.map((credential) => credential.id));
-  for (const credential of dashboardCredentials) {
-    if (used.has(credential.id)) continue;
-    used.add(credential.id);
-    credentials.push(normalizeCredential(credential));
-  }
-
-  if (credentials.length === 0) {
-    credentials.push(normalizeCredential({ id: 'system' }));
-  }
-  return credentials;
-}
-
 export function isCredentialAuthFailure(error: unknown): boolean {
-  const provider = inspectCursorProviderError(error);
-  if (provider.providerError || provider.nonProviderNonRetryable) return false;
-  if (error instanceof CursorApiHttpError) return error.status === 401 || error.status === 403;
-  if (error instanceof ConnectRpcError) {
-    return error.code === 'unauthenticated';
-  }
-  if (error && typeof error === 'object' && 'status' in error) {
-    const status = Number((error as { status?: unknown }).status);
-    return status === 401 || status === 403;
-  }
-  return false;
+  return cursorCredentialFailureReason(error, 'auth') === 'auth';
 }
 
 export class CursorCredentialRouter {
   private states: CursorApiCredentialState[] = [];
   private readonly cooldownMs: number;
   private readonly now: () => number;
+  private readonly routingPolicy: CursorCredentialRoutingPolicy;
+  private readonly failoverOn: CursorCredentialFailoverPolicy;
 
   constructor(options: CursorCredentialRouterOptions) {
     this.cooldownMs = options.cooldownMs ?? 300_000;
     this.now = options.now ?? Date.now;
+    this.routingPolicy = options.routingPolicy ?? 'weighted_round_robin';
+    this.failoverOn = options.failoverOn ?? 'auth';
     this.replaceCredentials(options.credentials);
   }
 
@@ -120,7 +90,7 @@ export class CursorCredentialRouter {
       if (!input.id.trim()) throw new Error('Cursor API credential id must not be empty');
       if (ids.has(input.id)) throw new Error(`Duplicate Cursor API credential id: ${input.id}`);
       ids.add(input.id);
-      const credential = normalizeCredential(input);
+      const credential = normalizeCursorApiCredential(input);
       const previous = existing.get(credential.id);
       if (previous) {
         const credentialsChanged =
@@ -179,8 +149,9 @@ export class CursorCredentialRouter {
     let selected: CursorApiCredentialState | undefined;
     let totalWeight = 0;
     for (const state of candidates) {
-      state.currentWeight += state.credential.weight;
-      totalWeight += state.credential.weight;
+      const weight = this.routingPolicy === 'round_robin' ? 1 : state.credential.weight;
+      state.currentWeight += weight;
+      totalWeight += weight;
       if (!selected || state.currentWeight > selected.currentWeight) selected = state;
     }
     if (!selected) throw new NoAvailableCursorCredentialError();
@@ -216,23 +187,25 @@ export class CursorCredentialRouter {
 
   async route<T>(
     operation: (credential: CursorApiCredential) => Promise<T>,
-    canFailover: () => boolean = () => true,
-    preferredCredentialId?: string,
+    options: CursorCredentialRouteOptions = {},
   ): Promise<T> {
     const first =
-      preferredCredentialId === undefined ? this.pick() : this.pickById(preferredCredentialId);
+      options.preferredCredentialId === undefined
+        ? this.pick()
+        : this.pickById(options.preferredCredentialId);
     try {
       const result = await operation(first);
       this.release(first.id);
       return result;
     } catch (error) {
-      if (!isCredentialAuthFailure(error)) {
+      const reason = cursorCredentialFailureReason(error, this.failoverOn);
+      if (reason === undefined) {
         this.release(first.id);
         throw error;
       }
-      this.disable(first.id, 'auth');
+      this.disable(first.id, reason);
       this.release(first.id);
-      if (!canFailover()) throw error;
+      if (options.canFailover?.() === false) throw error;
 
       let second: CursorApiCredential;
       try {
@@ -242,11 +215,17 @@ export class CursorCredentialRouter {
         throw pickError;
       }
       try {
+        options.onFailover?.({
+          excludedCredentialId: first.id,
+          reason,
+          nextCredentialId: second.id,
+        });
         const result = await operation(second);
         this.release(second.id);
         return result;
       } catch (retryError) {
-        if (isCredentialAuthFailure(retryError)) this.disable(second.id, 'auth');
+        const retryReason = cursorCredentialFailureReason(retryError, this.failoverOn);
+        if (retryReason !== undefined) this.disable(second.id, retryReason);
         this.release(second.id);
         throw retryError;
       }
