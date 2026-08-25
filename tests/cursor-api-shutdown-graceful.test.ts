@@ -1,19 +1,20 @@
+import { type ChildProcess, spawn } from 'node:child_process';
+import fs from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import http2 from 'node:http2';
 import https from 'node:https';
-import { request as httpRequest } from 'node:http';
 import type { AddressInfo, Server as NetServer } from 'node:net';
 import net from 'node:net';
-import { spawn, type ChildProcess } from 'node:child_process';
-import path from 'node:path';
 import os from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { generateCerts } from '../scripts/wire-capture/gen-certs.mjs';
 import { encodeConnectFrame } from '../src/backend/cursor-api/connect-frame.js';
 import { loadProtoDescriptors, ProtoCodec } from '../src/backend/cursor-api/protobuf.js';
-import { generateCerts } from '../scripts/wire-capture/gen-certs.mjs';
-import fs from 'node:fs';
 
 const codec = new ProtoCodec(loadProtoDescriptors());
-const DIST_ENTRY = path.join(__dirname, '..', 'dist', 'index.js');
+const TSX_CLI = path.join(__dirname, '..', 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const SOURCE_ENTRY = path.join(__dirname, '..', 'src', 'index.ts');
 
 async function bounded<T>(promise: Promise<T>, label: string, ms = 10_000): Promise<T> {
   const deadline = AbortSignal.timeout(ms);
@@ -164,7 +165,7 @@ describe('bridge process shutdown', () => {
 
     const childEnv = { ...process.env };
     delete childEnv.CURSOR_API_KEY;
-    const child: ChildProcess = spawn(process.execPath, [DIST_ENTRY], {
+    const child: ChildProcess = spawn(process.execPath, [TSX_CLI, SOURCE_ENTRY], {
       // cwd outside the repo: keep dotenv from loading the project .env (real API key).
       cwd: os.tmpdir(),
       env: {
@@ -183,29 +184,29 @@ describe('bridge process shutdown', () => {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let childLog = '';
-    child.stdout?.on('data', (chunk: Buffer) => {
+    let bridgeIsListening = false;
+    const bridgeListening = Promise.withResolvers<void>();
+    const captureChildLog = (chunk: Buffer): void => {
       childLog += chunk.toString('utf8');
-    });
-    child.stderr?.on('data', (chunk: Buffer) => {
-      childLog += chunk.toString('utf8');
-    });
+      if (bridgeIsListening || !childLog.includes('listening on')) return;
+      bridgeIsListening = true;
+      bridgeListening.resolve();
+    };
+    child.stdout?.on('data', captureChildLog);
+    child.stderr?.on('data', captureChildLog);
     const childExited = Promise.withResolvers<void>();
-    child.once('close', () => childExited.resolve());
+    child.once('close', () => {
+      if (!bridgeIsListening) bridgeListening.reject(new Error(`bridge exited early: ${childLog}`));
+      childExited.resolve();
+    });
     cleanups.push(async () => {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     });
-    await bounded(
-      (async () => {
-        while (!childLog.includes('listening on')) {
-          if (child.exitCode !== null) throw new Error(`bridge exited early: ${childLog}`);
-          await new Promise((resolve) => setImmediate(resolve));
-        }
-      })(),
-      'bridge boot',
-    );
+    await bounded(bridgeListening.promise, 'bridge boot');
 
     const sawChunk = Promise.withResolvers<void>();
     const clientClosed = Promise.withResolvers<void>();
+    let shutdownIssued = false;
     const client = httpRequest(
       {
         host: '127.0.0.1',
@@ -216,10 +217,14 @@ describe('bridge process shutdown', () => {
       },
       (response) => {
         response.on('data', (chunk: Buffer) => {
-          if (chunk.toString('utf8').includes('SHUTDOWN_SENTINEL')) {
-            sawChunk.resolve();
+          if (chunk.toString('utf8').includes('SHUTDOWN_SENTINEL') && !shutdownIssued) {
+            shutdownIssued = true;
             // Live ordering: the OMO client dies FIRST (disconnect mid-Run).
             client.destroy();
+            // Trigger teardown in the same callback so request-abort cleanup
+            // cannot close the upstream Run before process shutdown begins.
+            child.kill('SIGTERM');
+            sawChunk.resolve();
           }
         });
       },
@@ -235,10 +240,9 @@ describe('bridge process shutdown', () => {
     );
 
     await bounded(sawChunk.promise, 'first SSE chunk');
-    await bounded(clientClosed.promise, 'client disconnect');
     const observed = await bounded(upstream.observation, 'upstream run stream');
-    // Runner teardown: bridge is SIGTERMed after the client died mid-Run.
-    child.kill('SIGTERM');
+    await bounded(observed.firstChunkSent, 'upstream first chunk');
+    await bounded(clientClosed.promise, 'client disconnect');
     await bounded(childExited.promise, 'bridge exit');
     await bounded(observed.sessionClosed, 'upstream session close');
 
