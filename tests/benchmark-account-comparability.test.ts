@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  type AccountComparisonDependencies,
   compareBenchmarkAccounts,
   unprovedAccountComparability,
 } from '../src/benchmark/account-comparability.js';
@@ -7,6 +8,13 @@ import { AccountComparabilitySchema } from '../src/benchmark/account-schema.js';
 
 const jwt = (subject: string) =>
   `e30.${Buffer.from(JSON.stringify({ sub: subject })).toString('base64url')}.signature`;
+
+const noExchangeDependencies = {
+  bridgeCredentials: () => [{ id: 'test', weight: 1, enabled: true }],
+  authProvider: () => ({
+    getToken: () => Promise.reject(new Error('unexpected API-key exchange')),
+  }),
+} satisfies AccountComparisonDependencies;
 
 const claimAvailability = (
   nativeClaimAvailable: boolean,
@@ -21,10 +29,18 @@ const claimAvailability = (
 describe('measured account comparability', () => {
   it('records matched and mismatched stable claims without retaining identity values', async () => {
     const native = jwt('native-private-subject');
-    const matched = await compareBenchmarkAccounts(native, { CURSOR_AUTH_TOKEN: native });
-    const mismatched = await compareBenchmarkAccounts(native, {
-      CURSOR_AUTH_TOKEN: jwt('bridge-private-subject'),
-    });
+    const matched = await compareBenchmarkAccounts(
+      native,
+      { CURSOR_AUTH_TOKEN: native },
+      undefined,
+      noExchangeDependencies,
+    );
+    const mismatched = await compareBenchmarkAccounts(
+      native,
+      { CURSOR_AUTH_TOKEN: jwt('bridge-private-subject') },
+      undefined,
+      noExchangeDependencies,
+    );
     expect(matched).toMatchObject({
       status: 'matched',
       method: 'jwt_sub',
@@ -55,6 +71,9 @@ describe('measured account comparability', () => {
       { CURSOR_API_KEY: 'private-key' },
       undefined,
       {
+        bridgeCredentials: () => [
+          { id: 'exchange', apiKey: 'private-key', weight: 1, enabled: true },
+        ],
         authProvider: () => ({ getToken }),
       },
     );
@@ -111,7 +130,12 @@ describe('measured account comparability', () => {
   ] as const)(
     'records $name as unproved',
     async ({ native, environment, reason, nativeClaimAvailable }) => {
-      const receipt = await compareBenchmarkAccounts(native, environment);
+      const receipt = await compareBenchmarkAccounts(
+        native,
+        environment,
+        undefined,
+        noExchangeDependencies,
+      );
       expect(receipt).toMatchObject({
         status: 'unproved',
         method: nativeClaimAvailable ? 'jwt_sub' : 'none',
@@ -152,6 +176,9 @@ describe('measured account comparability', () => {
       { CURSOR_API_KEY: 'secret-key' },
       undefined,
       {
+        bridgeCredentials: () => [
+          { id: 'exchange', apiKey: 'secret-key', weight: 1, enabled: true },
+        ],
         authProvider: () => ({
           getToken: async () => Promise.reject(new Error('secret-key failed')),
         }),

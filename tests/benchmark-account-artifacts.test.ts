@@ -2,7 +2,10 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { compareBenchmarkAccounts } from '../src/benchmark/account-comparability.js';
+import {
+  type AccountComparisonDependencies,
+  compareBenchmarkAccounts,
+} from '../src/benchmark/account-comparability.js';
 import { AccountComparabilitySchema } from '../src/benchmark/account-schema.js';
 import { writeBenchmarkArtifacts } from '../src/benchmark/artifacts.js';
 import { createCanonicalCases } from '../src/benchmark/cases.js';
@@ -14,6 +17,12 @@ const roots: string[] = [];
 const jwt = (subject: string) =>
   `e30.${Buffer.from(JSON.stringify({ sub: subject })).toString('base64url')}.signature`;
 const emptyChild = () => ({ diagnostics: '', exits: [], session: null });
+const noExchangeDependencies = {
+  bridgeCredentials: () => [{ id: 'test', weight: 1, enabled: true }],
+  authProvider: () => ({
+    getToken: () => Promise.reject(new Error('unexpected API-key exchange')),
+  }),
+} satisfies AccountComparisonDependencies;
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -27,9 +36,12 @@ describe('benchmark account evidence propagation', () => {
       (candidate) => candidate.id === 'text_sentinel_stream',
     );
     if (testCase === undefined) throw new Error('missing text sentinel benchmark case');
-    const comparison = await compareBenchmarkAccounts(jwt('same'), {
-      CURSOR_AUTH_TOKEN: jwt('same'),
-    });
+    const comparison = await compareBenchmarkAccounts(
+      jwt('same'),
+      { CURSOR_AUTH_TOKEN: jwt('same') },
+      undefined,
+      noExchangeDependencies,
+    );
     const result = await runBenchmark(
       {
         seed: 20260818,

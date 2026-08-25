@@ -58,7 +58,10 @@ async function startUpstream(): Promise<{
   unaryOrigin: string;
   h2Origin: string;
   caPath: string;
+  dashboardConfigPath: string;
   observation: Promise<UpstreamObservation>;
+  unarySeen: Promise<void>;
+  exchangeRequestCount: () => number;
   close: () => Promise<void>;
 }> {
   const certDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shutdown-certs-'));
@@ -66,10 +69,14 @@ async function startUpstream(): Promise<{
   const key = fs.readFileSync(path.join(certDir, 'leaf.key'));
   const cert = fs.readFileSync(path.join(certDir, 'leaf.crt'));
   // HTTPS leg for unary fetch calls (GetServerConfig during boot probe).
+  const unarySeen = Promise.withResolvers<void>();
+  let exchangeRequestCount = 0;
   const unary = https.createServer({ key, cert }, (request, response) => {
     const chunks: Buffer[] = [];
     request.on('data', (chunk: Buffer) => chunks.push(chunk));
     request.on('end', () => {
+      if (request.url === '/auth/exchange_user_api_key') exchangeRequestCount += 1;
+      else unarySeen.resolve();
       response.writeHead(200, { 'content-type': 'application/proto' });
       response.end(
         Buffer.from(
@@ -140,7 +147,10 @@ async function startUpstream(): Promise<{
     unaryOrigin: `https://127.0.0.1:${unaryPort}`,
     h2Origin: `https://127.0.0.1:${address.port}`,
     caPath: path.join(certDir, 'ca.crt'),
+    dashboardConfigPath: path.join(certDir, 'dashboard.json'),
     observation: observed.promise,
+    unarySeen: unarySeen.promise,
+    exchangeRequestCount: () => exchangeRequestCount,
     close: () =>
       new Promise<void>((resolve, reject) => {
         for (const session of sessions) if (!session.destroyed) session.destroy();
@@ -177,6 +187,7 @@ describe('bridge process shutdown', () => {
         CURSOR_AUTH_TOKEN: 'token',
         CURSOR_BRIDGE_CURSOR_API_ENDPOINT: upstream.unaryOrigin,
         CURSOR_BRIDGE_CURSOR_AGENT_ENDPOINT: upstream.h2Origin,
+        CURSOR_BRIDGE_DASHBOARD_CONFIG: upstream.dashboardConfigPath,
         NODE_EXTRA_CA_CERTS: upstream.caPath,
         CURSOR_BRIDGE_AUTO_PROBE_TIMEOUT_MS: '5000',
         NO_COLOR: '1',
@@ -203,6 +214,7 @@ describe('bridge process shutdown', () => {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     });
     await bounded(bridgeListening.promise, 'bridge boot');
+    await bounded(upstream.unarySeen, 'upstream unary probe');
 
     const sawChunk = Promise.withResolvers<void>();
     const clientClosed = Promise.withResolvers<void>();
@@ -253,5 +265,6 @@ describe('bridge process shutdown', () => {
       `bridge must send GOAWAY on shutdown (child log: ${childLog.slice(-400)})`,
     ).toBe(http2.constants.NGHTTP2_NO_ERROR);
     expect(observed.runRstCode()).not.toBe(http2.constants.NGHTTP2_INTERNAL_ERROR);
+    expect(upstream.exchangeRequestCount()).toBe(0);
   }, 20_000);
 });
