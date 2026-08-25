@@ -70,6 +70,47 @@ describe('unified model surface', () => {
     ]);
   });
 
+  it('attaches Cursor context metadata to every curated model family', () => {
+    const listed = unifiedModelList(
+      [
+        'composer-2.5',
+        'claude-opus-5-low',
+        'claude-opus-5-thinking-low-fast',
+        'claude-sonnet-5-low',
+        'claude-fable-5-low',
+        'gpt-5.6-sol-low',
+        'gpt-5.6-terra-low',
+        'gpt-5.6-luna-low',
+        'cursor-grok-4.6-low',
+        'kimi-k3-low',
+        'glm-5.2-high',
+        'auto',
+        'default',
+      ].map(model),
+    ).map(({ id, context_window, context_length, max_context_length }) => [
+      id,
+      context_window,
+      context_length,
+      max_context_length,
+    ]);
+
+    expect(listed).toEqual([
+      ['composer-2.5', 200_000, 200_000, 200_000],
+      ['opus-5', 300_000, 300_000, 300_000],
+      ['opus-5-thinking-fast', 300_000, 300_000, 300_000],
+      ['sonnet-5', 200_000, 200_000, 200_000],
+      ['fable-5', 300_000, 300_000, 300_000],
+      ['gpt-5.6-sol', 272_000, 272_000, 272_000],
+      ['gpt-5.6-terra', 272_000, 272_000, 272_000],
+      ['gpt-5.6-luna', 272_000, 272_000, 272_000],
+      ['grok-4.6', 256_000, 256_000, 256_000],
+      ['kimi-k3', 200_000, 200_000, 200_000],
+      ['glm-5.2', 200_000, 200_000, 200_000],
+      ['auto', 200_000, 200_000, 200_000],
+      ['default', 200_000, 200_000, 200_000],
+    ]);
+  });
+
   it('resolves unified ids with default effort medium', () => {
     expect(resolveVariantSlug('opus-5', undefined, LIVE_SLUGS)).toBe('claude-opus-5-medium');
     expect(resolveVariantSlug('gpt-5.6-sol-fast', undefined, LIVE_SLUGS)).toBe(

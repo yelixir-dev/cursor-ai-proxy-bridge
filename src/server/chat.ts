@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { cursorRunDiagnostics, cursorRunRequestId } from '../backend/cursor-api/run-errors.js';
 import {
   cursorProviderResponseDetails,
   safeCursorBackendError,
 } from '../backend/cursor-api/provider-error.js';
-import { ToolHistoryValidationError, assertValidToolHistory } from '../backend/tool-history.js';
+import { cursorRunDiagnostics, cursorRunRequestId } from '../backend/cursor-api/run-errors.js';
 import { unifiedFromSlug } from '../backend/cursor-api/unified-models.js';
+import { assertValidToolHistory, ToolHistoryValidationError } from '../backend/tool-history.js';
+import { withCursorModelContext } from '../model-context.js';
 import {
   attachRequestTrace,
   createRequestTrace,
@@ -33,7 +34,12 @@ export function registerChatRoutes(context: ServerContext): void {
   app.get('/v1/models', async (request, reply) => {
     if (!(await requireClientAuth(request, reply, config))) return reply;
     const models = await backend.listModels();
-    return { object: 'list', data: models.filter((model) => modelPolicy.enabled(model.id)) };
+    return {
+      object: 'list',
+      data: models
+        .filter((model) => modelPolicy.enabled(model.id))
+        .map((model) => withCursorModelContext(model, config.defaultModel)),
+    };
   });
 
   app.post('/v1/chat/completions', async (request, reply) => {

@@ -32,6 +32,27 @@
 - **Curated model families.** Composer 2.5, Cursor Grok 4.6, Claude 5 Opus, Sonnet, and Fable, GPT-5.6 Sol, Terra, and Luna, Kimi K3, GLM 5.2, `default`, and `auto` are enabled by policy, while dashboard overrides can expose or hide other discovered models.
 - **A local management console.** `/dashboard` shows bridge and backend status, supports managed credential CRUD, and groups model family toggles with bulk enable and disable actions.
 
+### Model context windows
+
+`GET /v1/models` returns `context_window`, `context_length`, and `max_context_length` for every curated model. All three fields intentionally report Cursor's standard context window, not the optional Max Mode ceiling: proxy clients must not assume that Kimi K3 or another model can use extended context unless the request path explicitly enables Max Mode.
+
+| Model family    | Advertised context | Cursor source                                                                                              |
+| --------------- | ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| Composer 2.5    | 200,000            | [Cursor Docs](https://cursor.com/docs/models/cursor-composer-2-5)                                          |
+| Claude Opus 5   | 300,000            | [Cursor Docs](https://cursor.com/docs/models/claude-opus-5)                                                |
+| Claude Sonnet 5 | 200,000            | [Cursor Docs](https://cursor.com/docs/models/claude-sonnet-5)                                              |
+| Claude Fable 5  | 300,000            | [Cursor Docs](https://cursor.com/docs/models/claude-fable-5)                                               |
+| GPT-5.6 Sol     | 272,000            | [Cursor Docs](https://cursor.com/docs/models/gpt-5-6-sol)                                                  |
+| GPT-5.6 Terra   | 272,000            | [Cursor Docs](https://cursor.com/docs/models/gpt-5-6-terra)                                                |
+| GPT-5.6 Luna    | 272,000            | [Cursor Docs](https://cursor.com/docs/models/gpt-5-6-luna)                                                 |
+| Grok 4.6        | 256,000            | [Cursor Docs](https://cursor.com/docs/models/grok-4-6)                                                     |
+| Kimi K3         | 200,000            | [Cursor Docs](https://cursor.com/docs/models/kimi-k3)                                                      |
+| GLM 5.2         | 200,000            | [Cursor Docs](https://cursor.com/docs/models/glm-5-2)                                                      |
+| `default`       | Configured default | Resolved from the configured model's row above                                                             |
+| `auto`          | 200,000            | Conservative proxy floor; [Cursor Router](https://cursor.com/docs/cursor-router) has no fixed context card |
+
+Legacy effort, thinking, and fast slugs inherit their family's value. Models exposed only through an explicit dashboard override remain unchanged when Cursor has no official context card.
+
 ## Install
 
 Node.js 22+ and npm are required. Install from the repository with the existing npm workflow:

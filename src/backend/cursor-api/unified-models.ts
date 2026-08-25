@@ -1,3 +1,4 @@
+import { withCursorModelContext } from '../../model-context.js';
 import type { BridgeModel } from '../types.js';
 
 /**
@@ -85,7 +86,7 @@ export function unifiedModelList(models: readonly BridgeModel[]): BridgeModel[] 
     const id = unifiedFromSlug(model.id) ?? model.id;
     if (seen.has(id)) continue;
     seen.add(id);
-    unified.push({ ...model, id });
+    unified.push(withCursorModelContext({ ...model, id }));
   }
   return unified;
 }

@@ -56,6 +56,9 @@ export interface BridgeModel {
   object: 'model';
   created: number;
   owned_by: string;
+  context_window?: number;
+  context_length?: number;
+  max_context_length?: number;
 }
 
 export interface BackendHealth {
