@@ -123,6 +123,35 @@ describe('automatic backend selection', () => {
 });
 
 describe('automatic backend runtime failover', () => {
+  it('forwards credential policy state and hot updates while the CLI fallback is active', () => {
+    const initialPolicy = {
+      routingPolicy: 'round_robin',
+      failoverOn: 'auth_or_quota',
+    } as const;
+    const updateCredentialPolicy = vi.fn();
+    const direct = {
+      ...api(),
+      credentialPolicy: () => initialPolicy,
+      updateCredentialPolicy,
+    };
+    const automatic = new AutoCursorBackend(direct, backend('cursor-cli'), {
+      now: () => 1_000,
+      warn: () => undefined,
+      cooldownMs: 100,
+      fatalThreshold: 3,
+      probeTimeoutMs: 10,
+      initial: 'cursor-cli',
+    });
+    const nextPolicy = {
+      routingPolicy: 'weighted_round_robin',
+      failoverOn: 'auth_or_quota_or_5xx',
+    } as const;
+
+    expect(automatic.credentialPolicy()).toEqual(initialPolicy);
+    automatic.updateCredentialPolicy(nextPolicy);
+    expect(updateCredentialPolicy).toHaveBeenCalledExactlyOnceWith(nextPolicy);
+  });
+
   it('flips after repeated transport failures, cools down, and recovers on a probe', async () => {
     let now = 1_000;
     let failures = 3;

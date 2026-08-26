@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   readDashboardConfigFile,
   redactedCredentials,
+  type DashboardConfig,
   writeDashboardConfigFile,
 } from '../src/dashboard-config.js';
 
@@ -23,7 +24,11 @@ describe('dashboard config persistence', () => {
         },
       ],
       modelOverrides: { 'composer-latest': true },
-    };
+      credentialPolicy: {
+        routingPolicy: 'round_robin',
+        failoverOn: 'auth_or_quota_or_5xx',
+      },
+    } satisfies DashboardConfig;
 
     writeDashboardConfigFile(path, config);
     expect(readDashboardConfigFile(path)).toEqual(config);

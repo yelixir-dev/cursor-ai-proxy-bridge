@@ -6,6 +6,7 @@ import {
 import {
   type CredentialDisabledReason,
   type CursorCredentialFailoverPolicy,
+  type CursorCredentialPolicyConfig,
   type CursorCredentialRoutingPolicy,
   cursorCredentialFailureReason,
 } from './credential-policy.js';
@@ -15,6 +16,7 @@ export { cursorCredentialsFromConfig } from './credential-config.js';
 export type {
   CredentialDisabledReason,
   CursorCredentialFailoverPolicy,
+  CursorCredentialPolicyConfig,
   CursorCredentialRoutingPolicy,
 } from './credential-policy.js';
 
@@ -72,8 +74,8 @@ export class CursorCredentialRouter {
   private states: CursorApiCredentialState[] = [];
   private readonly cooldownMs: number;
   private readonly now: () => number;
-  private readonly routingPolicy: CursorCredentialRoutingPolicy;
-  private readonly failoverOn: CursorCredentialFailoverPolicy;
+  private routingPolicy: CursorCredentialRoutingPolicy;
+  private failoverOn: CursorCredentialFailoverPolicy;
 
   constructor(options: CursorCredentialRouterOptions) {
     this.cooldownMs = options.cooldownMs ?? 300_000;
@@ -81,6 +83,21 @@ export class CursorCredentialRouter {
     this.routingPolicy = options.routingPolicy ?? 'weighted_round_robin';
     this.failoverOn = options.failoverOn ?? 'auth';
     this.replaceCredentials(options.credentials);
+  }
+
+  policy(): CursorCredentialPolicyConfig {
+    return {
+      routingPolicy: this.routingPolicy,
+      failoverOn: this.failoverOn,
+    };
+  }
+
+  updatePolicy(policy: CursorCredentialPolicyConfig): void {
+    if (this.routingPolicy !== policy.routingPolicy) {
+      for (const state of this.states) state.currentWeight = 0;
+    }
+    this.routingPolicy = policy.routingPolicy;
+    this.failoverOn = policy.failoverOn;
   }
 
   replaceCredentials(credentials: CursorApiCredentialInput[]): void {

@@ -69,6 +69,77 @@ describe('Cursor API credential routing', () => {
     expect(picks).toEqual(['primary', 'secondary', 'primary', 'secondary']);
   });
 
+  it('hot-updates routing and failover policy for subsequent requests', async () => {
+    const router = new CursorCredentialRouter({
+      credentials: runtimeConfig.cursorApiCredentials ?? [],
+    });
+    const weighted = router.pick();
+    router.release(weighted.id);
+    expect(weighted.id).toBe('primary');
+
+    router.updatePolicy({
+      routingPolicy: 'round_robin',
+      failoverOn: 'auth_or_quota_or_5xx',
+    });
+
+    expect(router.policy()).toEqual({
+      routingPolicy: 'round_robin',
+      failoverOn: 'auth_or_quota_or_5xx',
+    });
+    const evenPicks = Array.from({ length: 4 }, () => {
+      const credential = router.pick();
+      router.release(credential.id);
+      return credential.id;
+    });
+    expect(evenPicks).toEqual(['primary', 'secondary', 'primary', 'secondary']);
+
+    const attempts: string[] = [];
+    await expect(
+      router.route(async (credential) => {
+        attempts.push(credential.id);
+        if (credential.id === 'primary') throw new CursorApiHttpError(503, 'unavailable');
+        return credential.id;
+      }),
+    ).resolves.toBe('secondary');
+    expect(attempts).toEqual(['primary', 'secondary']);
+  });
+
+  it('prefers persisted dashboard policy over environment policy after restart', async () => {
+    const runtime = createCursorApiRuntime(
+      {
+        ...runtimeConfig,
+        dashboardConfig: {
+          credentialPolicy: {
+            routingPolicy: 'round_robin',
+            failoverOn: 'auth_or_quota_or_5xx',
+          },
+        },
+      },
+      {
+        environment: {
+          CURSOR_BRIDGE_CREDENTIAL_ROUTING: 'weighted_round_robin',
+          CURSOR_BRIDGE_FAILOVER_ON: 'auth',
+        },
+      },
+    );
+    const picks = Array.from({ length: 4 }, () => {
+      const credential = runtime.credentialRouter.pick();
+      runtime.credentialRouter.release(credential.id);
+      return credential.id;
+    });
+    expect(picks).toEqual(['primary', 'secondary', 'primary', 'secondary']);
+
+    const attempts: string[] = [];
+    await expect(
+      runtime.credentialRouter.route(async (credential) => {
+        attempts.push(credential.id);
+        if (credential.id === 'primary') throw new CursorApiHttpError(503, 'unavailable');
+        return credential.id;
+      }),
+    ).resolves.toBe('secondary');
+    expect(attempts).toEqual(['primary', 'secondary']);
+  });
+
   it.each([
     ['CURSOR_BRIDGE_CREDENTIAL_ROUTING', 'random'],
     ['CURSOR_BRIDGE_FAILOVER_ON', 'everything'],

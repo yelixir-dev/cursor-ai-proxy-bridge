@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import {
+  CURSOR_CREDENTIAL_FAILOVER_POLICIES,
+  CURSOR_CREDENTIAL_ROUTING_POLICIES,
+} from '../backend/cursor-api/credential-policy.js';
 
 const IMAGE_OMITTED_PLACEHOLDER = '[image omitted: cursor composer bridge is text-only]';
 const MAX_CONTENT_PARTS = 1_000;
@@ -132,6 +136,13 @@ export const adminConfigPatchSchema = z
           })
           .strict(),
       )
+      .optional(),
+    credentialPolicy: z
+      .object({
+        routingPolicy: z.enum(CURSOR_CREDENTIAL_ROUTING_POLICIES).optional(),
+        failoverOn: z.enum(CURSOR_CREDENTIAL_FAILOVER_POLICIES).optional(),
+      })
+      .strict()
       .optional(),
     modelOverrides: z.record(z.string(), z.boolean().nullable()).optional(),
   })

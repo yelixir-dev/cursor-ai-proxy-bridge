@@ -2,6 +2,7 @@ import type {
   CursorApiCredential,
   CursorApiCredentialStateView,
 } from './cursor-api/credentials.js';
+import type { CursorCredentialPolicyConfig } from './cursor-api/credential-policy.js';
 import { cursorRetryFailureKind } from './cursor-api/index.js';
 import {
   cursorProviderErrorDiagnostics,
@@ -213,6 +214,19 @@ export class AutoCursorBackend implements CursorBackend {
 
   updateCredentials(credentials: CursorApiCredential[]): void {
     this.api.updateCredentials?.(credentials);
+  }
+
+  credentialPolicy(): CursorCredentialPolicyConfig {
+    return (
+      this.api.credentialPolicy?.() ?? {
+        routingPolicy: 'weighted_round_robin',
+        failoverOn: 'auth',
+      }
+    );
+  }
+
+  updateCredentialPolicy(policy: CursorCredentialPolicyConfig): void {
+    this.api.updateCredentialPolicy?.(policy);
   }
 
   async shutdown(): Promise<void> {

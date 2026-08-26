@@ -6,6 +6,10 @@ import type {
   CursorApiCredential,
   CursorApiCredentialInput,
 } from './backend/cursor-api/credentials.js';
+import {
+  CURSOR_CREDENTIAL_FAILOVER_POLICIES,
+  CURSOR_CREDENTIAL_ROUTING_POLICIES,
+} from './backend/cursor-api/credential-policy.js';
 
 const credentialSchema = z
   .object({
@@ -27,6 +31,13 @@ export const dashboardConfigSchema = z
       .strict()
       .optional(),
     credentials: z.array(credentialSchema).optional(),
+    credentialPolicy: z
+      .object({
+        routingPolicy: z.enum(CURSOR_CREDENTIAL_ROUTING_POLICIES).optional(),
+        failoverOn: z.enum(CURSOR_CREDENTIAL_FAILOVER_POLICIES).optional(),
+      })
+      .strict()
+      .optional(),
     modelOverrides: z.record(z.string(), z.boolean()).optional(),
   })
   .strict()

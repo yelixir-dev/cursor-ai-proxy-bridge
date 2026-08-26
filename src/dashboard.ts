@@ -30,24 +30,25 @@ export function renderDashboard(version: string): string {
       --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
     }
     *{box-sizing:border-box}html{background:var(--canvas)}body{margin:0;background:var(--canvas);color:var(--ink);font:15px/1.5 var(--serif)}
-    button,input{font:inherit}button{min-height:38px;border:1px solid var(--ink);border-radius:0;background:var(--ink);color:var(--paper);padding:8px 12px;font:800 11px/1.2 var(--sans);letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+    button,input,select{font:inherit}button{min-height:38px;border:1px solid var(--ink);border-radius:0;background:var(--ink);color:var(--paper);padding:8px 12px;font:800 11px/1.2 var(--sans);letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
     button.secondary{background:transparent;color:var(--ink);border-color:var(--rule)}button.secondary:hover{border-color:var(--teal);color:var(--teal)}button.danger{background:var(--rust);border-color:var(--rust)}button.link{min-height:auto;border:0;background:transparent;color:var(--rust);padding:2px;text-transform:none;letter-spacing:0}button:disabled{cursor:not-allowed;opacity:.5}
-    input{width:100%;min-height:40px;border:1px solid var(--rule);border-radius:0;background:var(--paper);color:var(--ink);padding:8px 10px}input[type=checkbox]{width:auto;min-height:0;accent-color:var(--teal)}
-    button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+    input,select{width:100%;min-height:40px;border:1px solid var(--rule);border-radius:0;background:var(--paper);color:var(--ink);padding:8px 10px}input[type=checkbox]{width:auto;min-height:0;accent-color:var(--teal)}
+    button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
     .wrap{width:min(calc(100% - 20px),1120px);margin:0 auto;padding:10px 0 28px}.top{position:relative;display:flex;align-items:center;justify-content:space-between;gap:20px;background:var(--ink);color:var(--paper);box-shadow:var(--shadow);padding:clamp(28px,5vw,52px);margin-bottom:16px}.top::after{content:"";position:absolute;inset:9px;border:1px solid rgba(255,253,248,.28);pointer-events:none}.top>*{position:relative;z-index:1}.eyebrow{font:800 11px/1 var(--sans);letter-spacing:.15em;color:#e5b45b;text-transform:uppercase}.top h1{margin:10px 0 0;font-size:clamp(27px,4.5vw,48px);line-height:1;letter-spacing:-.04em}.top-status{text-align:right;font-family:var(--sans);font-size:11px;color:#e6ddd1}.health-pill{display:inline-flex;align-items:center;gap:7px;border-left:2px solid var(--rust);padding-left:9px}.dot{width:8px;height:8px;border-radius:50%;background:var(--disabled)}.dot.on{background:#64a9a2}.dot.off{background:#d07b59}.version{margin-top:6px;color:#cfc4b6}
-    .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--paper);border-top:3px solid var(--ink);box-shadow:var(--shadow);padding:10px 14px;margin-bottom:16px}.toolbar-note{font:700 11px/1.4 var(--sans);color:var(--muted)}
+    .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--paper);border-top:3px solid var(--ink);box-shadow:var(--shadow);padding:10px 14px;margin-bottom:16px}.toolbar-note{font:700 11px/1.4 var(--sans);color:var(--muted);word-break:keep-all}
     .page-state{border-left:4px solid var(--gold);background:var(--paper);box-shadow:var(--shadow);padding:11px 14px;margin-bottom:16px;font-family:var(--sans)}.page-state.error{border-left-color:var(--rust);color:var(--rust)}.page-state[hidden]{display:none}
     .grid{display:grid;grid-template-columns:1fr;gap:16px}.card{min-width:0;background:var(--paper);border-top:3px solid var(--ink);box-shadow:var(--shadow);padding:clamp(16px,3vw,28px)}.card h2{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:0 0 16px;border-bottom:1px solid var(--rule);padding-bottom:9px;font-size:clamp(21px,2.5vw,29px);letter-spacing:-.025em}.sub{color:var(--muted);font:600 11px/1.3 var(--sans);letter-spacing:.04em;text-align:right}.status-grid{display:grid;grid-template-columns:1fr;gap:8px}.kv{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;border-bottom:1px solid var(--rule);padding:7px 0;font:12px/1.4 var(--sans)}.kv b{text-align:right;overflow-wrap:anywhere}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}.muted{color:var(--muted)}
     .add-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:18px;padding:14px;background:var(--paper-2);border-left:3px solid var(--rust)}.field{display:grid;gap:5px;min-width:0}.field label{font:800 10px/1 var(--sans);letter-spacing:.09em;color:var(--muted);text-transform:uppercase}.field-wide{grid-column:1/-1}.add-actions{display:flex;align-items:end}.add-actions button{width:100%}
-    .table-wrap{overflow-x:auto;border:1px solid var(--rule)}table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:12px}th,td{padding:10px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:middle;white-space:nowrap}th{background:var(--paper-2);color:var(--muted);font-size:10px;letter-spacing:.06em;text-transform:uppercase}tbody tr:last-child td{border-bottom:0}td code{font-family:var(--mono);font-size:11px}.weight-input{width:72px;min-height:34px}.locked-note{display:block;max-width:180px;color:var(--muted);font-size:10px;white-space:normal}.empty{border:1px dashed var(--rule);background:var(--paper-2);color:var(--muted);padding:13px;margin:0 0 12px;font-family:var(--sans);font-size:12px}
+    .policy-panel{display:grid;gap:13px;margin-bottom:14px;padding:14px;background:var(--paper-2);border-left:3px solid var(--teal);font-family:var(--sans)}.policy-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.policy-heading h3{margin:0;font:800 14px/1.3 var(--sans);letter-spacing:.01em}.policy-heading p{max-width:620px;margin:4px 0 0;color:var(--muted);font-size:11px}.policy-active{display:flex;align-items:center;flex-wrap:wrap;gap:6px;color:var(--muted);font-size:10px}.policy-active>span{font-weight:800;letter-spacing:.08em;text-transform:uppercase}.policy-active code{border:1px solid var(--rule);background:var(--paper);color:var(--teal);padding:3px 6px;font:700 10px/1.2 var(--mono)}.policy-grid{display:grid;grid-template-columns:1fr;gap:10px}.policy-field{display:grid;gap:5px;min-width:0}.policy-label{font:800 10px/1 var(--sans);letter-spacing:.09em;color:var(--muted);text-transform:uppercase}.policy-description{margin:0;color:var(--muted);font-size:10px;line-height:1.4}
+    .table-wrap{overflow-x:auto;border:1px solid var(--rule)}table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:12px}th,td{padding:10px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:middle;white-space:nowrap}th{background:var(--paper-2);color:var(--muted);font-size:10px;letter-spacing:.06em;text-transform:uppercase}tbody tr:last-child td{border-bottom:0}td code{font-family:var(--mono);font-size:11px}.weight-input{width:72px;min-height:34px}.weight-policy-note{display:block;margin-top:3px;color:var(--rust);font-size:9px;letter-spacing:0;text-transform:none;white-space:normal}.weight-policy-note[hidden]{display:none}.weight-ignored{color:var(--muted);background:#ebe7df}.weight-ignored .weight-input{cursor:not-allowed;opacity:.55}.field.is-ignored{opacity:.55}.locked-note{display:block;max-width:180px;color:var(--muted);font-size:10px;white-space:normal}.empty{border:1px dashed var(--rule);background:var(--paper-2);color:var(--muted);padding:13px;margin:0 0 12px;font-family:var(--sans);font-size:12px}
     .switch{position:relative;display:inline-block;width:46px;height:25px}.switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}.slider{position:absolute;inset:0;border:1px solid var(--rule);background:var(--disabled);pointer-events:none}.slider::before{content:"";position:absolute;width:19px;height:19px;left:2px;top:2px;background:var(--paper);transition:transform .15s}.switch input:checked+.slider{background:var(--teal)}.switch input:checked+.slider::before{transform:translateX(21px)}.switch input:focus-visible+.slider{outline:3px solid var(--gold);outline-offset:3px}
     .model-tools{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;margin-bottom:12px}.search{position:relative}.search input{padding-left:34px}.search::before{content:"⌕";position:absolute;left:11px;top:7px;color:var(--teal);font-size:20px}.model-total{font:800 12px/1.3 var(--sans);color:var(--teal);white-space:nowrap}.families{display:grid;gap:14px}.family{--family-accent:var(--rust);overflow:hidden;border:1px solid var(--rule);border-left:5px solid var(--family-accent);background:var(--paper);box-shadow:0 7px 18px rgba(65,49,35,.07);transition:opacity .15s,filter .15s}.family.is-disabled{opacity:.58;filter:saturate(.45);background:#ebe7df}.family summary{display:flex;align-items:center;gap:9px;padding:12px 14px;cursor:pointer;list-style:none;font-weight:700}.family summary::-webkit-details-marker{display:none}.family summary::before{content:"+";display:inline-grid;place-items:center;width:22px;height:22px;border:1px solid var(--family-accent);color:var(--family-accent);font:800 16px/1 var(--sans)}.family[open] summary::before{content:"−"}.family[open] summary{border-bottom:1px solid var(--rule)}.family-dot{width:9px;height:9px;border-radius:50%;background:var(--family-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--family-accent) 18%,transparent)}.family-name{font-size:17px;letter-spacing:-.01em}.family-count{margin-left:auto;border:1px solid var(--family-accent);background:var(--paper);color:var(--family-accent);padding:3px 7px;font:800 11px/1 var(--sans);white-space:nowrap}.family-actions{display:flex;gap:5px}.family-action{min-height:30px;padding:5px 8px;background:transparent;border-color:var(--rule);color:var(--ink);font-size:9px}.family-action:hover{border-color:var(--family-accent);color:var(--family-accent)}.model-list{display:grid;grid-template-columns:1fr;gap:9px;padding:12px}.model-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border-left:3px solid var(--family-accent);background:var(--paper-2);padding:10px 12px}.model-name{min-width:0}.model-name code{display:block;font:700 12px/1.4 var(--mono);overflow-wrap:anywhere}.model-meta{display:flex;align-items:center;gap:7px;margin-top:4px;font:10px/1.3 var(--sans)}.badge{display:inline-flex;border:1px solid var(--rule);background:var(--paper);padding:2px 6px;color:var(--muted)}.model-control{display:flex;align-items:center;gap:10px;flex:0 0 auto}
-    .guide{margin:0;color:var(--muted);font-family:var(--sans)}.guide strong{color:var(--ink)}
+    .guide{margin:0;color:var(--muted);font-family:var(--sans);word-break:keep-all}.guide strong{color:var(--ink)}
     .toast{position:fixed;left:10px;right:10px;top:10px;z-index:50;pointer-events:none;transform:translateY(-150%);transition:transform .2s;background:var(--ink);color:var(--paper);border-left:4px solid var(--gold);box-shadow:var(--shadow);padding:12px 15px;font-family:var(--sans)}.toast.error{border-left-color:#d07b59}.toast.show{transform:translateY(0)}
     dialog{width:min(calc(100% - 28px),430px);border:0;border-top:4px solid var(--rust);border-radius:0;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);padding:24px}dialog::backdrop{background:rgba(40,35,31,.48)}dialog h2{margin:0 0 8px;font-size:25px}dialog p{margin:0 0 18px;color:var(--muted);font-family:var(--sans);font-size:12px}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.auth-error{color:var(--bad);min-height:18px;margin-top:8px;font:700 11px/1.4 var(--sans)}
     .busy [data-admin-control]{pointer-events:none;opacity:.55}
-    @media(min-width:760px){.wrap{padding:22px 0 38px}.grid{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}.status-grid{grid-template-columns:1fr 1fr}.add-form{grid-template-columns:1fr 1.2fr 2fr 100px 110px}.field-wide{grid-column:auto}.model-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
-    @media(max-width:620px){.top{align-items:flex-start;padding:26px 20px}.top h1{font-size:27px}.toolbar{align-items:flex-start}.card h2{align-items:flex-start;flex-direction:column;gap:6px}.sub{text-align:left}.add-form{grid-template-columns:1fr}.field-wide{grid-column:auto}.model-tools{grid-template-columns:1fr}.family summary{align-items:flex-start;flex-wrap:wrap}.family-count{margin-left:0}.family-actions{width:100%;padding-left:31px}.family-action{flex:1}.model-row{align-items:flex-start}.model-control{flex-direction:column-reverse;align-items:flex-end}}
+    @media(min-width:760px){.wrap{padding:22px 0 38px}.grid{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}.status-grid{grid-template-columns:1fr 1fr}.policy-grid{grid-template-columns:1fr 1fr}.add-form{grid-template-columns:1fr 1.2fr 2fr 100px 110px}.field-wide{grid-column:auto}.model-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:620px){.top{align-items:flex-start;padding:26px 20px}.top h1{font-size:27px}.toolbar{align-items:flex-start}.card h2{align-items:flex-start;flex-direction:column;gap:6px}.sub{text-align:left}.policy-heading{display:grid}.policy-active{align-items:flex-start}.add-form{grid-template-columns:1fr}.field-wide{grid-column:auto}.model-tools{grid-template-columns:1fr}.family summary{align-items:flex-start;flex-wrap:wrap}.family-count{margin-left:0}.family-actions{width:100%;padding-left:31px}.family-action{flex:1}.model-row{align-items:flex-start}.model-control{flex-direction:column-reverse;align-items:flex-end}}
     @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}}
   </style>
 </head>
@@ -74,6 +75,31 @@ export function renderDashboard(version: string): string {
 
       <section class="card wide" aria-labelledby="credentialsTitle">
         <h2 id="credentialsTitle">크리덴셜 <span class="sub">Upstream Cursor API keys</span></h2>
+        <div class="policy-panel" role="group" aria-labelledby="credentialPolicyTitle">
+          <div class="policy-heading">
+            <div><h3 id="credentialPolicyTitle">라우팅 및 failover 정책</h3><p>다음 요청부터 즉시 적용되며 dashboard에 저장됩니다.</p></div>
+            <div class="policy-active" aria-live="polite"><span>현재 적용</span><code id="activeCredentialRouting">—</code><code id="activeCredentialFailover">—</code></div>
+          </div>
+          <div class="policy-grid">
+            <label class="policy-field" for="credentialRoutingPolicy">
+              <span class="policy-label">Routing policy</span>
+              <select id="credentialRoutingPolicy" data-admin-control aria-describedby="credentialRoutingDescription">
+                <option value="weighted_round_robin">weighted_round_robin</option>
+                <option value="round_robin">round_robin</option>
+              </select>
+              <span id="credentialRoutingDescription" class="policy-description"></span>
+            </label>
+            <label class="policy-field" for="credentialFailoverPolicy">
+              <span class="policy-label">Failover policy</span>
+              <select id="credentialFailoverPolicy" data-admin-control aria-describedby="credentialFailoverDescription">
+                <option value="auth">auth</option>
+                <option value="auth_or_quota">auth_or_quota</option>
+                <option value="auth_or_quota_or_5xx">auth_or_quota_or_5xx</option>
+              </select>
+              <span id="credentialFailoverDescription" class="policy-description"></span>
+            </label>
+          </div>
+        </div>
         <form id="addCredential" class="add-form" autocomplete="off">
           <div class="field"><label for="credentialId">ID</label><input id="credentialId" name="id" maxlength="100" required placeholder="team-primary" /></div>
           <div class="field"><label for="credentialLabel">라벨</label><input id="credentialLabel" name="label" maxlength="200" placeholder="운영 계정" /></div>
@@ -84,7 +110,7 @@ export function renderDashboard(version: string): string {
         <div id="credentialEmpty" class="empty" hidden>대시보드에서 관리하는 크리덴셜이 없습니다. 위 폼에서 key를 추가하세요.</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>ID</th><th>라벨</th><th>가중치</th><th>사용</th><th>Key</th><th>상태</th><th>작업</th></tr></thead>
+            <thead><tr><th>ID</th><th>라벨</th><th id="credentialWeightHeading">가중치 <span id="credentialWeightPolicyNote" class="weight-policy-note" hidden>무시됨</span></th><th>사용</th><th>Key</th><th>상태</th><th>작업</th></tr></thead>
             <tbody id="credentialRows"><tr><td colspan="7" class="muted">불러오는 중</td></tr></tbody>
           </table>
         </div>
@@ -124,6 +150,15 @@ const familyMeta={
   fable:{name:'Claude Fable',accent:'#b45f71'},'gpt-5.6':{name:'GPT-5.6',accent:'#39735c'},
   kimi:{name:'Kimi',accent:'#4267a8'},glm:{name:'GLM',accent:'#876b32'},
   '기타':{name:'기타',accent:'#6d665e'}
+};
+const routingDescriptions={
+  weighted_round_robin:'가중치 비율대로 활성 키에 요청을 분산합니다.',
+  round_robin:'활성 키를 같은 비율로 순환하며 가중치는 사용하지 않습니다.'
+};
+const failoverDescriptions={
+  auth:'401/403 인증 실패에서만 다음 키로 전환합니다.',
+  auth_or_quota:'인증 실패와 quota 소진에서 다음 키로 전환합니다.',
+  auth_or_quota_or_5xx:'인증·quota·rate limit·5xx 오류에서 전환합니다.'
 };
 const openFamilies=new Set(['composer']);
 let apiKey=readStoredKey();
@@ -236,8 +271,27 @@ function joinedCredentials(){
   return rows;
 }
 
+function renderCredentialPolicy(){
+  if(!dashboardData)return;
+  const policy=dashboardData.config&&dashboardData.config.credentialPolicy||{};
+  const routing=policy.routingPolicy||'weighted_round_robin';
+  const failover=policy.failoverOn||'auth';
+  $('credentialRoutingPolicy').value=routing;
+  $('credentialFailoverPolicy').value=failover;
+  setText('activeCredentialRouting',routing);
+  setText('activeCredentialFailover',failover);
+  setText('credentialRoutingDescription',routingDescriptions[routing]||'');
+  setText('credentialFailoverDescription',failoverDescriptions[failover]||'');
+  const weightsIgnored=routing==='round_robin';
+  $('credentialWeightPolicyNote').hidden=!weightsIgnored;
+  $('credentialWeightHeading').classList.toggle('weight-ignored',weightsIgnored);
+  $('credentialWeight').disabled=weightsIgnored;
+  $('credentialWeight').closest('.field').classList.toggle('is-ignored',weightsIgnored);
+}
+
 function renderCredentials(){
   if(!dashboardData)return;
+  const weightsIgnored=dashboardData.config&&dashboardData.config.credentialPolicy&&dashboardData.config.credentialPolicy.routingPolicy==='round_robin';
   const rows=joinedCredentials();
   const body=$('credentialRows');
   body.replaceChildren();
@@ -252,8 +306,8 @@ function renderCredentials(){
     if(id==='env')idCell.append(make('span','locked-note','CURSOR_API_KEY 관리'));
     if(id==='system')idCell.append(make('span','locked-note','예약된 fallback'));
     const labelCell=make('td','',config.label||state&&state.label||'—');
-    const weightCell=make('td');
-    const weight=make('input','weight-input');weight.type='number';weight.min='0.01';weight.step='0.01';weight.value=String(config.weight??1);weight.disabled=locked;weight.dataset.adminControl='';weight.setAttribute('aria-label',id+' 가중치');
+    const weightCell=make('td',weightsIgnored?'weight-ignored':'');
+    const weight=make('input','weight-input');weight.type='number';weight.min='0.01';weight.step='0.01';weight.value=String(config.weight??1);weight.disabled=locked||weightsIgnored;weight.dataset.adminControl='';weight.setAttribute('aria-label',id+' 가중치');if(weightsIgnored)weight.setAttribute('aria-describedby','credentialWeightPolicyNote');
     weight.addEventListener('change',async()=>{const value=Number(weight.value);if(!Number.isFinite(value)||value<=0){showToast('가중치는 0보다 커야 합니다.',true);renderCredentials();return;}await patchConfig({credentials:[{id,weight:value}]});});
     weightCell.append(weight);
     const enabledCell=make('td');enabledCell.append(switchControl(config.enabled!==false,locked,id+' 사용 여부',async event=>{await patchConfig({credentials:[{id,enabled:event.currentTarget.checked}]});}));
@@ -341,7 +395,7 @@ function renderModels(){
   if(visible===0)container.append(make('div','empty',query?'검색 결과가 없습니다.':'표시할 모델이 없습니다.'));
 }
 
-function renderAll(){renderHealth();renderStatus();renderCredentials();renderModels();$('app').setAttribute('aria-busy','false');}
+function renderAll(){renderHealth();renderStatus();renderCredentialPolicy();renderCredentials();renderModels();$('app').setAttribute('aria-busy','false');}
 function setBusy(value){patching=value;$('app').classList.toggle('busy',value);$('app').setAttribute('aria-busy',String(value));}
 
 async function patchConfig(payload){
@@ -396,6 +450,8 @@ $('authForm').addEventListener('submit',async event=>{
 $('authCancel').addEventListener('click',()=>$('authDialog').close());
 $('changeKey').addEventListener('click',()=>showAuth());
 $('modelSearch').addEventListener('input',renderModels);
+$('credentialRoutingPolicy').addEventListener('change',async event=>{await patchConfig({credentialPolicy:{routingPolicy:event.currentTarget.value}});});
+$('credentialFailoverPolicy').addEventListener('change',async event=>{await patchConfig({credentialPolicy:{failoverOn:event.currentTarget.value}});});
 $('addCredential').addEventListener('submit',async event=>{
   event.preventDefault();
   const form=event.currentTarget;

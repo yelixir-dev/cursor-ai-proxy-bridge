@@ -1,15 +1,18 @@
 import { z } from 'zod';
-import type { CursorApiCredential } from '../backend/cursor-api/credentials.js';
-import { cursorCredentialsFromConfig } from '../backend/cursor-api/credentials.js';
-import { redactedConfig } from '../config.js';
+import type { CursorCredentialPolicyConfig } from '../backend/cursor-api/credential-policy.js';
 import {
+  type CursorApiCredential,
+  cursorCredentialsFromConfig,
+} from '../backend/cursor-api/credentials.js';
+import { redactedConfig } from '../config.js';
+import { renderDashboard } from '../dashboard.js';
+import {
+  type DashboardConfig,
+  type DashboardCredential,
   dashboardConfigPath,
   redactedCredentials,
   writeDashboardConfigFile,
-  type DashboardConfig,
-  type DashboardCredential,
 } from '../dashboard-config.js';
-import { renderDashboard } from '../dashboard.js';
 import { requireClientAuth } from './auth.js';
 import { openAiError } from './responses.js';
 import { adminConfigPatchSchema } from './schema.js';
@@ -19,6 +22,7 @@ import type { ServerContext } from './types.js';
 type ManagementState = {
   dashboardConfig: DashboardConfig;
   effectiveCredentials: CursorApiCredential[];
+  credentialPolicy: CursorCredentialPolicyConfig;
 };
 
 export function registerManagementRoutes(context: ServerContext): void {
@@ -31,6 +35,11 @@ export function registerManagementRoutes(context: ServerContext): void {
       (backend.updateCredentials
         ? cursorCredentialsFromConfig({}, config.dashboardConfig?.credentials ?? [])
         : []),
+    credentialPolicy: backend.credentialPolicy?.() ?? {
+      routingPolicy:
+        config.dashboardConfig?.credentialPolicy?.routingPolicy ?? 'weighted_round_robin',
+      failoverOn: config.dashboardConfig?.credentialPolicy?.failoverOn ?? 'auth',
+    },
   };
 
   const adminConfigResponse = async () => {
@@ -39,6 +48,7 @@ export function registerManagementRoutes(context: ServerContext): void {
       config: {
         server: { host: config.host, port: config.port },
         credentials: redactedCredentials(state.effectiveCredentials),
+        credentialPolicy: state.credentialPolicy,
         modelOverrides: modelPolicy.snapshot(),
       },
       state: {
@@ -136,9 +146,23 @@ export function registerManagementRoutes(context: ServerContext): void {
       if (enabled === null) delete modelOverrides[id];
       else modelOverrides[id] = enabled;
     }
+    const credentialPolicy = {
+      ...state.credentialPolicy,
+      ...parsed.data.credentialPolicy,
+    };
+    const credentialPolicyOverrides =
+      parsed.data.credentialPolicy === undefined
+        ? state.dashboardConfig.credentialPolicy
+        : {
+            ...state.dashboardConfig.credentialPolicy,
+            ...parsed.data.credentialPolicy,
+          };
     const nextConfig: DashboardConfig = {
       ...state.dashboardConfig,
       credentials,
+      ...(credentialPolicyOverrides === undefined
+        ? {}
+        : { credentialPolicy: credentialPolicyOverrides }),
       modelOverrides,
     };
     writeDashboardConfigFile(configPath, nextConfig);
@@ -149,6 +173,8 @@ export function registerManagementRoutes(context: ServerContext): void {
       credentials,
     );
     backend.updateCredentials?.(state.effectiveCredentials);
+    state.credentialPolicy = credentialPolicy;
+    backend.updateCredentialPolicy?.(credentialPolicy);
     modelPolicy.replaceOverrides(modelOverrides);
     health.invalidate();
     return adminConfigResponse();

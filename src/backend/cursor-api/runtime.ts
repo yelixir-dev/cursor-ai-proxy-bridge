@@ -98,7 +98,15 @@ export function createCursorApiRuntime(
         }, delayMs);
         signal?.addEventListener('abort', onAbort, { once: true });
       }));
-  const credentialPolicy = cursorCredentialPolicyFromEnv(environment);
+  const environmentCredentialPolicy = cursorCredentialPolicyFromEnv(environment);
+  const credentialPolicy = {
+    routingPolicy:
+      config.dashboardConfig?.credentialPolicy?.routingPolicy ??
+      environmentCredentialPolicy.routingPolicy,
+    failoverOn:
+      config.dashboardConfig?.credentialPolicy?.failoverOn ??
+      environmentCredentialPolicy.failoverOn,
+  };
   return {
     config,
     codec,

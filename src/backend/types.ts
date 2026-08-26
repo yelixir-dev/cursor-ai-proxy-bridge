@@ -2,6 +2,7 @@ import type {
   CursorApiCredential,
   CursorApiCredentialStateView,
 } from './cursor-api/credentials.js';
+import type { CursorCredentialPolicyConfig } from './cursor-api/credential-policy.js';
 
 export type ChatRole = 'system' | 'developer' | 'user' | 'assistant' | 'tool';
 
@@ -131,5 +132,7 @@ export interface CursorBackend {
   ): AsyncIterable<CompletionStreamEvent>;
   shutdown?(): Promise<void>;
   credentialStates?(): CursorApiCredentialStateView[];
+  credentialPolicy?(): CursorCredentialPolicyConfig;
   updateCredentials?(credentials: CursorApiCredential[]): void;
+  updateCredentialPolicy?(policy: CursorCredentialPolicyConfig): void;
 }

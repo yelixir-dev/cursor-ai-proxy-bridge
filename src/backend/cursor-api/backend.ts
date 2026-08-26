@@ -8,6 +8,7 @@ import type {
 } from '../types.js';
 import { CursorCommandAbortedError } from '../cursor-cli.js';
 import type { BridgeConfig } from '../../config.js';
+import type { CursorCredentialPolicyConfig } from './credential-policy.js';
 import { CursorApiCompletion } from './completion.js';
 import type { CursorApiCredential, CursorApiCredentialStateView } from './credentials.js';
 import { CursorApiDiscovery } from './discovery.js';
@@ -48,6 +49,14 @@ export class CursorApiBackend implements CursorBackend {
   updateCredentials(credentials: CursorApiCredential[]): void {
     this.runtime.auth.invalidate();
     this.runtime.credentialRouter.replaceCredentials(credentials);
+  }
+
+  credentialPolicy(): CursorCredentialPolicyConfig {
+    return this.runtime.credentialRouter.policy();
+  }
+
+  updateCredentialPolicy(policy: CursorCredentialPolicyConfig): void {
+    this.runtime.credentialRouter.updatePolicy(policy);
   }
 
   listModels(): Promise<BridgeModel[]> {
