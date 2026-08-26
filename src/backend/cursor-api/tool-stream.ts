@@ -1,3 +1,4 @@
+// allow: SIZE_OK — one stateful reconciler owns tool aliases, snapshots, and deltas.
 import { isDeepStrictEqual } from 'node:util';
 import type { CompletionStreamEvent, ToolCall } from '../types.js';
 import { mcpArgsToToolCall } from './mcp-tool-call.js';
@@ -166,6 +167,10 @@ export class CursorToolStream {
     return this.aliases.get(callId)?.execId;
   }
 
+  indexForAlias(alias: string): number | undefined {
+    return this.aliases.get(alias)?.index;
+  }
+
   frameCounts(): { announced: number; completed: number } {
     return {
       announced: this.announcedEnvelopeIds.size,
@@ -187,6 +192,13 @@ export class CursorToolStream {
 
   get emitted(): boolean {
     return this.emit !== undefined && this.visibleSlots().some((slot) => slot.emittedStart);
+  }
+
+  get atMaximumCalls(): boolean {
+    return (
+      Number.isFinite(this.maximumCalls) &&
+      this.visibleSlots().filter((slot) => slot.call !== undefined).length >= this.maximumCalls
+    );
   }
 
   private slot(identity: ToolIdentity): ToolSlot | undefined {

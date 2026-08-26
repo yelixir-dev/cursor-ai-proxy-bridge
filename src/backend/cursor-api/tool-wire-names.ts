@@ -48,7 +48,9 @@ export function mapCursorApiToolRequest(
       : message,
   );
   const requestedToolChoice =
-    request.tool_choice === 'required' && request.tools.length === 1
+    (request.tool_choice === 'required' ||
+      (request.tool_choice === 'auto' && request.max_tool_calls === 1)) &&
+    request.tools.length === 1
       ? {
           type: 'function' as const,
           function: { name: request.tools[0]?.function.name ?? '' },

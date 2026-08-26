@@ -1,12 +1,14 @@
 import { type RequestTrace, traceStage } from '../../trace.js';
+import { contentBoundaryDebug, logContentBoundary } from '../content-boundary-debug.js';
 import { CursorBackendError } from '../cursor-cli.js';
+import { allowedToolNamesForRequest, maximumToolCallsForRequest } from '../tool-call-policy.js';
 import type { ChatCompletionRequest, CompletionStreamEvent } from '../types.js';
-import { handleExecResponse, type HeldToolExec } from './exec-responses.js';
 import {
   builtinStartRouting,
   CursorBuiltinToolCallError,
   logBuiltinToolRouting,
 } from './builtin-tool-promotion.js';
+import { type HeldToolExec, handleExecResponse } from './exec-responses.js';
 import type { ProtoCodec } from './protobuf.js';
 import type { RunEmitter } from './run-types.js';
 import { CursorToolStream } from './tool-stream.js';
@@ -64,13 +66,14 @@ export class CursorRunMessages {
   text = '';
   usageAttribution = cursorUsageAttribution();
   private emit: RunEmitter | undefined;
+  private textDeltaIndex = 0;
 
   constructor(private readonly options: CursorRunMessageOptions) {
     this.emit = options.emit;
     this.toolStream = new CursorToolStream(
       options.request.tool_choice === 'none' ? undefined : this.emit,
-      new Set((options.request.tools ?? []).map((tool) => tool.function.name)),
-      options.request.parallel_tool_calls === false ? 1 : Number.POSITIVE_INFINITY,
+      allowedToolNamesForRequest(options.request),
+      maximumToolCallsForRequest(options.request),
       options.callIdPrefix,
     );
   }
@@ -93,9 +96,18 @@ export class CursorRunMessages {
           request: this.options.request,
           writeMessage: this.options.writeMessage,
           finish: this.options.finish,
-          completeTool: (tool) => {
+          completeTool: (tool, routing) => {
             traceStage(this.options.trace, 'tool_decision');
-            return this.toolStream.completeExec(tool);
+            const accepted = this.toolStream.completeExec(tool);
+            if (routing) {
+              const alias = typeof tool.toolCallId === 'string' ? tool.toolCallId : '';
+              logBuiltinToolRouting(routing, {
+                runRequestId: this.options.callIdPrefix,
+                toolCallIndex: this.toolStream.indexForAlias(alias),
+                disposition: accepted ? 'promoted' : 'rejected_undeclared',
+              });
+            }
+            return accepted;
           },
           holdMcp: (held) => {
             this.options.heldExecs?.push(held);
@@ -120,6 +132,18 @@ export class CursorRunMessages {
     if (updateCase === 'textDelta') {
       const delta = typeof update.text === 'string' ? update.text : '';
       this.text += delta;
+      logContentBoundary(
+        contentBoundaryDebug({
+          stage: 'cursor_upstream_delta',
+          requested_model: this.options.request.model,
+          reasoning_effort: this.options.request.reasoning_effort ?? 'default',
+          request_id: this.options.callIdPrefix ?? 'unknown',
+          chunk_index: this.textDeltaIndex,
+          text: delta,
+          cumulative_length: this.text.length,
+        }),
+      );
+      this.textDeltaIndex += 1;
       if (delta) {
         const event = { type: 'content' as const, text: delta };
         this.outputEvents.push(event);
@@ -137,9 +161,7 @@ export class CursorRunMessages {
       return false;
     }
     if (updateCase === 'toolCallStarted') {
-      const declared = new Set(
-        (this.options.request.tools ?? []).map((tool) => tool.function.name),
-      );
+      const declared = allowedToolNamesForRequest(this.options.request);
       if (declared.size === 0 || this.options.request.tool_choice === 'none') {
         // No exec frame follows in this state (live capture: tool_decision
         // then silence until the run timeout), so guard at the interaction
@@ -160,7 +182,10 @@ export class CursorRunMessages {
       }
       const builtin = builtinStartRouting(this.options.request, update);
       if (builtin) {
-        logBuiltinToolRouting(builtin);
+        logBuiltinToolRouting(builtin, {
+          runRequestId: this.options.callIdPrefix,
+          disposition: builtin.mappedOpenAiToolName ? 'declared' : 'rejected_undeclared',
+        });
         if (!builtin.mappedOpenAiToolName) {
           this.options.finish(
             new CursorBuiltinToolCallError(

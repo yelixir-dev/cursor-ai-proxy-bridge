@@ -1,6 +1,6 @@
 // allow: SIZE_OK — one stateful Run lifecycle owns transport, timers, parking, and resume.
 import { randomUUID } from 'node:crypto';
-import { traceCredentialSlot, type RequestTrace, traceStage } from '../../trace.js';
+import { type RequestTrace, traceCredentialSlot, traceStage } from '../../trace.js';
 import { CursorBackendError, CursorCommandAbortedError } from '../cursor-cli.js';
 import type { ChatCompletionRequest } from '../types.js';
 import { ConnectFrameDecoder, ConnectRpcError, encodeConnectFrame } from './connect-frame.js';
@@ -341,7 +341,8 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       finish,
       onHeld: () => {
         phase = 'settling_tool_calls';
-        scheduleHold();
+        if (request.max_tool_calls !== undefined && messages.toolStream.atMaximumCalls) hold();
+        else scheduleHold();
       },
       heldExecs,
       onInteraction: (updateCase) => {

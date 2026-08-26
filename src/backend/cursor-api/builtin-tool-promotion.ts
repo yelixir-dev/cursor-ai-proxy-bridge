@@ -1,5 +1,6 @@
 import { debuglog } from 'node:util';
 import { CursorBackendError } from '../cursor-cli.js';
+import { allowedToolsForRequest } from '../tool-call-policy.js';
 import type { ChatCompletionRequest, Tool } from '../types.js';
 import { jsonToProtoValue } from './protobuf.js';
 
@@ -43,6 +44,15 @@ export interface BuiltinToolRoutingDebug {
   readonly attemptedToolName: string;
   readonly declaredToolNames: readonly string[];
   readonly mappedOpenAiToolName?: string;
+  readonly requested_model: string;
+  readonly reasoning_effort: string;
+  readonly tool_choice: string;
+}
+
+export interface BuiltinToolRoutingLogContext {
+  readonly runRequestId?: string;
+  readonly toolCallIndex?: number;
+  readonly disposition: 'declared' | 'promoted' | 'rejected_undeclared';
 }
 
 export interface PromotedBuiltinExec {
@@ -59,7 +69,7 @@ function declaredMatch(
   aliases: readonly string[],
 ): Tool | undefined {
   const allowed = new Set(aliases.map((name) => name.toLowerCase()));
-  return (request.tools ?? []).find((tool) =>
+  return allowedToolsForRequest(request).find((tool) =>
     allowed.has(displayName(tool.function.name).toLowerCase()),
   );
 }
@@ -96,11 +106,38 @@ function routingDebug(
     attemptedToolName: aliases[0] ?? execCase,
     declaredToolNames: (request.tools ?? []).map((tool) => displayName(tool.function.name)),
     ...(mapped === undefined ? {} : { mappedOpenAiToolName: displayName(mapped.function.name) }),
+    requested_model: request.model,
+    reasoning_effort: request.reasoning_effort ?? 'default',
+    tool_choice:
+      typeof request.tool_choice === 'object'
+        ? `function:${displayName(request.tool_choice.function.name)}`
+        : (request.tool_choice ?? (request.tools?.length ? 'auto' : 'none')),
   };
 }
 
-export function logBuiltinToolRouting(fields: BuiltinToolRoutingDebug): void {
-  debug('builtin exec routing %o', fields);
+export function builtinToolRoutingLog(
+  fields: BuiltinToolRoutingDebug,
+  context: BuiltinToolRoutingLogContext,
+): Record<string, unknown> {
+  return {
+    requested_model: fields.requested_model,
+    reasoning_effort: fields.reasoning_effort,
+    tool_choice: fields.tool_choice,
+    declared_tool_names: fields.declaredToolNames,
+    attempted_builtin_name: fields.attemptedToolName,
+    promoted_external_tool_name: fields.mappedOpenAiToolName ?? null,
+    tool_call_index: context.toolCallIndex ?? null,
+    run_request_id: context.runRequestId ?? 'unknown',
+    call_origin: 'model_generated_builtin',
+    disposition: context.disposition,
+  };
+}
+
+export function logBuiltinToolRouting(
+  fields: BuiltinToolRoutingDebug,
+  context: BuiltinToolRoutingLogContext,
+): void {
+  debug('builtin exec routing %o', builtinToolRoutingLog(fields, context));
 }
 
 export function builtinStartRouting(

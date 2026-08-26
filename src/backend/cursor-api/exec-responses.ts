@@ -1,8 +1,8 @@
-import type { ChatCompletionRequest } from '../types.js';
 import { CursorBackendError } from '../cursor-cli.js';
+import type { ChatCompletionRequest } from '../types.js';
 import {
+  type BuiltinToolRoutingDebug,
   CursorBuiltinToolCallError,
-  logBuiltinToolRouting,
   promoteBuiltinExec,
 } from './builtin-tool-promotion.js';
 import {
@@ -20,7 +20,7 @@ export interface ExecResponseContext {
   readonly request: ChatCompletionRequest;
   readonly writeMessage: (message: Dict, compressed?: boolean) => void;
   readonly finish: (error: unknown) => void;
-  readonly completeTool: (value: Dict) => boolean;
+  readonly completeTool: (value: Dict, routing?: BuiltinToolRoutingDebug) => boolean;
   readonly holdMcp?: (held: HeldToolExec) => void;
 }
 
@@ -223,7 +223,6 @@ export function handleExecResponse(
   }
   const promoted = promoteBuiltinExec(context.request, exec, execCase, value);
   if (promoted) {
-    logBuiltinToolRouting(promoted.debug);
     if ((context.request.tools ?? []).length === 0) {
       const resultCase =
         execCase === 'shellStreamArgs'
@@ -245,7 +244,7 @@ export function handleExecResponse(
       );
       return 'ignored';
     }
-    if (!context.completeTool(promoted.tool)) {
+    if (!context.completeTool(promoted.tool, promoted.debug)) {
       context.finish(
         new CursorBuiltinToolCallError(
           `Cursor builtin ${JSON.stringify(promoted.debug.attemptedToolName)} could not be promoted to the declared external tool`,

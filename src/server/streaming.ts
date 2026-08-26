@@ -1,5 +1,14 @@
 import { once } from 'node:events';
 import type { FastifyReply } from 'fastify';
+import { contentBoundaryDebug, logContentBoundary } from '../backend/content-boundary-debug.js';
+import {
+  cursorProviderResponseDetails,
+  safeCursorBackendError,
+} from '../backend/cursor-api/provider-error.js';
+import { cursorRunDiagnostics, cursorRunRequestId } from '../backend/cursor-api/run-errors.js';
+import { CursorBackendError } from '../backend/cursor-cli.js';
+import { filterToolCallsToAllowed, parseToolCallsFromText } from '../backend/tool-call-parse.js';
+import { TOOL_CALL_MARKER, ToolTextStreamFilter } from '../backend/tool-call-stream.js';
 import type {
   ChatCompletionRequest,
   CompletionStreamEvent,
@@ -7,16 +16,8 @@ import type {
   CursorBackend,
   ToolCall,
 } from '../backend/types.js';
-import { filterToolCallsToAllowed, parseToolCallsFromText } from '../backend/tool-call-parse.js';
-import { TOOL_CALL_MARKER, ToolTextStreamFilter } from '../backend/tool-call-stream.js';
-import { CursorBackendError } from '../backend/cursor-cli.js';
-import { cursorRunDiagnostics, cursorRunRequestId } from '../backend/cursor-api/run-errors.js';
-import {
-  cursorProviderResponseDetails,
-  safeCursorBackendError,
-} from '../backend/cursor-api/provider-error.js';
-import { OpenAiToolStreamAccumulator, type OpenAiToolCallDelta } from '../openai-tool-stream.js';
-import { traceUsageSource, type RequestTrace } from '../trace.js';
+import { type OpenAiToolCallDelta, OpenAiToolStreamAccumulator } from '../openai-tool-stream.js';
+import { type RequestTrace, traceUsageSource } from '../trace.js';
 import { backendErrorMessage, completionChunk, openAiError, sseData } from './responses.js';
 
 export type StreamCompletionResult = {
@@ -67,9 +68,24 @@ export async function streamChatCompletion(input: StreamRequest): Promise<Stream
     toolsDeclared && request.tool_choice !== 'none',
   );
   const toolStream = new OpenAiToolStreamAccumulator();
+  let contentChunkIndex = 0;
+  let contentLength = 0;
 
   const writeContent = async (text: string): Promise<void> => {
     if (!text) return;
+    contentLength += text.length;
+    logContentBoundary(
+      contentBoundaryDebug({
+        stage: 'openai_sse_delta',
+        requested_model: request.model,
+        reasoning_effort: request.reasoning_effort ?? 'default',
+        request_id: String(reply.request.id),
+        chunk_index: contentChunkIndex,
+        text,
+        cumulative_length: contentLength,
+      }),
+    );
+    contentChunkIndex += 1;
     await writeSse(
       reply,
       sseData(

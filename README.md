@@ -162,6 +162,37 @@ CURSOR_BRIDGE_BACKEND=cursor-api npm start
 
 The tracked `src/backend/cursor-api/proto-descriptors.json` is copied into `dist` by the build. `CURSOR_BRIDGE_CURSOR_API_DESCRIPTORS` remains available for overriding it with an external snapshot. Set `CURSOR_API_KEY` from Cursor Dashboard -> API Keys for headless authentication. `CURSOR_AUTH_TOKEN` is also accepted, and a system credential can use the macOS Keychain when no env or dashboard credential is present.
 
+### Tool-call selection and strict single-call mode
+
+`tool_choice: "auto"` lets the model choose any declared function and can produce more than one
+call. Use a named function choice when the request must call one exact function:
+
+```json
+{
+  "tool_choice": {
+    "type": "function",
+    "function": { "name": "read" }
+  }
+}
+```
+
+The bridge also accepts the optional `max_tool_calls` request field (`1` through `128`). Set
+`max_tool_calls: 1` for strict single-call behavior. When the request declares one function and
+uses `tool_choice: "auto"`, this mode strengthens the upstream choice to that named function.
+With several declared functions, the first completed allowed call is surfaced and the Run is
+parked immediately, so later model-generated builtins cannot become extra external OpenAI calls.
+`parallel_tool_calls: false` retains its existing one-call behavior.
+
+Builtin promotion applies the same declared-tool and named-choice allowlist as native MCP calls.
+An undeclared or excluded builtin is rejected rather than held as a hidden recovery call. Tool-call
+IDs, names, and argument bytes are preserved through OpenAI response and SSE serialization.
+
+Set `NODE_DEBUG=cursor-bridge` to inspect safe tool-routing and content-boundary metadata. Promoted
+builtin records include the requested model, reasoning effort, tool choice, declared names,
+attempted builtin, promoted external name, call index, Run request ID, origin, and disposition.
+Content records include only chunk lengths and leading/trailing whitespace flags at the Cursor
+upstream and OpenAI SSE stages. API keys and prompt or generated text are never included.
+
 ### npm scripts
 
 | Command                  | Purpose                                                                             |

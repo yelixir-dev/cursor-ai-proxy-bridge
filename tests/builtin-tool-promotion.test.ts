@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   builtinStartRouting,
+  builtinToolRoutingLog,
   promoteBuiltinExec,
 } from '../src/backend/cursor-api/builtin-tool-promotion.js';
 import { builtinToolResultReply } from '../src/backend/cursor-api/builtin-tool-results.js';
@@ -35,11 +36,14 @@ describe('builtin tool promotion mapping', () => {
       { path: '/etc/hostname', toolCallId: 'read-call' },
     );
 
-    expect(promoted?.debug).toEqual({
+    expect(promoted?.debug).toMatchObject({
       execCase: 'readArgs',
       attemptedToolName: 'read',
       declaredToolNames: ['READ'],
       mappedOpenAiToolName: 'READ',
+      requested_model: 'sonnet-5',
+      reasoning_effort: 'default',
+      tool_choice: 'auto',
     });
     expect(mcpArgsToToolCall(promoted?.tool ?? {})).toMatchObject({
       id: 'read-call',
@@ -48,6 +52,38 @@ describe('builtin tool promotion mapping', () => {
         arguments: JSON.stringify({ file_path: '/etc/hostname' }),
       },
     });
+  });
+
+  it('emits safe deterministic promoted builtin diagnostic metadata', () => {
+    const toolRequest = {
+      ...request('read', { path: { type: 'string' } }),
+      reasoning_effort: 'xhigh',
+    };
+    const promoted = promoteBuiltinExec(toolRequest, { execId: 'read-exec' }, 'readArgs', {
+      path: '/etc/hostname',
+      toolCallId: 'read-call',
+    });
+    if (!promoted) throw new Error('expected builtin promotion');
+
+    const log = builtinToolRoutingLog(promoted.debug, {
+      runRequestId: 'run-request-1',
+      toolCallIndex: 0,
+      disposition: 'promoted',
+    });
+
+    expect(log).toEqual({
+      requested_model: 'sonnet-5',
+      reasoning_effort: 'xhigh',
+      tool_choice: 'auto',
+      declared_tool_names: ['read'],
+      attempted_builtin_name: 'read',
+      promoted_external_tool_name: 'read',
+      tool_call_index: 0,
+      run_request_id: 'run-request-1',
+      call_origin: 'model_generated_builtin',
+      disposition: 'promoted',
+    });
+    expect(JSON.stringify(log)).not.toContain('use a tool');
   });
 
   it('maps Cursor Shell only to a declared shell or bash function', () => {

@@ -1,9 +1,9 @@
 import { z } from 'zod';
+import { CURSOR_CREDENTIAL_PLANS } from '../backend/cursor-api/credential-plan.js';
 import {
   CURSOR_CREDENTIAL_FAILOVER_POLICIES,
   CURSOR_CREDENTIAL_ROUTING_POLICIES,
 } from '../backend/cursor-api/credential-policy.js';
-import { CURSOR_CREDENTIAL_PLANS } from '../backend/cursor-api/credential-plan.js';
 
 const IMAGE_OMITTED_PLACEHOLDER = '[image omitted: cursor composer bridge is text-only]';
 const MAX_CONTENT_PARTS = 1_000;
@@ -119,6 +119,7 @@ export const chatCompletionSchema = z.object({
   tools: z.array(toolSchema).max(128).optional(),
   tool_choice: toolChoiceSchema.optional(),
   parallel_tool_calls: z.boolean().optional(),
+  max_tool_calls: z.number().int().min(1).max(128).optional(),
   reasoning_effort: z.string().min(1).max(20).optional(),
 });
 

@@ -53,6 +53,7 @@ export interface ChatCompletionRequest {
   tools?: Tool[];
   tool_choice?: ToolChoice;
   parallel_tool_calls?: boolean;
+  max_tool_calls?: number;
   reasoning_effort?: string;
 }
 
