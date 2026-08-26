@@ -20,6 +20,11 @@ export interface CursorApiCredentialInput {
   capabilities?: CursorCredentialCapabilities;
 }
 
+export interface CursorApiCredentialMetadata {
+  readonly plan?: CursorCredentialPlan;
+  readonly capabilities?: CursorCredentialCapabilities;
+}
+
 function positiveWeight(value: number | undefined): number {
   return Number.isFinite(value) && value !== undefined && value > 0 ? value : 1;
 }
@@ -44,10 +49,19 @@ export function normalizeCursorApiCredential(
 export function cursorCredentialsFromConfig(
   environment: NodeJS.ProcessEnv | Record<string, string | undefined>,
   dashboardCredentials: CursorApiCredentialInput[] = [],
+  envMetadata: CursorApiCredentialMetadata = {},
 ): CursorApiCredential[] {
   const credentials: CursorApiCredential[] = [];
   const envApiKey = environment.CURSOR_API_KEY?.trim();
-  if (envApiKey) credentials.push(normalizeCursorApiCredential({ id: 'env', apiKey: envApiKey }));
+  if (envApiKey) {
+    credentials.push(
+      normalizeCursorApiCredential({
+        id: 'env',
+        apiKey: envApiKey,
+        ...envMetadata,
+      }),
+    );
+  }
 
   const used = new Set(credentials.map((credential) => credential.id));
   for (const credential of dashboardCredentials) {

@@ -2,15 +2,15 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
-import type {
-  CursorApiCredential,
-  CursorApiCredentialInput,
-} from './backend/cursor-api/credentials.js';
+import { CURSOR_CREDENTIAL_PLANS } from './backend/cursor-api/credential-plan.js';
 import {
   CURSOR_CREDENTIAL_FAILOVER_POLICIES,
   CURSOR_CREDENTIAL_ROUTING_POLICIES,
 } from './backend/cursor-api/credential-policy.js';
-import { CURSOR_CREDENTIAL_PLANS } from './backend/cursor-api/credential-plan.js';
+import type {
+  CursorApiCredential,
+  CursorApiCredentialInput,
+} from './backend/cursor-api/credentials.js';
 
 const credentialSchema = z
   .object({
@@ -19,6 +19,18 @@ const credentialSchema = z
     apiKey: z.string().trim().min(1),
     weight: z.number().positive().default(1),
     enabled: z.boolean().default(true),
+    plan: z.enum(CURSOR_CREDENTIAL_PLANS).optional(),
+    capabilities: z
+      .object({
+        fable: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+const envCredentialMetadataSchema = z
+  .object({
     plan: z.enum(CURSOR_CREDENTIAL_PLANS).optional(),
     capabilities: z
       .object({
@@ -39,6 +51,7 @@ export const dashboardConfigSchema = z
       .strict()
       .optional(),
     credentials: z.array(credentialSchema).optional(),
+    envCredentialMetadata: envCredentialMetadataSchema.optional(),
     credentialPolicy: z
       .object({
         routingPolicy: z.enum(CURSOR_CREDENTIAL_ROUTING_POLICIES).optional(),
@@ -71,6 +84,7 @@ export const dashboardConfigSchema = z
   });
 
 export type DashboardCredential = z.infer<typeof credentialSchema>;
+export type EnvCredentialMetadata = z.infer<typeof envCredentialMetadataSchema>;
 export type DashboardConfig = z.infer<typeof dashboardConfigSchema>;
 
 export interface RedactedCursorCredential {

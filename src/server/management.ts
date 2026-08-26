@@ -10,6 +10,7 @@ import {
   type DashboardConfig,
   type DashboardCredential,
   dashboardConfigPath,
+  type EnvCredentialMetadata,
   redactedCredentials,
   writeDashboardConfigFile,
 } from '../dashboard-config.js';
@@ -120,6 +121,7 @@ export function registerManagementRoutes(context: ServerContext): void {
     }
 
     const credentials = [...(state.dashboardConfig.credentials ?? [])];
+    let envCredentialMetadata = state.dashboardConfig.envCredentialMetadata;
     for (const update of parsed.data.credentials ?? []) {
       if (update.id === 'env') {
         if (update.apiKey !== undefined) {
@@ -127,9 +129,23 @@ export function registerManagementRoutes(context: ServerContext): void {
             .code(400)
             .send(openAiError("credential 'env' API key is controlled by CURSOR_API_KEY"));
         }
-        return reply
-          .code(400)
-          .send(openAiError("credential 'env' cannot be changed through dashboard config"));
+        if (
+          update.label !== undefined ||
+          update.weight !== undefined ||
+          update.enabled !== undefined ||
+          update._delete !== undefined
+        ) {
+          return reply
+            .code(400)
+            .send(openAiError("credential 'env' allows only plan and capabilities metadata"));
+        }
+        const nextMetadata: EnvCredentialMetadata = {
+          ...envCredentialMetadata,
+          ...(update.plan === undefined ? {} : { plan: update.plan }),
+          ...(update.capabilities === undefined ? {} : { capabilities: update.capabilities }),
+        };
+        envCredentialMetadata = nextMetadata;
+        continue;
       }
       if (update.id === 'system') {
         return reply.code(400).send(openAiError("credential id 'system' is reserved"));
@@ -181,6 +197,7 @@ export function registerManagementRoutes(context: ServerContext): void {
     const nextConfig: DashboardConfig = {
       ...state.dashboardConfig,
       credentials,
+      ...(envCredentialMetadata === undefined ? {} : { envCredentialMetadata }),
       ...(credentialPolicyOverrides === undefined
         ? {}
         : { credentialPolicy: credentialPolicyOverrides }),
@@ -192,6 +209,7 @@ export function registerManagementRoutes(context: ServerContext): void {
     state.effectiveCredentials = cursorCredentialsFromConfig(
       envCredential?.apiKey ? { CURSOR_API_KEY: envCredential.apiKey } : {},
       credentials,
+      envCredentialMetadata,
     );
     backend.updateCredentials?.(state.effectiveCredentials);
     state.credentialPolicy = credentialPolicy;

@@ -3,14 +3,14 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import {
+  type CursorApiCredential,
+  cursorCredentialsFromConfig,
+} from './backend/cursor-api/credentials.js';
+import {
+  type DashboardConfig,
   dashboardConfigPath,
   readDashboardConfigFile,
-  type DashboardConfig,
 } from './dashboard-config.js';
-import {
-  cursorCredentialsFromConfig,
-  type CursorApiCredential,
-} from './backend/cursor-api/credentials.js';
 
 export type BackendKind = 'auto' | 'mock' | 'cursor-cli' | 'cursor-api';
 
@@ -97,6 +97,7 @@ export function loadConfig(envFile: string = BRIDGE_ENV_FILE): BridgeConfig {
     cursorApiCredentials: cursorCredentialsFromConfig(
       process.env,
       dashboardConfig.credentials ?? [],
+      dashboardConfig.envCredentialMetadata,
     ),
   };
 }
