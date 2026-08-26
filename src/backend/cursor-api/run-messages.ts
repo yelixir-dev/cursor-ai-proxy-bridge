@@ -1,7 +1,12 @@
 import { type RequestTrace, traceStage } from '../../trace.js';
 import { CursorBackendError } from '../cursor-cli.js';
 import type { ChatCompletionRequest, CompletionStreamEvent } from '../types.js';
-import { handleExecResponse } from './exec-responses.js';
+import { handleExecResponse, type HeldToolExec } from './exec-responses.js';
+import {
+  builtinStartRouting,
+  CursorBuiltinToolCallError,
+  logBuiltinToolRouting,
+} from './builtin-tool-promotion.js';
 import type { ProtoCodec } from './protobuf.js';
 import type { RunEmitter } from './run-types.js';
 import { CursorToolStream } from './tool-stream.js';
@@ -17,14 +22,7 @@ class CursorUndeclaredToolCallError extends CursorBackendError {
   }
 }
 
-export class CursorBuiltinToolCallError extends CursorBackendError {
-  readonly name = 'CursorBuiltinToolCallError';
-  readonly code = 'ERR_CURSOR_BUILTIN_TOOL_CALL';
-
-  constructor(message = 'Cursor selected a builtin instead of the required external tool') {
-    super(message);
-  }
-}
+export { CursorBuiltinToolCallError } from './builtin-tool-promotion.js';
 
 function attemptedToolName(update: Dict): string {
   const toolCall = dict(update.toolCall);
@@ -45,7 +43,7 @@ export interface CursorRunMessageOptions {
   readonly writeMessage: (message: Dict, compressed?: boolean) => void;
   readonly finish: (error: unknown) => void;
   readonly onHeld?: () => void;
-  readonly heldExecs?: Array<{ exec: Dict }>;
+  readonly heldExecs?: HeldToolExec[];
   readonly onInteraction?: (updateCase: string | undefined) => void;
 }
 
@@ -89,7 +87,6 @@ export class CursorRunMessages {
     const messageCase = typeof message?.case === 'string' ? message.case : undefined;
     const value = dict(message?.value) ?? {};
     if (messageCase === 'execServerMessage') {
-      const execCase = dict(value.message)?.case;
       const execOutcome = handleExecResponse(
         {
           codec: this.options.codec,
@@ -100,13 +97,13 @@ export class CursorRunMessages {
             traceStage(this.options.trace, 'tool_decision');
             return this.toolStream.completeExec(tool);
           },
-          holdMcp: (exec) => {
-            this.options.heldExecs?.push({ exec });
+          holdMcp: (held) => {
+            this.options.heldExecs?.push(held);
           },
         },
         value,
       );
-      if (execCase === 'mcpArgs' && execOutcome === 'held') {
+      if (execOutcome === 'held') {
         this.options.onHeld?.();
       }
       return false;
@@ -159,6 +156,19 @@ export class CursorRunMessages {
             `${JSON.stringify(attempted)} is not among the declared tools`,
           ),
         );
+        return false;
+      }
+      const builtin = builtinStartRouting(this.options.request, update);
+      if (builtin) {
+        logBuiltinToolRouting(builtin);
+        if (!builtin.mappedOpenAiToolName) {
+          this.options.finish(
+            new CursorBuiltinToolCallError(
+              `Cursor selected builtin ${JSON.stringify(builtin.attemptedToolName)} but the request declares no matching external tool`,
+            ),
+          );
+          return false;
+        }
         return false;
       }
       if (

@@ -1,10 +1,11 @@
+// allow: SIZE_OK — one stateful Run lifecycle owns transport, timers, parking, and resume.
 import { randomUUID } from 'node:crypto';
 import { traceCredentialSlot, type RequestTrace, traceStage } from '../../trace.js';
 import { CursorBackendError, CursorCommandAbortedError } from '../cursor-cli.js';
 import type { ChatCompletionRequest } from '../types.js';
 import { ConnectFrameDecoder, ConnectRpcError, encodeConnectFrame } from './connect-frame.js';
 import type { CursorApiDiscovery } from './discovery.js';
-import { sendMcpToolResult } from './exec-responses.js';
+import { type HeldToolExec, sendHeldToolResult } from './exec-responses.js';
 import type { CursorHistory } from './history.js';
 import { enforceNativeToolChoice, heartbeatMessage, runRequestMessage } from './mapper.js';
 import { cursorInferenceErrorType } from './provider-error.js';
@@ -109,7 +110,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     let toolResultsSent = 0;
     let currentResolve: (outcome: RunOutcome) => void = resolve;
     let currentReject: (error: unknown) => void = reject;
-    const heldExecs: Array<{ exec: Dict }> = [];
+    const heldExecs: HeldToolExec[] = [];
     let parkedRun: HeldRun | undefined;
     let holdTimer: ReturnType<typeof runtime.timers.setTimeout> | undefined;
     const timerHandles: {
@@ -263,12 +264,14 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
             const targetIndex = heldExecs.findIndex((candidate) => {
               const message = candidate.exec.message as Dict | undefined;
               const value = message?.value as Dict | undefined;
-              return String(value?.toolCallId ?? '') === execId;
+              return [value?.toolCallId, candidate.exec.execId, candidate.exec.id].some(
+                (candidateId) => candidateId !== undefined && String(candidateId) === execId,
+              );
             });
             const target = heldExecs[targetIndex];
             if (target) {
               if (!streamEnded && !turnEnded) {
-                sendMcpToolResult(writeMessage, target.exec, result.content);
+                sendHeldToolResult(writeMessage, target, result.content);
                 toolResultsSent += 1;
               }
               heldExecs.splice(targetIndex, 1);

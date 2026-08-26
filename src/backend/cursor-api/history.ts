@@ -47,12 +47,12 @@ function nativeToolInstruction(request: ChatCompletionRequest): string {
     return 'Do not call any available tool. Answer directly in ordinary text.';
   }
   if (typeof request.tool_choice === 'object') {
-    return `You must call exactly the tool ${JSON.stringify(request.tool_choice.function.name)}. Do not answer directly.`;
+    return `Call exactly the MCP/OpenAI tool ${JSON.stringify(request.tool_choice.function.name)}. Do not answer directly or use Cursor built-in Read, Shell, LS, Grep, or Web tools.`;
   }
   if (request.tool_choice === 'required') {
-    return 'You must call at least one available tool. Do not answer directly.';
+    return 'Call at least one MCP/OpenAI tool listed in this request by its exact function name. Do not answer directly or use Cursor built-in Read, Shell, LS, Grep, or Web tools.';
   }
-  return 'Use an available tool only when it is needed. Do not pretend to execute tools yourself.';
+  return 'When a tool is needed, call only an MCP/OpenAI tool listed in this request by its exact function name. Do not use Cursor built-in Read, Shell, LS, Grep, or Web tools. Never say tool execution is delegated; emit a tool call instead.';
 }
 
 /** Bridge tool-scheduling guidance rides as a trailing root-prompt system entry. */

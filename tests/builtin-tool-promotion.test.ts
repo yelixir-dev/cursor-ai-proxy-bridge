@@ -1,0 +1,132 @@
+import { describe, expect, it } from 'vitest';
+import {
+  builtinStartRouting,
+  promoteBuiltinExec,
+} from '../src/backend/cursor-api/builtin-tool-promotion.js';
+import { builtinToolResultReply } from '../src/backend/cursor-api/builtin-tool-results.js';
+import { buildCursorHistory } from '../src/backend/cursor-api/history.js';
+import { mcpArgsToToolCall } from '../src/backend/cursor-api/mcp-tool-call.js';
+import { loadProtoDescriptors, ProtoCodec } from '../src/backend/cursor-api/protobuf.js';
+import type { ChatCompletionRequest } from '../src/backend/types.js';
+
+function request(name: string, properties: Record<string, unknown>): ChatCompletionRequest {
+  return {
+    model: 'sonnet-5',
+    messages: [{ role: 'user', content: 'use a tool' }],
+    tools: [
+      {
+        type: 'function',
+        function: {
+          name,
+          parameters: { type: 'object', properties },
+        },
+      },
+    ],
+    tool_choice: 'auto',
+  };
+}
+
+describe('builtin tool promotion mapping', () => {
+  it('matches Read case-insensitively and maps path to file_path', () => {
+    const promoted = promoteBuiltinExec(
+      request('READ', { file_path: { type: 'string' } }),
+      { execId: 'read-exec' },
+      'readArgs',
+      { path: '/etc/hostname', toolCallId: 'read-call' },
+    );
+
+    expect(promoted?.debug).toEqual({
+      execCase: 'readArgs',
+      attemptedToolName: 'read',
+      declaredToolNames: ['READ'],
+      mappedOpenAiToolName: 'READ',
+    });
+    expect(mcpArgsToToolCall(promoted?.tool ?? {})).toMatchObject({
+      id: 'read-call',
+      function: {
+        name: 'READ',
+        arguments: JSON.stringify({ file_path: '/etc/hostname' }),
+      },
+    });
+  });
+
+  it('maps Cursor Shell only to a declared shell or bash function', () => {
+    const promoted = promoteBuiltinExec(
+      request('bash', { command: { type: 'string' } }),
+      { execId: 'shell-exec' },
+      'shellArgs',
+      { command: 'pwd', toolCallId: 'shell-call' },
+    );
+
+    expect(mcpArgsToToolCall(promoted?.tool ?? {})).toMatchObject({
+      id: 'shell-call',
+      function: { name: 'bash', arguments: JSON.stringify({ command: 'pwd' }) },
+    });
+  });
+
+  it('does not map an unrelated declaration at start or exec completion', () => {
+    const toolRequest = request('get_seed', { seed: { type: 'string' } });
+    const start = builtinStartRouting(toolRequest, {
+      toolCall: { tool: { case: 'readToolCall', value: {} } },
+    });
+    const completed = promoteBuiltinExec(toolRequest, { execId: 'read-exec' }, 'readArgs', {
+      path: '/etc/hostname',
+    });
+
+    expect(start?.mappedOpenAiToolName).toBeUndefined();
+    expect(completed?.debug.mappedOpenAiToolName).toBeUndefined();
+    expect(completed?.tool).toEqual({});
+  });
+
+  it('instructs auto requests to use exact MCP names and never delegation text', () => {
+    const history = buildCursorHistory(request('read', { path: { type: 'string' } }), {
+      encode: () => Buffer.alloc(0),
+    });
+    const prompts = [...history.blobs.values()].map((blob) => blob.toString('utf8')).join('\n');
+
+    expect(prompts).toContain('call only an MCP/OpenAI tool');
+    expect(prompts).toContain('exact function name');
+    expect(prompts).toContain('Do not use Cursor built-in Read, Shell, LS, Grep, or Web tools');
+    expect(prompts).toContain('Never say tool execution is delegated');
+  });
+
+  it('encodes the client result as the original builtin success response', () => {
+    const reply = builtinToolResultReply(
+      { execCase: 'readArgs', args: { path: '/etc/hostname' } },
+      'test-hostname',
+    );
+    const codec = new ProtoCodec(loadProtoDescriptors());
+    const encoded = codec.encode('agent.v1.AgentClientMessage', {
+      message: {
+        case: 'execClientMessage',
+        value: {
+          id: 1,
+          execId: 'read-exec',
+          message: { case: reply?.messageCase, value: reply?.value },
+        },
+      },
+    });
+    const decoded = codec.decode('agent.v1.AgentClientMessage', encoded);
+
+    expect(decoded).toMatchObject({
+      message: {
+        case: 'execClientMessage',
+        value: {
+          execId: 'read-exec',
+          message: {
+            case: 'readResult',
+            value: {
+              result: {
+                case: 'success',
+                value: {
+                  path: '/etc/hostname',
+                  output: { case: 'content', value: 'test-hostname' },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+});

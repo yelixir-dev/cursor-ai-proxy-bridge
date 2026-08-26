@@ -1,5 +1,15 @@
 import type { ChatCompletionRequest } from '../types.js';
 import { CursorBackendError } from '../cursor-cli.js';
+import {
+  CursorBuiltinToolCallError,
+  logBuiltinToolRouting,
+  promoteBuiltinExec,
+} from './builtin-tool-promotion.js';
+import {
+  builtinToolResultReply,
+  emptyBuiltinResult,
+  type PromotedBuiltinExecContext,
+} from './builtin-tool-results.js';
 import { nativeToolDefinition, requestContextResult } from './mapper.js';
 import type { ProtoCodec } from './protobuf.js';
 
@@ -11,7 +21,12 @@ export interface ExecResponseContext {
   readonly writeMessage: (message: Dict, compressed?: boolean) => void;
   readonly finish: (error: unknown) => void;
   readonly completeTool: (value: Dict) => boolean;
-  readonly holdMcp?: (exec: Dict) => void;
+  readonly holdMcp?: (held: HeldToolExec) => void;
+}
+
+export interface HeldToolExec {
+  readonly exec: Dict;
+  readonly promotedBuiltin?: PromotedBuiltinExecContext;
 }
 
 interface ExecReply {
@@ -56,51 +71,11 @@ function allowedMcpToolName(request: ChatCompletionRequest, value: Dict): boolea
   return (request.tools ?? []).some((tool) => tool.function.name === name);
 }
 
-function rejectionValue(
-  context: ExecResponseContext,
-  resultCase: string,
-  args: Dict,
-): Dict | undefined {
-  const resultField = context.codec.descriptors.messages['agent.v1.ExecClientMessage']?.fields.find(
-    (field) => field.localName === resultCase,
-  );
-  if (!resultField?.message) return undefined;
-  const resultDescriptor = context.codec.descriptors.messages[resultField.message];
-  const failureField = resultDescriptor?.fields.find((field) =>
-    ['rejected', 'error', 'permissionDenied', 'failure'].includes(field.localName),
-  );
-  if (!failureField?.message) return {};
-  const rejectionMessage = 'Tool execution is delegated to the OpenAI client';
-  const failureValue = Object.fromEntries(
-    (context.codec.descriptors.messages[failureField.message]?.fields ?? [])
-      .filter((field) => !field.repeated && field.kind !== 'map')
-      .map((field) => {
-        if (field.kind === 'message') return [field.localName, {}];
-        if (field.scalar === 9) {
-          const fromArgs = args[field.localName];
-          return [
-            field.localName,
-            typeof fromArgs === 'string'
-              ? fromArgs
-              : ['reason', 'error'].includes(field.localName)
-                ? rejectionMessage
-                : '',
-          ];
-        }
-        if (field.scalar === 12) return [field.localName, Buffer.alloc(0)];
-        if (field.scalar === 8) return [field.localName, false];
-        return [field.localName, 0];
-      }),
-  );
-  return failureField.oneof
-    ? { [failureField.oneof]: { case: failureField.localName, value: failureValue } }
-    : { [failureField.localName]: failureValue };
-}
-
 export function sendMcpToolResult(
   writeMessage: (message: Dict, compressed?: boolean) => void,
   exec: Dict,
   text: string,
+  omitExecId = true,
 ): void {
   sendExec(writeMessage, {
     exec,
@@ -114,9 +89,27 @@ export function sendMcpToolResult(
         },
       },
     },
-    omitExecId: true,
+    omitExecId,
     compressed: false,
   });
+}
+
+export function sendHeldToolResult(
+  writeMessage: (message: Dict, compressed?: boolean) => void,
+  held: HeldToolExec,
+  text: string,
+): void {
+  if (!held.promotedBuiltin) {
+    sendMcpToolResult(writeMessage, held.exec, text);
+    return;
+  }
+  const reply = builtinToolResultReply(held.promotedBuiltin, text);
+  if (!reply) {
+    throw new CursorBackendError(
+      `Cannot answer promoted Cursor exec message ${held.promotedBuiltin.execCase}`,
+    );
+  }
+  sendExec(writeMessage, { exec: held.exec, ...reply, compressed: false });
 }
 
 export function handleExecResponse(
@@ -183,7 +176,7 @@ export function handleExecResponse(
       });
       return 'ignored';
     }
-    context.holdMcp?.(exec);
+    context.holdMcp?.({ exec });
     return 'held';
   }
   if (execCase === 'mcpAllowlistPrecheckArgs') {
@@ -228,14 +221,41 @@ export function handleExecResponse(
     });
     return;
   }
-  const resultCase =
-    execCase === 'shellStreamArgs'
-      ? 'shellResult'
-      : execCase.replace(/Args$/, 'Result').replace(/Request$/, 'Response');
-  const rejection = rejectionValue(context, resultCase, value);
-  if (!rejection) {
-    context.finish(new CursorBackendError(`Cannot answer Cursor exec message ${execCase}`));
-    return;
+  const promoted = promoteBuiltinExec(context.request, exec, execCase, value);
+  if (promoted) {
+    logBuiltinToolRouting(promoted.debug);
+    if ((context.request.tools ?? []).length === 0) {
+      const resultCase =
+        execCase === 'shellStreamArgs'
+          ? 'shellResult'
+          : execCase.replace(/Args$/, 'Result').replace(/Request$/, 'Response');
+      const result = emptyBuiltinResult(context.codec, resultCase);
+      if (!result) {
+        context.finish(new CursorBackendError(`Cannot answer Cursor exec message ${execCase}`));
+        return 'ignored';
+      }
+      sendExec(context.writeMessage, { exec, messageCase: resultCase, value: result });
+      return 'ignored';
+    }
+    if (!promoted.debug.mappedOpenAiToolName) {
+      context.finish(
+        new CursorBuiltinToolCallError(
+          `Cursor selected builtin ${JSON.stringify(promoted.debug.attemptedToolName)} but the request declares no matching external tool`,
+        ),
+      );
+      return 'ignored';
+    }
+    if (!context.completeTool(promoted.tool)) {
+      context.finish(
+        new CursorBuiltinToolCallError(
+          `Cursor builtin ${JSON.stringify(promoted.debug.attemptedToolName)} could not be promoted to the declared external tool`,
+        ),
+      );
+      return 'ignored';
+    }
+    context.holdMcp?.({ exec, promotedBuiltin: { execCase, args: value } });
+    return 'held';
   }
-  sendExec(context.writeMessage, { exec, messageCase: resultCase, value: rejection });
+  context.finish(new CursorBackendError(`Cannot answer Cursor exec message ${execCase}`));
+  return 'ignored';
 }
