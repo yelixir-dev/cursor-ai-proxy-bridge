@@ -1,4 +1,5 @@
 import type { BridgeConfig } from '../../config.js';
+import { CursorCredentialUsageService } from './account-usage.js';
 import { CursorAuthProvider } from './auth.js';
 import { cursorCredentialPolicyFromEnv } from './credential-policy.js';
 import { CursorCredentialRouter, cursorCredentialsFromConfig } from './credentials.js';
@@ -22,6 +23,8 @@ export interface CursorApiBackendDependencies {
   readonly clearTimeout?: typeof globalThis.clearTimeout;
   readonly wait?: (delayMs: number, signal?: AbortSignal) => Promise<void>;
   readonly credentialRouter?: CursorCredentialRouter;
+  readonly credentialUsage?: CursorCredentialUsageService;
+  readonly fetch?: typeof globalThis.fetch;
   readonly now?: () => number;
 }
 
@@ -31,6 +34,7 @@ export interface CursorApiRuntime {
   readonly auth: CursorAuthProvider;
   readonly transport: CursorApiTransport;
   readonly credentialRouter: CursorCredentialRouter;
+  readonly credentialUsage: CursorCredentialUsageService;
   readonly environment: NodeJS.ProcessEnv;
   readonly activeStreams: Set<CursorRunStream>;
   readonly timers: {
@@ -65,6 +69,16 @@ export function createCursorApiRuntime(
     new CursorAuthProvider({
       environment,
       apiEndpoint: environment.CURSOR_BRIDGE_CURSOR_API_ENDPOINT ?? environment.CURSOR_API_ENDPOINT,
+    });
+  const credentialUsage =
+    dependencies.credentialUsage ??
+    new CursorCredentialUsageService({
+      auth,
+      fetch: dependencies.fetch,
+      apiEndpoint: environment.CURSOR_BRIDGE_CURSOR_API_ENDPOINT ?? environment.CURSOR_API_ENDPOINT,
+      now: dependencies.now,
+      ttlMs: boundedInteger(environment.CURSOR_BRIDGE_CREDENTIAL_USAGE_TTL_MS, 300_000),
+      timeoutMs: boundedInteger(environment.CURSOR_BRIDGE_CREDENTIAL_USAGE_TIMEOUT_MS, 15_000),
     });
   const transport =
     dependencies.transport ??
@@ -111,6 +125,7 @@ export function createCursorApiRuntime(
     config,
     codec,
     auth,
+    credentialUsage,
     transport,
     environment,
     timers,

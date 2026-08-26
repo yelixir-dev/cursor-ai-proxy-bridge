@@ -1,3 +1,5 @@
+import type { BridgeConfig } from '../../config.js';
+import { CursorCommandAbortedError } from '../cursor-cli.js';
 import type {
   BackendHealth,
   BridgeModel,
@@ -6,16 +8,15 @@ import type {
   CompletionStreamEvent,
   CursorBackend,
 } from '../types.js';
-import { CursorCommandAbortedError } from '../cursor-cli.js';
-import type { BridgeConfig } from '../../config.js';
-import type { CursorCredentialPolicyConfig } from './credential-policy.js';
+import type { CursorCredentialUsageOptions, CursorCredentialUsageView } from './account-usage.js';
 import { CursorApiCompletion } from './completion.js';
+import type { CursorCredentialPolicyConfig } from './credential-policy.js';
 import type { CursorApiCredential, CursorApiCredentialStateView } from './credentials.js';
 import { CursorApiDiscovery } from './discovery.js';
 import {
-  createCursorApiRuntime,
   type CursorApiBackendDependencies,
   type CursorApiRuntime,
+  createCursorApiRuntime,
 } from './runtime.js';
 
 export class CursorApiBackend implements CursorBackend {
@@ -46,8 +47,18 @@ export class CursorApiBackend implements CursorBackend {
     return this.runtime.credentialRouter.snapshot();
   }
 
+  credentialUsage(
+    options: CursorCredentialUsageOptions = {},
+  ): Promise<CursorCredentialUsageView[]> {
+    return this.runtime.credentialUsage.snapshots(
+      this.runtime.credentialRouter.credentials(),
+      options,
+    );
+  }
+
   updateCredentials(credentials: CursorApiCredential[]): void {
     this.runtime.auth.invalidate();
+    this.runtime.credentialUsage.invalidate();
     this.runtime.credentialRouter.replaceCredentials(credentials);
   }
 

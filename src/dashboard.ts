@@ -40,6 +40,7 @@ export function renderDashboard(version: string): string {
     .grid{display:grid;grid-template-columns:1fr;gap:16px}.card{min-width:0;background:var(--paper);border-top:3px solid var(--ink);box-shadow:var(--shadow);padding:clamp(16px,3vw,28px)}.card h2{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:0 0 16px;border-bottom:1px solid var(--rule);padding-bottom:9px;font-size:clamp(21px,2.5vw,29px);letter-spacing:-.025em}.sub{color:var(--muted);font:600 11px/1.3 var(--sans);letter-spacing:.04em;text-align:right}.status-grid{display:grid;grid-template-columns:1fr;gap:8px}.kv{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;border-bottom:1px solid var(--rule);padding:7px 0;font:12px/1.4 var(--sans)}.kv b{text-align:right;overflow-wrap:anywhere}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}.muted{color:var(--muted)}
     .add-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:18px;padding:14px;background:var(--paper-2);border-left:3px solid var(--rust)}.field{display:grid;gap:5px;min-width:0}.field label{font:800 10px/1 var(--sans);letter-spacing:.09em;color:var(--muted);text-transform:uppercase}.field-wide{grid-column:1/-1}.add-actions{display:flex;align-items:end}.add-actions button{width:100%}
     .policy-panel{display:grid;gap:13px;margin-bottom:14px;padding:14px;background:var(--paper-2);border-left:3px solid var(--teal);font-family:var(--sans)}.policy-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.policy-heading h3{margin:0;font:800 14px/1.3 var(--sans);letter-spacing:.01em}.policy-heading p{max-width:620px;margin:4px 0 0;color:var(--muted);font-size:11px}.policy-active{display:flex;align-items:center;flex-wrap:wrap;gap:6px;color:var(--muted);font-size:10px}.policy-active>span{font-weight:800;letter-spacing:.08em;text-transform:uppercase}.policy-active code{border:1px solid var(--rule);background:var(--paper);color:var(--teal);padding:3px 6px;font:700 10px/1.2 var(--mono)}.policy-grid{display:grid;grid-template-columns:1fr;gap:10px}.policy-field{display:grid;gap:5px;min-width:0}.policy-label{font:800 10px/1 var(--sans);letter-spacing:.09em;color:var(--muted);text-transform:uppercase}.policy-description{margin:0;color:var(--muted);font-size:10px;line-height:1.4}
+    .usage-section{margin-top:15px;padding-top:15px;border-top:1px solid var(--rule);font-family:var(--sans)}.usage-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:11px}.usage-heading h3{margin:0;font:800 14px/1.3 var(--sans)}.usage-heading p{margin:4px 0 0;color:var(--muted);font-size:11px;word-break:keep-all}.usage-heading button{white-space:nowrap}.usage-list{display:grid;gap:10px;min-height:310px}.usage-card{border:1px solid var(--rule);border-left:3px solid var(--ink);background:var(--paper-2);padding:13px}.usage-card.loading{opacity:.68}.usage-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:11px}.usage-account{display:grid;gap:3px;min-width:0}.usage-account strong{font:800 13px/1.3 var(--sans)}.usage-account code{color:var(--muted);font:10px/1.3 var(--mono)}.usage-meta{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:5px;text-align:right}.usage-chip{border:1px solid var(--rule);background:var(--paper);padding:3px 6px;color:var(--muted);font:800 9px/1.2 var(--sans);letter-spacing:.05em;text-transform:uppercase}.usage-chip.fresh{color:var(--good);border-color:var(--good)}.usage-chip.stale{color:var(--warn);border-color:var(--warn)}.usage-chip.unavailable{color:var(--bad);border-color:var(--bad)}.usage-grid{display:grid;grid-template-columns:1fr;gap:9px}.usage-pool{border:1px solid var(--rule);background:var(--paper);padding:11px}.usage-pool-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.usage-pool-name{display:grid;gap:2px}.usage-pool-name strong{font:800 11px/1.3 var(--sans)}.usage-pool-name span{color:var(--muted);font-size:9px}.usage-pool-value{font:800 15px/1 var(--mono);color:var(--teal);white-space:nowrap}.usage-pool.other .usage-pool-value{color:var(--rust)}.usage-track{height:9px;margin-top:9px;border:1px solid var(--rule);background:var(--canvas);overflow:hidden}.usage-bar{height:100%;background:var(--teal)}.usage-pool.other .usage-bar{background:var(--rust)}.usage-detail{margin-top:6px;color:var(--muted);font-size:9px}.usage-foot{display:flex;flex-wrap:wrap;gap:6px 13px;margin-top:10px;color:var(--muted);font-size:10px}.usage-foot strong{color:var(--ink)}.usage-error{margin-top:8px;color:var(--bad);font-size:10px}
     .table-wrap{overflow-x:auto;border:1px solid var(--rule)}table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:12px}th,td{padding:10px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:middle;white-space:nowrap}th{background:var(--paper-2);color:var(--muted);font-size:10px;letter-spacing:.06em;text-transform:uppercase}tbody tr:last-child td{border-bottom:0}td code{font-family:var(--mono);font-size:11px}.weight-input{width:72px;min-height:34px}.weight-policy-note{display:block;margin-top:3px;color:var(--rust);font-size:9px;letter-spacing:0;text-transform:none;white-space:normal}.weight-policy-note[hidden]{display:none}.weight-ignored{color:var(--muted);background:#ebe7df}.weight-ignored .weight-input{cursor:not-allowed;opacity:.55}.field.is-ignored{opacity:.55}.locked-note{display:block;max-width:180px;color:var(--muted);font-size:10px;white-space:normal}.empty{border:1px dashed var(--rule);background:var(--paper-2);color:var(--muted);padding:13px;margin:0 0 12px;font-family:var(--sans);font-size:12px}
     .switch{position:relative;display:inline-block;width:46px;height:25px}.switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}.slider{position:absolute;inset:0;border:1px solid var(--rule);background:var(--disabled);pointer-events:none}.slider::before{content:"";position:absolute;width:19px;height:19px;left:2px;top:2px;background:var(--paper);transition:transform .15s}.switch input:checked+.slider{background:var(--teal)}.switch input:checked+.slider::before{transform:translateX(21px)}.switch input:focus-visible+.slider{outline:3px solid var(--gold);outline-offset:3px}
     .model-tools{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;margin-bottom:12px}.search{position:relative}.search input{padding-left:34px}.search::before{content:"⌕";position:absolute;left:11px;top:7px;color:var(--teal);font-size:20px}.model-total{font:800 12px/1.3 var(--sans);color:var(--teal);white-space:nowrap}.families{display:grid;gap:14px}.family{--family-accent:var(--rust);overflow:hidden;border:1px solid var(--rule);border-left:5px solid var(--family-accent);background:var(--paper);box-shadow:0 7px 18px rgba(65,49,35,.07);transition:opacity .15s,filter .15s}.family.is-disabled{opacity:.58;filter:saturate(.45);background:#ebe7df}.family summary{display:flex;align-items:center;gap:9px;padding:12px 14px;cursor:pointer;list-style:none;font-weight:700}.family summary::-webkit-details-marker{display:none}.family summary::before{content:"+";display:inline-grid;place-items:center;width:22px;height:22px;border:1px solid var(--family-accent);color:var(--family-accent);font:800 16px/1 var(--sans)}.family[open] summary::before{content:"−"}.family[open] summary{border-bottom:1px solid var(--rule)}.family-dot{width:9px;height:9px;border-radius:50%;background:var(--family-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--family-accent) 18%,transparent)}.family-name{font-size:17px;letter-spacing:-.01em}.family-count{margin-left:auto;border:1px solid var(--family-accent);background:var(--paper);color:var(--family-accent);padding:3px 7px;font:800 11px/1 var(--sans);white-space:nowrap}.family-actions{display:flex;gap:5px}.family-action{min-height:30px;padding:5px 8px;background:transparent;border-color:var(--rule);color:var(--ink);font-size:9px}.family-action:hover{border-color:var(--family-accent);color:var(--family-accent)}.model-list{display:grid;grid-template-columns:1fr;gap:9px;padding:12px}.model-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border-left:3px solid var(--family-accent);background:var(--paper-2);padding:10px 12px}.model-name{min-width:0}.model-name code{display:block;font:700 12px/1.4 var(--mono);overflow-wrap:anywhere}.model-meta{display:flex;align-items:center;gap:7px;margin-top:4px;font:10px/1.3 var(--sans)}.badge{display:inline-flex;border:1px solid var(--rule);background:var(--paper);padding:2px 6px;color:var(--muted)}.model-control{display:flex;align-items:center;gap:10px;flex:0 0 auto}
@@ -47,7 +48,7 @@ export function renderDashboard(version: string): string {
     .toast{position:fixed;left:10px;right:10px;top:10px;z-index:50;pointer-events:none;transform:translateY(-150%);transition:transform .2s;background:var(--ink);color:var(--paper);border-left:4px solid var(--gold);box-shadow:var(--shadow);padding:12px 15px;font-family:var(--sans)}.toast.error{border-left-color:#d07b59}.toast.show{transform:translateY(0)}
     dialog{width:min(calc(100% - 28px),430px);border:0;border-top:4px solid var(--rust);border-radius:0;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);padding:24px}dialog::backdrop{background:rgba(40,35,31,.48)}dialog h2{margin:0 0 8px;font-size:25px}dialog p{margin:0 0 18px;color:var(--muted);font-family:var(--sans);font-size:12px}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.auth-error{color:var(--bad);min-height:18px;margin-top:8px;font:700 11px/1.4 var(--sans)}
     .busy [data-admin-control]{pointer-events:none;opacity:.55}
-    @media(min-width:760px){.wrap{padding:22px 0 38px}.grid{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}.status-grid{grid-template-columns:1fr 1fr}.policy-grid{grid-template-columns:1fr 1fr}.add-form{grid-template-columns:1fr 1.2fr 2fr 100px 110px}.field-wide{grid-column:auto}.model-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(min-width:760px){.wrap{padding:22px 0 38px}.grid{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}.status-grid{grid-template-columns:1fr 1fr}.policy-grid{grid-template-columns:1fr 1fr}.usage-list{min-height:190px}.usage-grid{grid-template-columns:1fr 1fr}.add-form{grid-template-columns:1fr 1.2fr 2fr 100px 110px}.field-wide{grid-column:auto}.model-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:620px){.top{align-items:flex-start;padding:26px 20px}.top h1{font-size:27px}.toolbar{align-items:flex-start}.card h2{align-items:flex-start;flex-direction:column;gap:6px}.sub{text-align:left}.policy-heading{display:grid}.policy-active{align-items:flex-start}.add-form{grid-template-columns:1fr}.field-wide{grid-column:auto}.model-tools{grid-template-columns:1fr}.family summary{align-items:flex-start;flex-wrap:wrap}.family-count{margin-left:0}.family-actions{width:100%;padding-left:31px}.family-action{flex:1}.model-row{align-items:flex-start}.model-control{flex-direction:column-reverse;align-items:flex-end}}
     @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}}
   </style>
@@ -60,7 +61,7 @@ export function renderDashboard(version: string): string {
     </header>
 
     <div class="toolbar"><span class="toolbar-note">Cursor 업스트림, 모델 정책, 런타임 상태를 한곳에서 관리합니다.</span><button id="changeKey" class="secondary" type="button">API key 변경</button></div>
-    <div id="pageState" class="page-state">설정을 불러오는 중입니다.</div>
+    <div id="pageState" class="page-state" hidden>설정을 불러오는 중입니다.</div>
 
     <section class="grid">
       <section class="card wide" aria-labelledby="statusTitle">
@@ -108,11 +109,18 @@ export function renderDashboard(version: string): string {
           <div class="add-actions"><button data-admin-control type="submit">추가</button></div>
         </form>
         <div id="credentialEmpty" class="empty" hidden>대시보드에서 관리하는 크리덴셜이 없습니다. 위 폼에서 key를 추가하세요.</div>
-        <div class="table-wrap">
+        <div class="table-wrap" role="region" aria-label="Credential table" tabindex="0">
           <table>
             <thead><tr><th>ID</th><th>라벨</th><th id="credentialWeightHeading">가중치 <span id="credentialWeightPolicyNote" class="weight-policy-note" hidden>무시됨</span></th><th>사용</th><th>Key</th><th>상태</th><th>작업</th></tr></thead>
             <tbody id="credentialRows"><tr><td colspan="7" class="muted">불러오는 중</td></tr></tbody>
           </table>
+        </div>
+        <div class="usage-section" role="region" aria-labelledby="credentialUsageTitle">
+          <div class="usage-heading">
+            <div><h3 id="credentialUsageTitle">계정 사용량</h3><p>Cursor Models와 Other Models pool을 credential별로 조회합니다.</p></div>
+            <button id="refreshCredentialUsage" class="secondary" data-admin-control type="button">새로고침</button>
+          </div>
+          <div id="credentialUsageList" class="usage-list" aria-live="polite"><div class="empty">불러오는 중</div></div>
         </div>
       </section>
 
@@ -164,6 +172,9 @@ const openFamilies=new Set(['composer']);
 let apiKey=readStoredKey();
 let dashboardData=null;
 let healthData=null;
+let credentialUsageData=null;
+let credentialUsageError='';
+let usageLoading=false;
 let patching=false;
 let toastTimer;
 const $=id=>document.getElementById(id);
@@ -177,6 +188,9 @@ function hidePageState(){$('pageState').hidden=true;}
 function showToast(message,error=false){clearTimeout(toastTimer);const item=$('toast');item.textContent=String(message);item.className='toast'+(error?' error':'')+' show';toastTimer=setTimeout(()=>item.classList.remove('show'),4200);}
 function hideToast(){clearTimeout(toastTimer);$('toast').classList.remove('show');}
 function errorMessage(error){return error&&error.message?String(error.message):'요청을 처리하지 못했습니다.';}
+function formatPercent(value){return Number.isFinite(value)?Number(value).toFixed(1)+'%':'—';}
+function formatCents(value){return Number.isFinite(value)?new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(value)/100):'—';}
+function formatDateTime(value){if(!Number.isFinite(value))return '—';return new Intl.DateTimeFormat('ko-KR',{dateStyle:'medium',timeStyle:'short'}).format(new Date(Number(value)));}
 
 async function fetchJson(path,options={},authenticated=false){
   const headers={accept:'application/json',...(options.headers||{})};
@@ -321,6 +335,60 @@ function renderCredentials(){
   });
 }
 
+function usagePool(title,subtitle,pool,className){
+  const value=pool&&Number.isFinite(pool.usedPercent)?Number(pool.usedPercent):null;
+  const item=make('div','usage-pool'+(className?' '+className:''));
+  const head=make('div','usage-pool-head');
+  const name=make('div','usage-pool-name');name.append(make('strong','',title),make('span','',subtitle));
+  head.append(name,make('span','usage-pool-value',formatPercent(value)));
+  const track=make('div','usage-track');track.setAttribute('role','progressbar');track.setAttribute('aria-label',title+' 사용률');track.setAttribute('aria-valuemin','0');track.setAttribute('aria-valuemax',String(value===null?100:Math.max(100,value)));
+  if(value!==null)track.setAttribute('aria-valuenow',String(value));
+  const bar=make('div','usage-bar');bar.style.width=(value===null?0:Math.min(100,value))+'%';track.append(bar);
+  const exact=pool&&Number.isFinite(pool.remainingCents)&&Number.isFinite(pool.limitCents)
+    ?formatCents(pool.remainingCents)+' 남음 / '+formatCents(pool.limitCents)
+    :'정확한 잔량 미제공';
+  item.append(head,track,make('div','usage-detail',exact));
+  return item;
+}
+
+function renderCredentialUsage(){
+  const button=$('refreshCredentialUsage');button.disabled=usageLoading||patching;button.textContent=usageLoading?'갱신 중':'새로고침';
+  const container=$('credentialUsageList');container.replaceChildren();
+  let snapshots=credentialUsageData&&Array.isArray(credentialUsageData.credentials)?credentialUsageData.credentials:[];
+  if(usageLoading&&snapshots.length===0&&dashboardData){
+    snapshots=joinedCredentials().map(({config})=>({id:config.id,label:config.label,enabled:config.enabled!==false,status:'loading',pools:{cursorModels:{},otherModels:{}}}));
+  }
+  if(usageLoading&&snapshots.length===0){container.append(make('div','empty','계정 사용량을 불러오는 중입니다.'));return;}
+  if(snapshots.length===0){container.append(make('div','empty',credentialUsageError?'사용량을 조회하지 못했습니다.':'표시할 credential 사용량이 없습니다.'));return;}
+  const statusLabels={fresh:'최신',stale:'지연됨',unavailable:'조회 불가',loading:'갱신 중'};
+  const errorLabels={auth:'인증 실패',protocol:'프로토콜 불일치',upstream:'업스트림 조회 실패'};
+  snapshots.forEach(snapshot=>{
+    const card=make('article','usage-card'+(snapshot.status==='loading'?' loading':''));
+    const head=make('div','usage-card-head');
+    const account=make('div','usage-account');account.append(make('strong','',snapshot.label||'Credential'),make('code','',snapshot.id));
+    const meta=make('div','usage-meta');
+    if(snapshot.plan&&snapshot.plan.name)meta.append(make('span','usage-chip',snapshot.plan.name));
+    if(snapshot.plan&&snapshot.plan.price)meta.append(make('span','usage-chip',snapshot.plan.price));
+    meta.append(make('span','usage-chip '+snapshot.status,statusLabels[snapshot.status]||snapshot.status));
+    head.append(account,meta);
+    const grid=make('div','usage-grid');
+    const pools=snapshot.pools||{};
+    grid.append(
+      usagePool('Cursor Models','Composer · Grok',pools.cursorModels||{},'cursor'),
+      usagePool('Other Models','Claude · GPT · Kimi · GLM 등',pools.otherModels||{},'other')
+    );
+    const foot=make('div','usage-foot');
+    if(snapshot.status==='loading')foot.append(make('span','','사용량을 조회하는 중입니다.'));
+    if(snapshot.cycle&&snapshot.cycle.resetsAt){const reset=make('span');reset.append(document.createTextNode('다음 리셋 '),make('strong','',formatDateTime(snapshot.cycle.resetsAt)));foot.append(reset);}
+    if(snapshot.fetchedAt)foot.append(make('span','', '갱신 '+formatDateTime(snapshot.fetchedAt)));
+    if(snapshot.onDemand&&Number.isFinite(snapshot.onDemand.remainingCents))foot.append(make('span','', '온디맨드 '+formatCents(snapshot.onDemand.remainingCents)+' 남음'));
+    card.append(head,grid);
+    if(foot.childNodes.length)card.append(foot);
+    if(snapshot.error)card.append(make('div','usage-error',errorLabels[snapshot.error.kind]||'사용량 조회 실패'));
+    container.append(card);
+  });
+}
+
 function updateCredentialTimes(){
   document.querySelectorAll('[data-credential-status]').forEach(item=>{
     if(item.dataset.enabled==='false')return;
@@ -395,8 +463,20 @@ function renderModels(){
   if(visible===0)container.append(make('div','empty',query?'검색 결과가 없습니다.':'표시할 모델이 없습니다.'));
 }
 
-function renderAll(){renderHealth();renderStatus();renderCredentialPolicy();renderCredentials();renderModels();$('app').setAttribute('aria-busy','false');}
+function renderAll(){renderHealth();renderStatus();renderCredentialPolicy();renderCredentials();renderCredentialUsage();renderModels();$('app').setAttribute('aria-busy','false');}
 function setBusy(value){patching=value;$('app').classList.toggle('busy',value);$('app').setAttribute('aria-busy',String(value));}
+
+async function loadCredentialUsage(force=false){
+  usageLoading=true;credentialUsageError='';renderCredentialUsage();
+  try{
+    credentialUsageData=await fetchJson(force?'/admin/credentials/usage/refresh':'/admin/credentials/usage',{method:force?'POST':'GET'},true);
+  }catch(error){
+    credentialUsageError=errorMessage(error);
+    if(error&&error.status===401)handleAdminError(error);else showToast(credentialUsageError,true);
+  }finally{
+    usageLoading=false;renderCredentialUsage();
+  }
+}
 
 async function patchConfig(payload){
   if(patching){showToast('이전 변경을 적용하는 중입니다.');return false;}
@@ -408,6 +488,7 @@ async function patchConfig(payload){
     renderAll();
     hidePageState();
     showToast('변경을 적용했습니다.');
+    loadCredentialUsage(false);
     return true;
   }catch(error){
     setBusy(false);
@@ -421,7 +502,6 @@ async function patchConfig(payload){
 
 async function loadDashboard(){
   $('app').setAttribute('aria-busy','true');
-  showPageState('상태와 설정을 불러오는 중입니다.');
   const healthRequest=fetchJson('/health').then(value=>{healthData=value;renderHealth();}).catch(()=>{healthData=null;renderHealth();});
   await healthRequest;
   const clientAuthEnabled=!healthData||!healthData.auth||healthData.auth.client_auth_enabled!==false;
@@ -432,8 +512,10 @@ async function loadDashboard(){
   }
   try{
     dashboardData=await fetchJson('/admin/config',{},true);
+    usageLoading=true;
     renderAll();
     hidePageState();
+    await loadCredentialUsage(false);
   }catch(error){
     handleAdminError(error);
   }
@@ -450,6 +532,7 @@ $('authForm').addEventListener('submit',async event=>{
 $('authCancel').addEventListener('click',()=>$('authDialog').close());
 $('changeKey').addEventListener('click',()=>showAuth());
 $('modelSearch').addEventListener('input',renderModels);
+$('refreshCredentialUsage').addEventListener('click',async()=>{await loadCredentialUsage(true);});
 $('credentialRoutingPolicy').addEventListener('change',async event=>{await patchConfig({credentialPolicy:{routingPolicy:event.currentTarget.value}});});
 $('credentialFailoverPolicy').addEventListener('change',async event=>{await patchConfig({credentialPolicy:{failoverOn:event.currentTarget.value}});});
 $('addCredential').addEventListener('submit',async event=>{

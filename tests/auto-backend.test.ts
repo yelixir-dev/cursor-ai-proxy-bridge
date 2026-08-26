@@ -456,4 +456,33 @@ describe('automatic backend runtime failover', () => {
     expect(health.activeBackend).toBe('cursor-api');
     expect(health.flipState?.consecutiveFatal).toBe(0);
   });
+
+  it('reads credential usage from cursor-api while CLI fallback is active', async () => {
+    const direct = api();
+    direct.credentialUsage = vi.fn(async () => [
+      {
+        id: 'primary',
+        enabled: true,
+        status: 'fresh' as const,
+        fetchedAt: 123,
+        pools: {
+          cursorModels: { usedPercent: 5, modelIds: ['composer-2.5'] },
+          otherModels: { usedPercent: 25 },
+        },
+      },
+    ]);
+    const automatic = new AutoCursorBackend(direct, backend('cursor-cli'), {
+      now: () => 1_000,
+      warn: vi.fn(),
+      cooldownMs: 100,
+      fatalThreshold: 3,
+      probeTimeoutMs: 10,
+      initial: 'cursor-cli',
+    });
+
+    await expect(automatic.credentialUsage({ force: true })).resolves.toMatchObject([
+      { id: 'primary', status: 'fresh' },
+    ]);
+    expect(direct.credentialUsage).toHaveBeenCalledWith({ force: true });
+  });
 });

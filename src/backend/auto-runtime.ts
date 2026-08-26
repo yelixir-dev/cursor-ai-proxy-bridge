@@ -1,8 +1,13 @@
+import { type RequestTrace, requestTrace, traceBackend, traceBackendFlip } from '../trace.js';
+import type {
+  CursorCredentialUsageOptions,
+  CursorCredentialUsageView,
+} from './cursor-api/account-usage.js';
+import type { CursorCredentialPolicyConfig } from './cursor-api/credential-policy.js';
 import type {
   CursorApiCredential,
   CursorApiCredentialStateView,
 } from './cursor-api/credentials.js';
-import type { CursorCredentialPolicyConfig } from './cursor-api/credential-policy.js';
 import { cursorRetryFailureKind } from './cursor-api/index.js';
 import {
   cursorProviderErrorDiagnostics,
@@ -17,7 +22,6 @@ import type {
   CompletionStreamEvent,
   CursorBackend,
 } from './types.js';
-import { requestTrace, traceBackend, traceBackendFlip, type RequestTrace } from '../trace.js';
 
 export interface ProbeableCursorApiBackend extends CursorBackend {
   initialize(timeoutMs?: number): Promise<void>;
@@ -210,6 +214,12 @@ export class AutoCursorBackend implements CursorBackend {
 
   credentialStates(): CursorApiCredentialStateView[] {
     return this.api.credentialStates?.() ?? [];
+  }
+
+  credentialUsage(
+    options: CursorCredentialUsageOptions = {},
+  ): Promise<CursorCredentialUsageView[]> {
+    return this.api.credentialUsage?.(options) ?? Promise.resolve([]);
   }
 
   updateCredentials(credentials: CursorApiCredential[]): void {

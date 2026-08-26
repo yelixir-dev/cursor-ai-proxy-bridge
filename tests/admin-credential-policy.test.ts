@@ -163,6 +163,10 @@ describe('admin credential policy', () => {
     expect(dashboard.body).toContain('id="credentialFailoverPolicy"');
     expect(dashboard.body).toContain('id="credentialWeightHeading"');
     expect(dashboard.body).toContain('id="credentialWeightPolicyNote"');
+    expect(dashboard.body).toContain('id="credentialUsageList"');
+    expect(dashboard.body).toContain('id="refreshCredentialUsage"');
+    expect(dashboard.body).toContain('/admin/credentials/usage');
+    expect(dashboard.body).toContain('function renderCredentialUsage');
     await server.close();
   });
 });

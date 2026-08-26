@@ -95,6 +95,20 @@ export function registerManagementRoutes(context: ServerContext): void {
     return adminConfigResponse();
   });
 
+  app.get('/admin/credentials/usage', async (request, reply) => {
+    if (!(await requireClientAuth(request, reply, config))) return reply;
+    return {
+      credentials: (await backend.credentialUsage?.({ force: false })) ?? [],
+    };
+  });
+
+  app.post('/admin/credentials/usage/refresh', async (request, reply) => {
+    if (!(await requireClientAuth(request, reply, config))) return reply;
+    return {
+      credentials: (await backend.credentialUsage?.({ force: true })) ?? [],
+    };
+  });
+
   app.patch('/admin/config', async (request, reply) => {
     if (!(await requireClientAuth(request, reply, config))) return reply;
     const parsed = adminConfigPatchSchema.safeParse(request.body);
