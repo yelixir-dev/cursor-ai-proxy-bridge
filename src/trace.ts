@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type { CursorProviderErrorDiagnostics } from './backend/cursor-api/provider-error.js';
 import type { UsageSource } from './backend/types.js';
@@ -24,6 +23,7 @@ export type {
   TraceTerminal,
 } from './trace-contract.js';
 export { assertSafeTraceFields } from './trace-contract.js';
+export { credentialSlotId, traceCredentialSlot } from './trace-credential-slot.js';
 
 export type TraceSink = (record: TraceRecord) => void;
 
@@ -140,6 +140,14 @@ export function traceStage(
     ...(fields.nextCredentialSlotId === undefined
       ? {}
       : { next_credential_slot_id: fields.nextCredentialSlotId }),
+    ...(fields.credentialPlan === undefined ? {} : { credential_plan: fields.credentialPlan }),
+    ...(fields.credentialEligibility === undefined
+      ? {}
+      : { credential_eligibility: fields.credentialEligibility }),
+    ...(fields.routingPolicy === undefined ? {} : { routing_policy: fields.routingPolicy }),
+    ...(fields.ultraReserveBypassed === undefined
+      ? {}
+      : { ultra_reserve_bypassed: fields.ultraReserveBypassed }),
     ...(fields.toolCallsAnnounced === undefined
       ? {}
       : { tool_calls_announced: fields.toolCallsAnnounced }),
@@ -180,15 +188,6 @@ export function traceBackend(trace: RequestTrace | undefined, backend: string): 
   if (!trace || trace.onceStages.has('backend')) return;
   trace.backend = backend;
   traceStage(trace, 'backend');
-}
-
-export function credentialSlotId(credentialId: string): string {
-  const digest = createHash('sha256').update(credentialId).digest('hex').slice(0, 16);
-  return `slot_${digest}`;
-}
-
-export function traceCredentialSlot(trace: RequestTrace | undefined, credentialId: string): void {
-  if (trace) trace.credentialSlotId = credentialSlotId(credentialId);
 }
 
 export function traceRetryProvider5xxPolicy(

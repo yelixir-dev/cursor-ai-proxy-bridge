@@ -11,8 +11,21 @@ import { buildServer } from '../src/server.js';
 
 const headers = { authorization: 'Bearer test-admin-key' };
 const credentials = [
-  { id: 'primary', apiKey: 'primary-test-key', weight: 99, enabled: true },
-  { id: 'secondary', apiKey: 'secondary-test-key', weight: 1, enabled: true },
+  {
+    id: 'primary',
+    apiKey: 'primary-test-key',
+    weight: 99,
+    enabled: true,
+    plan: 'ultra' as const,
+    capabilities: { fable: true },
+  },
+  {
+    id: 'secondary',
+    apiKey: 'secondary-test-key',
+    weight: 1,
+    enabled: true,
+    plan: 'pro_plus' as const,
+  },
 ];
 
 const request = (content: string) => ({
@@ -165,6 +178,9 @@ describe('admin credential policy', () => {
     expect(dashboard.body).toContain('id="credentialWeightPolicyNote"');
     expect(dashboard.body).toContain('id="credentialUsageList"');
     expect(dashboard.body).toContain('id="refreshCredentialUsage"');
+    expect(dashboard.body).toContain('value="ultra_last"');
+    expect(dashboard.body).toContain('id="credentialPlan"');
+    expect(dashboard.body).toContain('data-credential-requirement');
     expect(dashboard.body).toContain('/admin/credentials/usage');
     expect(dashboard.body).toContain('function renderCredentialUsage');
     await server.close();

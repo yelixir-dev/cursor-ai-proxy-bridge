@@ -220,6 +220,7 @@ export class CursorApiCompletion {
           signal: lifecycle.signal,
           trace: lifecycle.trace,
           canFailover: () => !gate.delivered,
+          model: request.model,
           ...(preferredCredentialId === undefined ? {} : { preferredCredentialId }),
         });
       } catch (error) {

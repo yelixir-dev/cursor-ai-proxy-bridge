@@ -62,6 +62,9 @@ export function registerManagementRoutes(context: ServerContext): void {
             id: model.id,
             enabled: modelPolicy.enabled(model.id),
             source: modelPolicy.source(model.id),
+            ...(model.credential_requirement === undefined
+              ? {}
+              : { credentialRequirement: model.credential_requirement }),
           })),
       },
     };
@@ -151,6 +154,10 @@ export function registerManagementRoutes(context: ServerContext): void {
       };
       const label = update.label ?? existing?.label;
       if (label !== undefined) next.label = label;
+      const plan = update.plan ?? existing?.plan;
+      if (plan !== undefined) next.plan = plan;
+      const capabilities = update.capabilities ?? existing?.capabilities;
+      if (capabilities !== undefined) next.capabilities = capabilities;
       if (index >= 0) credentials[index] = next;
       else credentials.push(next);
     }

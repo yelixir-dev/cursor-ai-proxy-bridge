@@ -10,6 +10,7 @@ import {
   CURSOR_CREDENTIAL_FAILOVER_POLICIES,
   CURSOR_CREDENTIAL_ROUTING_POLICIES,
 } from './backend/cursor-api/credential-policy.js';
+import { CURSOR_CREDENTIAL_PLANS } from './backend/cursor-api/credential-plan.js';
 
 const credentialSchema = z
   .object({
@@ -18,6 +19,13 @@ const credentialSchema = z
     apiKey: z.string().trim().min(1),
     weight: z.number().positive().default(1),
     enabled: z.boolean().default(true),
+    plan: z.enum(CURSOR_CREDENTIAL_PLANS).optional(),
+    capabilities: z
+      .object({
+        fable: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -71,6 +79,8 @@ export interface RedactedCursorCredential {
   weight: number;
   enabled: boolean;
   apiKeyPreview?: string;
+  plan?: DashboardCredential['plan'];
+  capabilities?: DashboardCredential['capabilities'];
 }
 
 function expandHome(path: string): string {
@@ -122,6 +132,10 @@ export function redactedCredentials(
       enabled: credential.enabled !== false,
     };
     if (credential.label !== undefined) redacted.label = credential.label;
+    if (credential.plan !== undefined) redacted.plan = credential.plan;
+    if (credential.capabilities !== undefined) {
+      redacted.capabilities = { ...credential.capabilities };
+    }
     if (credential.apiKey) {
       redacted.apiKeyPreview =
         credential.apiKey.length <= 4 ? '…' : `${credential.apiKey.slice(0, 4)}…`;

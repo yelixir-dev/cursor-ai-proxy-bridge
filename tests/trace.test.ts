@@ -1,3 +1,4 @@
+// allow: SIZE_OK — end-to-end trace contract matrix shares one server and transport harness.
 import { EventEmitter } from 'node:events';
 import { request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -11,6 +12,7 @@ import {
   type CursorRunStream,
 } from '../src/backend/cursor-api/transport.js';
 import { createMockBackend } from '../src/backend/mock.js';
+import { traceCredentialSelection } from '../src/credential-trace.js';
 import type {
   BackendHealth,
   ChatCompletionRequest,
@@ -264,8 +266,10 @@ describe('bridge request tracing', () => {
       'accepted',
       'queue_acquired',
       'backend',
+      'credential_route',
       'run_open',
       'retry',
+      'credential_route',
       'run_open',
       'first_event',
       'terminal',
@@ -395,6 +399,31 @@ describe('bridge request tracing', () => {
         next_credential_slot_id: 'slot_2222222222222222',
       }),
     ]);
+  });
+
+  it('records allowlisted model-aware credential selection metadata', () => {
+    const records: TraceRecord[] = [];
+    const trace = testTrace(records);
+
+    traceCredentialSelection(trace, {
+      selectedCredentialId: 'credential-secret-name',
+      selectedPlan: 'ultra',
+      eligibility: 'standard',
+      routingPolicy: 'ultra_last',
+      ultraReserveBypassed: true,
+    });
+
+    expect(records).toEqual([
+      expect.objectContaining({
+        stage: 'credential_route',
+        credential_slot_id: expect.stringMatching(/^slot_[0-9a-f]{16}$/u),
+        credential_plan: 'ultra',
+        credential_eligibility: 'standard',
+        routing_policy: 'ultra_last',
+        ultra_reserve_bypassed: true,
+      }),
+    ]);
+    expect(JSON.stringify(records)).not.toContain('credential-secret-name');
   });
 
   it('rejects malformed credential failover trace fields', () => {

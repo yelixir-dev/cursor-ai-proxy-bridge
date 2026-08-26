@@ -1,4 +1,4 @@
-import { traceCredentialFailover } from '../../credential-trace.js';
+import { traceCredentialFailover, traceCredentialSelection } from '../../credential-trace.js';
 import { traceCredentialSlot, type RequestTrace } from '../../trace.js';
 import type { CursorApiCredential } from './credentials.js';
 import type { CursorApiRuntime } from './runtime.js';
@@ -8,6 +8,7 @@ export interface CursorCredentialOperation<T> {
   readonly signal?: AbortSignal;
   readonly trace?: RequestTrace;
   readonly canFailover?: () => boolean;
+  readonly model?: string;
   readonly preferredCredentialId?: string;
 }
 
@@ -22,6 +23,7 @@ export function withCursorCredential<T>(
     },
     {
       ...(options.canFailover === undefined ? {} : { canFailover: options.canFailover }),
+      ...(options.model === undefined ? {} : { model: options.model }),
       ...(options.preferredCredentialId === undefined
         ? {}
         : { preferredCredentialId: options.preferredCredentialId }),
@@ -32,6 +34,7 @@ export function withCursorCredential<T>(
           decision.reason,
           decision.nextCredentialId,
         ),
+      onSelection: (decision) => traceCredentialSelection(options.trace, decision),
     },
   );
 }

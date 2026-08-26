@@ -21,11 +21,13 @@ describe('dashboard config persistence', () => {
           apiKey: 'test-dashboard-secret',
           weight: 2,
           enabled: true,
+          plan: 'ultra',
+          capabilities: { fable: true },
         },
       ],
       modelOverrides: { 'composer-latest': true },
       credentialPolicy: {
-        routingPolicy: 'round_robin',
+        routingPolicy: 'ultra_last',
         failoverOn: 'auth_or_quota_or_5xx',
       },
     } satisfies DashboardConfig;
@@ -47,7 +49,15 @@ describe('dashboard config persistence', () => {
   it('redacts credentials without leaking complete keys', () => {
     const fullKey = 'test-full-api-key-value';
     const redacted = redactedCredentials([
-      { id: 'one', label: 'One', apiKey: fullKey, weight: 3, enabled: false },
+      {
+        id: 'one',
+        label: 'One',
+        apiKey: fullKey,
+        weight: 3,
+        enabled: false,
+        plan: 'ultra',
+        capabilities: { fable: true },
+      },
     ]);
     const serialized = JSON.stringify(redacted);
 
@@ -58,6 +68,8 @@ describe('dashboard config persistence', () => {
         apiKeyPreview: 'test…',
         weight: 3,
         enabled: false,
+        plan: 'ultra',
+        capabilities: { fable: true },
       },
     ]);
     expect(serialized).not.toContain(fullKey);

@@ -1,4 +1,6 @@
 import type { UsageSource } from './backend/types.js';
+import type { CursorCredentialRoutingPolicy } from './backend/cursor-api/credential-policy.js';
+import type { CursorCredentialPlan } from './backend/cursor-api/credential-plan.js';
 
 export type TraceStage =
   | 'accepted'
@@ -10,6 +12,7 @@ export type TraceStage =
   | 'first_event'
   | 'tool_decision'
   | 'tool_batch_complete'
+  | 'credential_route'
   | 'credential_failover'
   | 'retry'
   | 'upstream_error'
@@ -21,6 +24,8 @@ export type TraceRetryKind = 'server' | 'transport' | 'tool_validation';
 export type TraceRetryDecline = 'flag_off' | 'post_visible' | 'retry_limit';
 export type TraceRetryReason = 'provider_5xx' | 'run_timeout';
 export type TraceCredentialExclusionReason = 'auth' | 'billing' | 'cooldown';
+export type TraceCredentialPlan = CursorCredentialPlan | 'unclassified';
+export type TraceCredentialEligibility = 'fable_capable' | 'standard';
 export type TraceTerminal = 'success' | 'error' | 'abort' | 'rate_limited';
 
 export interface TraceRecord {
@@ -38,6 +43,10 @@ export interface TraceRecord {
   excluded_credential_slot_id?: string;
   credential_exclusion_reason?: TraceCredentialExclusionReason;
   next_credential_slot_id?: string;
+  credential_plan?: TraceCredentialPlan;
+  credential_eligibility?: TraceCredentialEligibility;
+  routing_policy?: CursorCredentialRoutingPolicy;
+  ultra_reserve_bypassed?: boolean;
   usage_source?: UsageSource;
   final_backend_state?: string;
   cancelled?: boolean;
@@ -62,6 +71,10 @@ export interface TraceSafeFields {
   excludedCredentialSlotId?: string;
   credentialExclusionReason?: TraceCredentialExclusionReason;
   nextCredentialSlotId?: string;
+  credentialPlan?: TraceCredentialPlan;
+  credentialEligibility?: TraceCredentialEligibility;
+  routingPolicy?: CursorCredentialRoutingPolicy;
+  ultraReserveBypassed?: boolean;
   usageSource?: UsageSource;
   quiescent?: boolean;
   terminal?: TraceTerminal;
@@ -88,6 +101,9 @@ const retryKinds = new Set<TraceRetryKind>(['server', 'transport', 'tool_validat
 const retryDeclines = new Set<string>(['flag_off', 'post_visible', 'retry_limit']);
 const retryReasons = new Set<string>(['provider_5xx', 'run_timeout']);
 const credentialExclusionReasons = new Set<string>(['auth', 'billing', 'cooldown']);
+const credentialPlans = new Set<string>(['ultra', 'pro_plus', 'pro', 'other', 'unclassified']);
+const credentialEligibilities = new Set<string>(['fable_capable', 'standard']);
+const routingPolicies = new Set<string>(['weighted_round_robin', 'round_robin', 'ultra_last']);
 const usageSources = new Set<UsageSource>(['turnEnded', 'cli_reported', 'estimated', 'unknown']);
 const terminals = new Set<TraceTerminal>(['success', 'error', 'abort', 'rate_limited']);
 const safeFieldNames = new Set<keyof TraceSafeFields>([
@@ -99,6 +115,10 @@ const safeFieldNames = new Set<keyof TraceSafeFields>([
   'excludedCredentialSlotId',
   'credentialExclusionReason',
   'nextCredentialSlotId',
+  'credentialPlan',
+  'credentialEligibility',
+  'routingPolicy',
+  'ultraReserveBypassed',
   'usageSource',
   'quiescent',
   'terminal',
@@ -160,6 +180,31 @@ export function assertSafeTraceFields(fields: unknown): asserts fields is TraceS
       !/^slot_[0-9a-f]{16}$/u.test(values.nextCredentialSlotId))
   ) {
     throw new TypeError('invalid credential failover trace fields');
+  }
+  if (
+    values.credentialPlan !== undefined &&
+    (typeof values.credentialPlan !== 'string' || !credentialPlans.has(values.credentialPlan))
+  ) {
+    throw new TypeError('invalid trace credential plan');
+  }
+  if (
+    values.credentialEligibility !== undefined &&
+    (typeof values.credentialEligibility !== 'string' ||
+      !credentialEligibilities.has(values.credentialEligibility))
+  ) {
+    throw new TypeError('invalid trace credential eligibility');
+  }
+  if (
+    values.routingPolicy !== undefined &&
+    (typeof values.routingPolicy !== 'string' || !routingPolicies.has(values.routingPolicy))
+  ) {
+    throw new TypeError('invalid trace routing policy');
+  }
+  if (
+    values.ultraReserveBypassed !== undefined &&
+    typeof values.ultraReserveBypassed !== 'boolean'
+  ) {
+    throw new TypeError('trace ultraReserveBypassed must be a boolean');
   }
   if (
     values.usageSource !== undefined &&

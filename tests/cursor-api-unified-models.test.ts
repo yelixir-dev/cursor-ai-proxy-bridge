@@ -111,6 +111,19 @@ describe('unified model surface', () => {
     ]);
   });
 
+  it('marks every advertised Fable variant as requiring Ultra credentials', () => {
+    const listed = unifiedModelList(
+      ['claude-fable-5-low', 'claude-fable-5-thinking-high'].map(model),
+    );
+
+    expect(
+      listed.map(({ id, credential_requirement }) => ({ id, credential_requirement })),
+    ).toEqual([
+      { id: 'fable-5', credential_requirement: 'ultra' },
+      { id: 'fable-5-thinking', credential_requirement: 'ultra' },
+    ]);
+  });
+
   it('resolves unified ids with default effort medium', () => {
     expect(resolveVariantSlug('opus-5', undefined, LIVE_SLUGS)).toBe('claude-opus-5-medium');
     expect(resolveVariantSlug('gpt-5.6-sol-fast', undefined, LIVE_SLUGS)).toBe(

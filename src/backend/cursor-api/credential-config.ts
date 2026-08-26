@@ -1,9 +1,13 @@
+import type { CursorCredentialCapabilities, CursorCredentialPlan } from './credential-plan.js';
+
 export interface CursorApiCredential {
   id: string;
   label?: string;
   apiKey?: string;
   weight: number;
   enabled: boolean;
+  plan?: CursorCredentialPlan;
+  capabilities?: CursorCredentialCapabilities;
 }
 
 export interface CursorApiCredentialInput {
@@ -12,6 +16,8 @@ export interface CursorApiCredentialInput {
   apiKey?: string;
   weight?: number;
   enabled?: boolean;
+  plan?: CursorCredentialPlan;
+  capabilities?: CursorCredentialCapabilities;
 }
 
 function positiveWeight(value: number | undefined): number {
@@ -28,6 +34,10 @@ export function normalizeCursorApiCredential(
   };
   if (credential.label !== undefined) normalized.label = credential.label;
   if (credential.apiKey !== undefined) normalized.apiKey = credential.apiKey;
+  if (credential.plan !== undefined) normalized.plan = credential.plan;
+  if (credential.capabilities !== undefined) {
+    normalized.capabilities = { ...credential.capabilities };
+  }
   return normalized;
 }
 

@@ -3,6 +3,7 @@ import {
   CURSOR_CREDENTIAL_FAILOVER_POLICIES,
   CURSOR_CREDENTIAL_ROUTING_POLICIES,
 } from '../backend/cursor-api/credential-policy.js';
+import { CURSOR_CREDENTIAL_PLANS } from '../backend/cursor-api/credential-plan.js';
 
 const IMAGE_OMITTED_PLACEHOLDER = '[image omitted: cursor composer bridge is text-only]';
 const MAX_CONTENT_PARTS = 1_000;
@@ -132,6 +133,13 @@ export const adminConfigPatchSchema = z
             apiKey: z.string().trim().min(1).optional(),
             weight: z.number().positive().optional(),
             enabled: z.boolean().optional(),
+            plan: z.enum(CURSOR_CREDENTIAL_PLANS).optional(),
+            capabilities: z
+              .object({
+                fable: z.boolean().optional(),
+              })
+              .strict()
+              .optional(),
             _delete: z.boolean().optional(),
           })
           .strict(),

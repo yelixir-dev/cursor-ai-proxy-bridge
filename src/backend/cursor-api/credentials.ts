@@ -4,12 +4,25 @@ import {
   normalizeCursorApiCredential,
 } from './credential-config.js';
 import {
+  NoEligibleCursorCredentialError,
+  credentialSelectionDecision,
+  credentialSupportsModel,
+  isUltraCredential,
+  modelCredentialRequirement,
+} from './credential-plan.js';
+import {
   type CredentialDisabledReason,
   type CursorCredentialFailoverPolicy,
   type CursorCredentialPolicyConfig,
   type CursorCredentialRoutingPolicy,
   cursorCredentialFailureReason,
 } from './credential-policy.js';
+import {
+  type CursorApiCredentialStateView,
+  type CursorCredentialRouteOptions,
+  type CursorCredentialRouterOptions,
+  NoAvailableCursorCredentialError,
+} from './credential-router-types.js';
 
 export type { CursorApiCredential, CursorApiCredentialInput } from './credential-config.js';
 export { cursorCredentialsFromConfig } from './credential-config.js';
@@ -19,16 +32,13 @@ export type {
   CursorCredentialPolicyConfig,
   CursorCredentialRoutingPolicy,
 } from './credential-policy.js';
-
-export interface CursorApiCredentialStateView {
-  id: string;
-  label?: string;
-  enabled: boolean;
-  disabledReason?: CredentialDisabledReason;
-  disabledUntil?: number;
-  inFlight: number;
-  routerPicks: number;
-}
+export { NoAvailableCursorCredentialError } from './credential-router-types.js';
+export type {
+  CursorApiCredentialStateView,
+  CursorCredentialFailoverDecision,
+  CursorCredentialRouteOptions,
+  CursorCredentialRouterOptions,
+} from './credential-router-types.js';
 
 interface CursorApiCredentialState {
   credential: CursorApiCredential;
@@ -37,33 +47,6 @@ interface CursorApiCredentialState {
   routerPicks: number;
   disabledReason?: CredentialDisabledReason;
   disabledUntil: number;
-}
-
-export interface CursorCredentialRouterOptions {
-  credentials: CursorApiCredentialInput[];
-  cooldownMs?: number;
-  now?: () => number;
-  routingPolicy?: CursorCredentialRoutingPolicy;
-  failoverOn?: CursorCredentialFailoverPolicy;
-}
-
-export interface CursorCredentialFailoverDecision {
-  readonly excludedCredentialId: string;
-  readonly reason: CredentialDisabledReason;
-  readonly nextCredentialId: string;
-}
-
-export interface CursorCredentialRouteOptions {
-  readonly canFailover?: () => boolean;
-  readonly preferredCredentialId?: string;
-  readonly onFailover?: (decision: CursorCredentialFailoverDecision) => void;
-}
-
-export class NoAvailableCursorCredentialError extends Error {
-  constructor(message = 'No enabled Cursor API credentials are available') {
-    super(message);
-    this.name = 'NoAvailableCursorCredentialError';
-  }
 }
 
 export function isCredentialAuthFailure(error: unknown): boolean {
@@ -150,10 +133,10 @@ export class CursorCredentialRouter {
     });
   }
 
-  pick(excludeIds: Iterable<string> = []): CursorApiCredential {
+  pick(excludeIds: Iterable<string> = [], model?: string): CursorApiCredential {
     const excluded = new Set(excludeIds);
     const now = this.now();
-    const candidates = this.states.filter((state) => {
+    const available = this.states.filter((state) => {
       this.recoverIfReady(state, now);
       return (
         !excluded.has(state.credential.id) &&
@@ -161,6 +144,14 @@ export class CursorCredentialRouter {
         state.disabledReason === undefined
       );
     });
+    let candidates = available.filter((state) => credentialSupportsModel(state.credential, model));
+    if (modelCredentialRequirement(model ?? '') === 'ultra' && candidates.length === 0) {
+      throw new NoEligibleCursorCredentialError(model ?? '');
+    }
+    if (this.routingPolicy === 'ultra_last') {
+      const nonUltra = candidates.filter((state) => !isUltraCredential(state.credential));
+      if (nonUltra.length > 0) candidates = nonUltra;
+    }
     if (candidates.length === 0) throw new NoAvailableCursorCredentialError();
 
     let selected: CursorApiCredentialState | undefined;
@@ -178,12 +169,15 @@ export class CursorCredentialRouter {
     return { ...selected.credential };
   }
 
-  pickById(id: string): CursorApiCredential {
+  pickById(id: string, model?: string): CursorApiCredential {
     const state = this.states.find((candidate) => candidate.credential.id === id);
     if (!state) throw new NoAvailableCursorCredentialError();
     this.recoverIfReady(state, this.now());
     if (!state.credential.enabled || state.disabledReason !== undefined) {
       throw new NoAvailableCursorCredentialError();
+    }
+    if (!credentialSupportsModel(state.credential, model)) {
+      throw new NoEligibleCursorCredentialError(model ?? '');
     }
     state.inFlight += 1;
     state.routerPicks += 1;
@@ -208,8 +202,9 @@ export class CursorCredentialRouter {
   ): Promise<T> {
     const first =
       options.preferredCredentialId === undefined
-        ? this.pick()
-        : this.pickById(options.preferredCredentialId);
+        ? this.pick([], options.model)
+        : this.pickById(options.preferredCredentialId, options.model);
+    options.onSelection?.(credentialSelectionDecision(first, options.model, this.routingPolicy));
     try {
       const result = await operation(first);
       this.release(first.id);
@@ -226,9 +221,14 @@ export class CursorCredentialRouter {
 
       let second: CursorApiCredential;
       try {
-        second = this.pick([first.id]);
+        second = this.pick([first.id], options.model);
       } catch (pickError) {
-        if (pickError instanceof NoAvailableCursorCredentialError) throw error;
+        if (
+          pickError instanceof NoAvailableCursorCredentialError ||
+          pickError instanceof NoEligibleCursorCredentialError
+        ) {
+          throw error;
+        }
         throw pickError;
       }
       try {
@@ -237,6 +237,9 @@ export class CursorCredentialRouter {
           reason,
           nextCredentialId: second.id,
         });
+        options.onSelection?.(
+          credentialSelectionDecision(second, options.model, this.routingPolicy),
+        );
         const result = await operation(second);
         this.release(second.id);
         return result;

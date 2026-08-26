@@ -1,3 +1,4 @@
+// allow: SIZE_OK — cohesive credential routing matrix shares failure fixtures and router state.
 import { describe, expect, it } from 'vitest';
 import { ConnectRpcError } from '../src/backend/cursor-api/connect-frame.js';
 import {
@@ -67,6 +68,142 @@ describe('Cursor API credential routing', () => {
     });
 
     expect(picks).toEqual(['primary', 'secondary', 'primary', 'secondary']);
+  });
+
+  it('routes every Fable alias only to an explicitly capable credential', async () => {
+    const router = new CursorCredentialRouter({
+      credentials: [
+        { id: 'pro-plus', apiKey: 'key-pro-plus', plan: 'pro_plus', weight: 99 },
+        {
+          id: 'ultra',
+          apiKey: 'key-ultra',
+          plan: 'ultra',
+          capabilities: { fable: true },
+          weight: 1,
+        },
+      ],
+      routingPolicy: 'ultra_last',
+    });
+
+    for (const model of ['fable-5', 'claude-fable-5', 'fable-5-thinking']) {
+      await expect(router.route(async (credential) => credential.id, { model })).resolves.toBe(
+        'ultra',
+      );
+    }
+  });
+
+  it('rejects Fable before upstream when no Ultra credential is available', async () => {
+    const router = new CursorCredentialRouter({
+      credentials: [{ id: 'pro-plus', apiKey: 'key-pro-plus', plan: 'pro_plus' }],
+      routingPolicy: 'ultra_last',
+    });
+    const attempted: string[] = [];
+
+    await expect(
+      router.route(
+        async (credential) => {
+          attempted.push(credential.id);
+          return credential.id;
+        },
+        { model: 'fable-5' },
+      ),
+    ).rejects.toThrow(
+      'Model fable-5 requires an Ultra credential; no eligible Ultra credential is currently available',
+    );
+    expect(attempted).toEqual([]);
+  });
+
+  it('reserves Ultra for normal models until non-Ultra credentials are unavailable', () => {
+    const router = new CursorCredentialRouter({
+      credentials: [
+        { id: 'ultra', apiKey: 'key-ultra', plan: 'ultra', capabilities: { fable: true } },
+        { id: 'pro-plus', apiKey: 'key-pro-plus', plan: 'pro_plus' },
+        { id: 'pro', apiKey: 'key-pro', plan: 'pro' },
+      ],
+      routingPolicy: 'ultra_last',
+      now: () => 1_000,
+    });
+
+    const initial = [router.pick([], 'composer-2.5'), router.pick([], 'composer-2.5')];
+    for (const credential of initial) router.release(credential.id);
+    expect(initial.map((credential) => credential.id).sort()).toEqual(['pro', 'pro-plus']);
+
+    router.disable('pro-plus', 'billing');
+    router.disable('pro', 'cooldown');
+    const reserved = router.pick([], 'composer-2.5');
+    router.release(reserved.id);
+    expect(reserved.id).toBe('ultra');
+  });
+
+  it('fails over from exhausted non-Ultra capacity to the Ultra reserve', async () => {
+    const router = new CursorCredentialRouter({
+      credentials: [
+        { id: 'pro-plus', apiKey: 'key-pro-plus', plan: 'pro_plus' },
+        { id: 'ultra', apiKey: 'key-ultra', plan: 'ultra', capabilities: { fable: true } },
+      ],
+      routingPolicy: 'ultra_last',
+      failoverOn: 'auth_or_quota_or_5xx',
+    });
+    const attempted: string[] = [];
+
+    await expect(
+      router.route(
+        async (credential) => {
+          attempted.push(credential.id);
+          if (credential.id === 'pro-plus') {
+            throw new CursorApiHttpError(503, 'unavailable');
+          }
+          return credential.id;
+        },
+        { model: 'composer-2.5' },
+      ),
+    ).resolves.toBe('ultra');
+    expect(attempted).toEqual(['pro-plus', 'ultra']);
+  });
+
+  it('reports safe model-aware selection metadata for each routed credential', async () => {
+    const router = new CursorCredentialRouter({
+      credentials: [
+        { id: 'pro-plus', apiKey: 'key-pro-plus', plan: 'pro_plus' },
+        { id: 'ultra', apiKey: 'key-ultra', plan: 'ultra', capabilities: { fable: true } },
+      ],
+      routingPolicy: 'ultra_last',
+      failoverOn: 'auth_or_quota_or_5xx',
+    });
+    const decisions: Array<{
+      selectedCredentialId: string;
+      selectedPlan: string;
+      eligibility: string;
+      ultraReserveBypassed: boolean;
+    }> = [];
+
+    await router.route(
+      async (credential) => {
+        if (credential.id === 'pro-plus') throw new CursorApiHttpError(503, 'unavailable');
+        return credential.id;
+      },
+      {
+        model: 'composer-2.5',
+        onSelection: (decision) => decisions.push(decision),
+      },
+    );
+
+    expect(decisions).toEqual([
+      {
+        selectedCredentialId: 'pro-plus',
+        selectedPlan: 'pro_plus',
+        eligibility: 'standard',
+        routingPolicy: 'ultra_last',
+        ultraReserveBypassed: false,
+      },
+      {
+        selectedCredentialId: 'ultra',
+        selectedPlan: 'ultra',
+        eligibility: 'standard',
+        routingPolicy: 'ultra_last',
+        ultraReserveBypassed: true,
+      },
+    ]);
   });
 
   it('hot-updates routing and failover policy for subsequent requests', async () => {

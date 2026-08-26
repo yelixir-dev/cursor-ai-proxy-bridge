@@ -8,7 +8,11 @@ const MAX_CAUSE_DEPTH = 10;
 const BILLING_ERROR_NUMBERS = new Set([9, 10]);
 const COOLDOWN_ERROR_NUMBERS = new Set([7, 8, 22, 50, 51]);
 
-export const CURSOR_CREDENTIAL_ROUTING_POLICIES = ['weighted_round_robin', 'round_robin'] as const;
+export const CURSOR_CREDENTIAL_ROUTING_POLICIES = [
+  'weighted_round_robin',
+  'round_robin',
+  'ultra_last',
+] as const;
 export type CursorCredentialRoutingPolicy = (typeof CURSOR_CREDENTIAL_ROUTING_POLICIES)[number];
 
 export const CURSOR_CREDENTIAL_FAILOVER_POLICIES = [
@@ -40,7 +44,13 @@ export class CursorCredentialPolicyConfigError extends Error {
 function routingPolicy(value: string | undefined): CursorCredentialRoutingPolicy {
   const normalized = value?.trim();
   if (normalized === undefined || normalized === '') return 'weighted_round_robin';
-  if (normalized === 'weighted_round_robin' || normalized === 'round_robin') return normalized;
+  if (
+    normalized === 'weighted_round_robin' ||
+    normalized === 'round_robin' ||
+    normalized === 'ultra_last'
+  ) {
+    return normalized;
+  }
   throw new CursorCredentialPolicyConfigError(
     'CURSOR_BRIDGE_CREDENTIAL_ROUTING',
     normalized,

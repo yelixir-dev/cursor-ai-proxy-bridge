@@ -64,6 +64,7 @@ export interface BridgeModel {
   context_window?: number;
   context_length?: number;
   max_context_length?: number;
+  credential_requirement?: 'ultra';
 }
 
 export interface BackendHealth {
