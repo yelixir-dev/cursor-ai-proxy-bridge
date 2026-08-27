@@ -57,11 +57,15 @@ describe('builtin tool promotion mapping', () => {
   it('emits safe deterministic promoted builtin diagnostic metadata', () => {
     const toolRequest = {
       ...request('read', { path: { type: 'string' } }),
+      apiKey: 'secret-api-key',
+      messages: [{ role: 'user' as const, content: 'secret-prompt-content' }],
       reasoning_effort: 'xhigh',
     };
     const promoted = promoteBuiltinExec(toolRequest, { execId: 'read-exec' }, 'readArgs', {
       path: '/etc/hostname',
       toolCallId: 'read-call',
+      credential: 'secret-credential',
+      generatedContent: 'secret-generated-content',
     });
     if (!promoted) throw new Error('expected builtin promotion');
 
@@ -83,7 +87,11 @@ describe('builtin tool promotion mapping', () => {
       call_origin: 'model_generated_builtin',
       disposition: 'promoted',
     });
-    expect(JSON.stringify(log)).not.toContain('use a tool');
+    const serialized = JSON.stringify(log);
+    expect(serialized).not.toMatch(
+      /secret-api-key|secret-credential|secret-prompt-content|secret-generated-content/u,
+    );
+    expect(serialized).not.toContain('/etc/hostname');
   });
 
   it('maps Cursor Shell only to a declared shell or bash function', () => {

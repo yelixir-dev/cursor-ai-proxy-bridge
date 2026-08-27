@@ -6,6 +6,7 @@ import {
   validateToolCallArguments,
 } from '../tool-arguments.js';
 import { parseToolCallsFromText } from '../tool-call-parse.js';
+import { capToolCallsForRequest } from '../tool-call-policy.js';
 import type { ChatCompletionRequest, CompletionStreamEvent, ToolCall } from '../types.js';
 import { enforceNativeToolChoice } from './mapper.js';
 import { CursorBuiltinToolCallError } from './run-messages.js';
@@ -172,6 +173,10 @@ export async function runValidatedCursorCompletion(
     );
     options.onToolValidationFailure?.(outcome.toolCalls, policyError);
     throw policyError;
+  }
+  const cappedCalls = capToolCallsForRequest(request, outcome.toolCalls);
+  if (cappedCalls.length !== outcome.toolCalls.length) {
+    outcome = { ...outcome, toolCalls: cappedCalls };
   }
   if (outcome.toolCalls.length) {
     const failure = validateToolCallArguments(outcome.toolCalls, request.tools);

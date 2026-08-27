@@ -16,3 +16,11 @@ export function maximumToolCallsForRequest(request: ChatCompletionRequest): numb
   if (request.max_tool_calls !== undefined) return request.max_tool_calls;
   return request.parallel_tool_calls === false ? 1 : Number.POSITIVE_INFINITY;
 }
+
+export function capToolCallsForRequest<T>(
+  request: ChatCompletionRequest,
+  calls: readonly T[],
+): T[] {
+  const maximum = maximumToolCallsForRequest(request);
+  return Number.isFinite(maximum) ? calls.slice(0, maximum) : [...calls];
+}

@@ -6,6 +6,7 @@
   "scripts": {
     "test": "mkdir -p .vitest-tmp && TMPDIR=$PWD/.vitest-tmp vitest run --pool=threads --maxWorkers=1",
     "test:e2e": "npm run build && node scripts/e2e-smoke.mjs",
+    "test:live-tools": "node scripts/live-tool-matrix.mjs",
     "e2e": "node scripts/e2e-smoke.mjs",
     "extract-protos": "node scripts/extract-protos.mjs",
     "clean": "node -e \"import(\\\"node:fs\\\").then(fs=>fs.rmSync(\\\"dist\\\",{recursive:true,force:true}))\"",

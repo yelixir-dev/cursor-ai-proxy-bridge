@@ -1,1 +1,4 @@
 .omo/
+
+# Local needle-in-a-haystack benchmark artifacts.
+niah_*

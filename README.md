@@ -195,24 +195,41 @@ upstream and OpenAI SSE stages. API keys and prompt or generated text are never 
 
 ### npm scripts
 
-| Command                  | Purpose                                                                             |
-| ------------------------ | ----------------------------------------------------------------------------------- |
-| `npm run dev`            | Watch `src/index.ts` with `tsx`.                                                    |
-| `npm run build`          | Compile TypeScript and copy the descriptor snapshot when present.                   |
-| `npm start`              | Start `dist/index.js`.                                                              |
-| `npm run clean`          | Remove `dist`.                                                                      |
-| `npm run extract-protos` | Extract the reachable protocol descriptors from an installed `cursor-agent` bundle. |
-| `npm run typecheck`      | Run TypeScript without emitting files.                                              |
-| `npm run lint`           | Run ESLint.                                                                         |
-| `npm run format`         | Format the repository with Prettier.                                                |
-| `npm run format:check`   | Check repository formatting with Prettier.                                          |
-| `npm run test`           | Run the Vitest suite with one worker.                                               |
-| `npm run test:e2e`       | Build and run the Node smoke test against a real backend.                           |
-| `npm run verify`         | Run typecheck, lint, format check, tests, and build.                                |
+| Command                   | Purpose                                                                             |
+| ------------------------- | ----------------------------------------------------------------------------------- |
+| `npm run dev`             | Watch `src/index.ts` with `tsx`.                                                    |
+| `npm run build`           | Compile TypeScript and copy the descriptor snapshot when present.                   |
+| `npm start`               | Start `dist/index.js`.                                                              |
+| `npm run clean`           | Remove `dist`.                                                                      |
+| `npm run extract-protos`  | Extract the reachable protocol descriptors from an installed `cursor-agent` bundle. |
+| `npm run typecheck`       | Run TypeScript without emitting files.                                              |
+| `npm run lint`            | Run ESLint.                                                                         |
+| `npm run format`          | Format the repository with Prettier.                                                |
+| `npm run format:check`    | Check repository formatting with Prettier.                                          |
+| `npm run test`            | Run the Vitest suite with one worker.                                               |
+| `npm run test:e2e`        | Build and run the Node smoke test against a real backend.                           |
+| `npm run test:live-tools` | Run the explicitly enabled 10x live Cursor tool-call model matrix.                  |
+| `npm run verify`          | Run typecheck, lint, format check, tests, and build.                                |
 
 ### End to end smoke test
 
 Run `npm run test:e2e` with a usable Cursor backend. It consumes real Cursor quota and checks authentication, chat, tools, SSE, malformed requests, and disconnect cleanup.
+
+For an opt-in LiteLLM tool-call regression, point the live matrix at an OpenAI-compatible base
+URL. It runs ten sequential `tool_choice: "auto"` requests for each supported Cursor model and
+accepts only one exact `read_file` call per response. The command refuses to start unless the
+quota-consuming opt-in is present:
+
+```bash
+CURSOR_TOOL_MATRIX_LIVE=1 \
+CURSOR_TOOL_MATRIX_BASE_URL=http://127.0.0.1:9995 \
+CURSOR_TOOL_MATRIX_API_KEY="$YORHA_LITELLM_API_KEY" \
+npm run test:live-tools
+```
+
+`CURSOR_TOOL_MATRIX_RUNS` may be set from `1` through `100` for an intentional smoke or soak run.
+The reporter prints only model names, run numbers, HTTP status classes, and error types; it never
+prints credentials, prompts, generated content, or tool arguments.
 
 ## Usage
 
