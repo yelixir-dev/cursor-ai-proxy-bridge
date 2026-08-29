@@ -60,6 +60,7 @@ export const dashboardConfigSchema = z
       .strict()
       .optional(),
     modelOverrides: z.record(z.string(), z.boolean()).optional(),
+    maxModeDefault: z.boolean().optional(),
   })
   .strict()
   .superRefine((config, context) => {

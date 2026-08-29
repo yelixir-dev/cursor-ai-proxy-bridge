@@ -125,6 +125,7 @@ export const chatCompletionSchema = z.object({
 
 export const adminConfigPatchSchema = z
   .object({
+    maxModeDefault: z.boolean().optional(),
     credentials: z
       .array(
         z

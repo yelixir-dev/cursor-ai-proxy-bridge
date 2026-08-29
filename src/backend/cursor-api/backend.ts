@@ -7,6 +7,7 @@ import type {
   CompletionResult,
   CompletionStreamEvent,
   CursorBackend,
+  ModelVariantView,
 } from '../types.js';
 import type { CursorCredentialUsageOptions, CursorCredentialUsageView } from './account-usage.js';
 import { CursorApiCompletion } from './completion.js';
@@ -68,6 +69,18 @@ export class CursorApiBackend implements CursorBackend {
 
   updateCredentialPolicy(policy: CursorCredentialPolicyConfig): void {
     this.runtime.credentialRouter.updatePolicy(policy);
+  }
+
+  maxModeDefault(): boolean {
+    return this.discovery.maxModeEnabled;
+  }
+
+  updateMaxMode(enabled: boolean): void {
+    this.discovery.setMaxMode(enabled);
+  }
+
+  modelVariants(): ModelVariantView[] {
+    return this.discovery.modelVariants(this.discovery.cachedModels());
   }
 
   listModels(): Promise<BridgeModel[]> {

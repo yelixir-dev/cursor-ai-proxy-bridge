@@ -76,9 +76,80 @@ Cursor publishes every parameterized family twice: a standard variant and an `is
 | Kimi K3         | no `context` parameter | none             | 0                           |
 | GLM 5.2         | no `context` parameter | none             | 0                           |
 
-A family having a Max Mode variant does not mean the bridge selects it. `GetUsableModels` decides, per legacy slug, which of the two variants the account may use, and the bridge follows that decision instead of forcing Max Mode. On the account used for this measurement only the fast Opus 5 slugs resolve to their 1M variant, which is why `opus-5-fast` and `opus-5-thinking-fast` advertise `1000000` while `sonnet-5` stays at its 300,000 standard variant.
+A family having a Max Mode variant does not mean the bridge selects it by default. `GetUsableModels` decides, per legacy slug, which of the two variants the account uses, and the bridge follows that decision unless the Max Mode policy below is enabled.
 
 Families advertised without a `context` parameter have no Max Mode variant at all; they fall back to the documented table above.
+
+#### Selecting Max Mode
+
+`CURSOR_BRIDGE_MAX_MODE_DEFAULT` makes the preference explicit. It accepts only `true` or `false`; any other value fails startup rather than being guessed.
+
+```bash
+CURSOR_BRIDGE_MAX_MODE_DEFAULT=true
+```
+
+The same switch is available in `/dashboard` as **Max Mode 기본값** and over the admin API, both of which apply to the next request without a restart:
+
+```bash
+curl -sS -X PATCH http://127.0.0.1:9997/admin/config \
+  -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"maxModeDefault": true}'
+```
+
+When enabled, an advertised id resolves to its `isMaxMode` variant if the account publishes one, and falls back to the standard variant when it does not. Measured on the reference account:
+
+| Advertised id  | Policy off | Policy on                |
+| -------------- | ---------- | ------------------------ |
+| `sonnet-5`     | 300,000    | **1,000,000**            |
+| `opus-5`       | 300,000    | **1,000,000**            |
+| `fable-5`      | 300,000    | **1,000,000**            |
+| `gpt-5.6-sol`  | 272,000    | **1,000,000**            |
+| `kimi-k3`      | 200,000    | 200,000 (no max variant) |
+| `composer-2.5` | 200,000    | 200,000 (no max variant) |
+
+`reasoning_effort` is a separate axis and never enables Max Mode. `reasoning_effort: "max"` selects the strongest effort variant of whichever context tier is active, so with the policy off it still resolves to a standard-context variant.
+
+`GET /v1/models` marks each entry so a client can tell the tiers apart:
+
+```json
+{ "id": "sonnet-5", "is_max_mode": true, "context_window": 1000000 }
+```
+
+`GET /admin/config` reports the policy and the variant every advertised id resolves to:
+
+```json
+{
+  "config": { "maxModeDefault": true },
+  "state": {
+    "models": [
+      {
+        "id": "sonnet-5",
+        "resolvedVariant": "claude-sonnet-5-medium",
+        "isMaxMode": true,
+        "contextWindow": 1000000
+      }
+    ]
+  }
+}
+```
+
+#### Synchronizing a downstream router (LiteLLM)
+
+A downstream `model_info.max_input_tokens` that disagrees with the bridge causes silent truncation or upstream rejection. `GET /v1/models` is the single source of truth: `context_window` always describes the variant the bridge will actually run, so derive the router config from it instead of hand-maintaining numbers.
+
+```bash
+curl -sS http://127.0.0.1:9997/v1/models \
+  -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" |
+  jq -r '.data[] | "\(.id)\t\(.context_window)\t\(.is_max_mode)"'
+```
+
+Rules for downstream routers:
+
+- Map `context_window` to `max_input_tokens` verbatim; never round it up.
+- Re-read the catalogue after changing `maxModeDefault`, because the same id reports a different window under each policy.
+- Treat `is_max_mode` as the tier marker when exposing separate standard and Max entries; do not infer the tier from the model id.
+- Never configure a 1M limit for an id the bridge does not report as 1M. A family without a Max Mode variant (Composer, Grok, Kimi, GLM) never reaches 1M regardless of the policy.
 
 ## Install
 

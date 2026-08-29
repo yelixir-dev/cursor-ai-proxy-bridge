@@ -29,6 +29,8 @@ export interface BridgeConfig {
   realWorkspacePath?: string;
   maxConcurrency?: number;
   maxConcurrencyPerKey?: number;
+  /** Prefer Cursor's `isMaxMode` variant when the model publishes one. */
+  maxModeDefault?: boolean;
   version: string;
   dashboardConfigPath?: string;
   dashboardConfig?: DashboardConfig;
@@ -52,6 +54,14 @@ function numberFromEnv(name: string, fallback: number): number {
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function booleanFromEnv(name: string, fallback: boolean): boolean {
+  const raw = process.env[name]?.trim();
+  if (raw === undefined || raw === '') return fallback;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  throw new Error(`${name} must be either true or false`);
 }
 
 export function loadConfig(envFile: string = BRIDGE_ENV_FILE): BridgeConfig {
@@ -91,6 +101,10 @@ export function loadConfig(envFile: string = BRIDGE_ENV_FILE): BridgeConfig {
       workspaceMode === 'real-workspace' ? process.env.CURSOR_BRIDGE_REAL_WORKSPACE : undefined,
     maxConcurrency: numberFromEnv('CURSOR_BRIDGE_MAX_CONCURRENCY', 16),
     maxConcurrencyPerKey: numberFromEnv('CURSOR_BRIDGE_MAX_CONCURRENCY_PER_KEY', 16),
+    maxModeDefault: booleanFromEnv(
+      'CURSOR_BRIDGE_MAX_MODE_DEFAULT',
+      dashboardConfig.maxModeDefault ?? false,
+    ),
     version: packageVersion(),
     dashboardConfigPath: configPath,
     dashboardConfig,
@@ -112,6 +126,7 @@ export function redactedConfig(config: BridgeConfig) {
     realWorkspaceConfigured: Boolean(config.realWorkspacePath),
     clientApiKeyConfigured: Boolean(config.apiKey),
     clientAuthEnabled: config.clientAuth === 'on',
+    maxModeDefault: config.maxModeDefault === true,
     version: config.version,
   };
 }

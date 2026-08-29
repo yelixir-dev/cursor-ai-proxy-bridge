@@ -21,6 +21,7 @@ import type {
   CompletionResult,
   CompletionStreamEvent,
   CursorBackend,
+  ModelVariantView,
 } from './types.js';
 
 export interface ProbeableCursorApiBackend extends CursorBackend {
@@ -237,6 +238,18 @@ export class AutoCursorBackend implements CursorBackend {
 
   updateCredentialPolicy(policy: CursorCredentialPolicyConfig): void {
     this.api.updateCredentialPolicy?.(policy);
+  }
+
+  maxModeDefault(): boolean {
+    return this.api.maxModeDefault?.() ?? false;
+  }
+
+  updateMaxMode(enabled: boolean): void {
+    this.api.updateMaxMode?.(enabled);
+  }
+
+  modelVariants(): ModelVariantView[] {
+    return this.api.modelVariants?.() ?? [];
   }
 
   async shutdown(): Promise<void> {

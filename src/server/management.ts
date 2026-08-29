@@ -24,6 +24,7 @@ type ManagementState = {
   dashboardConfig: DashboardConfig;
   effectiveCredentials: CursorApiCredential[];
   credentialPolicy: CursorCredentialPolicyConfig;
+  maxModeDefault: boolean;
 };
 
 export function registerManagementRoutes(context: ServerContext): void {
@@ -41,16 +42,21 @@ export function registerManagementRoutes(context: ServerContext): void {
         config.dashboardConfig?.credentialPolicy?.routingPolicy ?? 'weighted_round_robin',
       failoverOn: config.dashboardConfig?.credentialPolicy?.failoverOn ?? 'auth',
     },
+    maxModeDefault: backend.maxModeDefault?.() ?? config.maxModeDefault === true,
   };
 
   const adminConfigResponse = async () => {
     const [backendHealth, models] = await Promise.all([backend.health(), backend.listModels()]);
+    const variants = new Map(
+      (backend.modelVariants?.() ?? []).map((variant) => [variant.id, variant]),
+    );
     return {
       config: {
         server: { host: config.host, port: config.port },
         credentials: redactedCredentials(state.effectiveCredentials),
         credentialPolicy: state.credentialPolicy,
         modelOverrides: modelPolicy.snapshot(),
+        maxModeDefault: state.maxModeDefault,
       },
       state: {
         activeBackend: backendHealth.activeBackend ?? backend.type,
@@ -59,14 +65,22 @@ export function registerManagementRoutes(context: ServerContext): void {
           .filter(
             (model) => modelPolicy.enabled(model.id) || modelPolicy.source(model.id) === 'override',
           )
-          .map((model) => ({
-            id: model.id,
-            enabled: modelPolicy.enabled(model.id),
-            source: modelPolicy.source(model.id),
-            ...(model.credential_requirement === undefined
-              ? {}
-              : { credentialRequirement: model.credential_requirement }),
-          })),
+          .map((model) => {
+            const variant = variants.get(model.id);
+            return {
+              id: model.id,
+              enabled: modelPolicy.enabled(model.id),
+              source: modelPolicy.source(model.id),
+              ...(model.credential_requirement === undefined
+                ? {}
+                : { credentialRequirement: model.credential_requirement }),
+              ...(model.context_window === undefined
+                ? {}
+                : { contextWindow: model.context_window }),
+              ...(model.is_max_mode === undefined ? {} : { isMaxMode: model.is_max_mode }),
+              ...(variant === undefined ? {} : { resolvedVariant: variant.resolvedVariant }),
+            };
+          }),
       },
     };
   };
@@ -194,6 +208,7 @@ export function registerManagementRoutes(context: ServerContext): void {
             ...state.dashboardConfig.credentialPolicy,
             ...parsed.data.credentialPolicy,
           };
+    const maxModeDefault = parsed.data.maxModeDefault ?? state.maxModeDefault;
     const nextConfig: DashboardConfig = {
       ...state.dashboardConfig,
       credentials,
@@ -202,6 +217,9 @@ export function registerManagementRoutes(context: ServerContext): void {
         ? {}
         : { credentialPolicy: credentialPolicyOverrides }),
       modelOverrides,
+      ...(parsed.data.maxModeDefault === undefined
+        ? {}
+        : { maxModeDefault: parsed.data.maxModeDefault }),
     };
     writeDashboardConfigFile(configPath, nextConfig);
     state.dashboardConfig = nextConfig;
@@ -214,6 +232,8 @@ export function registerManagementRoutes(context: ServerContext): void {
     backend.updateCredentials?.(state.effectiveCredentials);
     state.credentialPolicy = credentialPolicy;
     backend.updateCredentialPolicy?.(credentialPolicy);
+    state.maxModeDefault = maxModeDefault;
+    backend.updateMaxMode?.(maxModeDefault);
     modelPolicy.replaceOverrides(modelOverrides);
     health.invalidate();
     return adminConfigResponse();

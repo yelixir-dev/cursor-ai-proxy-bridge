@@ -79,16 +79,22 @@ export function unifiedFromSlug(slug: string): string | undefined {
 
 const MEDIUM_LESS_FAMILIES = new Set(['kimi-k3', 'glm-5.2']);
 
+/** What the live catalogue reports for one advertised id. */
+export interface LiveVariantFacts {
+  readonly contextWindow?: number;
+  readonly isMaxMode: boolean;
+}
+
 /**
  * Collapse the live slug list into the advertised unified model list.
  *
- * `liveContextWindow` reports the window of the variant this bridge actually
- * selects for an advertised id. It wins over the curated family default so a
- * 1M max-mode variant is never advertised as its smaller non-max sibling.
+ * `liveVariant` reports the variant this bridge actually selects for an
+ * advertised id. Its window wins over the curated family default so a 1M
+ * max-mode variant is never advertised as its smaller non-max sibling.
  */
 export function unifiedModelList(
   models: readonly BridgeModel[],
-  liveContextWindow?: (unifiedId: string) => number | undefined,
+  liveVariant?: (unifiedId: string) => LiveVariantFacts | undefined,
 ): BridgeModel[] {
   const seen = new Set<string>();
   const unified: BridgeModel[] = [];
@@ -104,9 +110,13 @@ export function unifiedModelList(
         ? {}
         : { credential_requirement: credentialRequirement }),
     };
-    const live = liveContextWindow?.(id);
+    const live = liveVariant?.(id);
+    const described =
+      live === undefined ? advertised : { ...advertised, is_max_mode: live.isMaxMode };
     unified.push(
-      live === undefined ? withCursorModelContext(advertised) : withContextWindow(advertised, live),
+      live?.contextWindow === undefined
+        ? withCursorModelContext(described)
+        : withContextWindow(described, live.contextWindow),
     );
   }
   return unified;

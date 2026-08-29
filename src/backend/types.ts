@@ -66,6 +66,16 @@ export interface BridgeModel {
   context_length?: number;
   max_context_length?: number;
   credential_requirement?: 'ultra';
+  /** True when the advertised window comes from Cursor's `isMaxMode` variant. */
+  is_max_mode?: boolean;
+}
+
+/** Which Cursor variant an advertised model id currently resolves to. */
+export interface ModelVariantView {
+  readonly id: string;
+  readonly resolvedVariant: string;
+  readonly isMaxMode: boolean;
+  readonly contextWindow?: number;
 }
 
 export interface BackendHealth {
@@ -142,4 +152,7 @@ export interface CursorBackend {
   credentialPolicy?(): CursorCredentialPolicyConfig;
   updateCredentials?(credentials: CursorApiCredential[]): void;
   updateCredentialPolicy?(policy: CursorCredentialPolicyConfig): void;
+  maxModeDefault?(): boolean;
+  updateMaxMode?(enabled: boolean): void;
+  modelVariants?(): ModelVariantView[];
 }

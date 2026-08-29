@@ -89,6 +89,40 @@ export function mapRequestedModels(
   return requestedModels;
 }
 
+/**
+ * Every `isMaxMode` variant, keyed by the aliases Cursor publishes for it.
+ * Kept apart from {@link mapRequestedModels} because both variants share a
+ * legacy slug, so only an explicit Max Mode policy may pick between them.
+ */
+export function mapMaxModeModels(
+  availableModels: Record<string, unknown>,
+): Map<string, RequestedModel> {
+  const maxModeModels = new Map<string, RequestedModel>();
+  for (const model of records(availableModels.models)) {
+    const modelId = model.name || model.serverModelName;
+    if (typeof modelId !== 'string' || !modelId) continue;
+    for (const variant of records(model.variants)) {
+      if (!variant.isMaxMode) continue;
+      const parameterValues = parameters(variant.parameterValues);
+      const aliases = [
+        [variant.legacySlug, false],
+        [variant.variantStringRepresentation, true],
+      ] as const;
+      for (const [alias, isVariantStringRepresentation] of aliases) {
+        if (typeof alias !== 'string' || !alias) continue;
+        maxModeModels.set(alias, {
+          modelId,
+          maxMode: true,
+          parameters: parameterValues,
+          builtInModel: false,
+          isVariantStringRepresentation,
+        });
+      }
+    }
+  }
+  return maxModeModels;
+}
+
 export function mapUsableModels(message: Record<string, unknown>): BridgeModel[] {
   const ids = new Set<string>();
   for (const model of records(message.models)) {

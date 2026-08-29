@@ -1,10 +1,20 @@
-import type { BackendHealth, BridgeModel } from '../types.js';
+import type { BackendHealth, BridgeModel, ModelVariantView } from '../types.js';
 import { parseCursorContextParameter } from '../../model-context.js';
 import { CursorBackendError } from '../cursor-cli.js';
 import { awaitWithAbort } from './auth.js';
 import { withCursorCredential } from './credential-route.js';
-import { mapRequestedModels, mapUsableModels, type RequestedModel } from './requested-models.js';
-import { resolveVariantSlug, unifiedModelList } from './unified-models.js';
+import {
+  type CursorVariantCatalogue,
+  resolveModelVariant,
+  type ResolvedModelVariant,
+} from './max-mode-policy.js';
+import {
+  mapMaxModeModels,
+  mapRequestedModels,
+  mapUsableModels,
+  type RequestedModel,
+} from './requested-models.js';
+import { type LiveVariantFacts, unifiedModelList } from './unified-models.js';
 import type { CursorApiRuntime } from './runtime.js';
 import { CURSOR_API_STARTUP_SEQUENCE } from './startup-sequence.js';
 
@@ -14,6 +24,8 @@ const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
 
 export class CursorApiDiscovery {
   readonly requestedModels = new Map<string, RequestedModel>();
+  readonly maxModeModels = new Map<string, RequestedModel>();
+  private maxMode: boolean;
   private discoveryCache?: { readonly url: string; readonly expiresAt: number };
   private discoveryRefresh?: Promise<string>;
   private modelCache?: { readonly models: BridgeModel[]; readonly expiresAt: number };
@@ -21,7 +33,20 @@ export class CursorApiDiscovery {
   private initialization?: Promise<void>;
   private initialized = false;
 
-  constructor(private readonly runtime: CursorApiRuntime) {}
+  constructor(private readonly runtime: CursorApiRuntime) {
+    this.maxMode = runtime.config.maxModeDefault === true;
+  }
+
+  get maxModeEnabled(): boolean {
+    return this.maxMode;
+  }
+
+  /** Switch the Max Mode policy; the advertised catalogue is rebuilt on read. */
+  setMaxMode(enabled: boolean): void {
+    if (this.maxMode === enabled) return;
+    this.maxMode = enabled;
+    this.modelCache = undefined;
+  }
 
   async initialize(timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): Promise<void> {
     if (this.initialized) return;
@@ -73,19 +98,50 @@ export class CursorApiDiscovery {
     }
   }
 
-  /** Token window of the variant this bridge selects for an advertised id. */
-  private liveContextWindow(unifiedId: string): number | undefined {
-    const resolved = this.resolveRequestedModel(unifiedId);
-    const context = resolved?.parameters.find((parameter) => parameter.id === 'context');
-    return context ? parseCursorContextParameter(context.value) : undefined;
+  private catalogue(): CursorVariantCatalogue {
+    return { standard: this.requestedModels, max: this.maxModeModels };
+  }
+
+  /** The variant this bridge selects for an advertised id under the policy. */
+  resolveVariant(model: string, effort?: string): ResolvedModelVariant | undefined {
+    return resolveModelVariant(this.catalogue(), { model, effort, maxMode: this.maxMode });
+  }
+
+  private liveVariant(unifiedId: string): LiveVariantFacts | undefined {
+    const resolved = this.resolveVariant(unifiedId);
+    if (!resolved) return undefined;
+    const context = resolved.model.parameters.find((parameter) => parameter.id === 'context');
+    const contextWindow = context ? parseCursorContextParameter(context.value) : undefined;
+    return {
+      isMaxMode: resolved.isMaxMode,
+      ...(contextWindow === undefined ? {} : { contextWindow }),
+    };
+  }
+
+  /** Which variant each advertised model currently resolves to. */
+  modelVariants(models: readonly BridgeModel[]): ModelVariantView[] {
+    return models.flatMap((model) => {
+      const resolved = this.resolveVariant(model.id);
+      if (!resolved) return [];
+      return [
+        {
+          id: model.id,
+          resolvedVariant: resolved.slug,
+          isMaxMode: resolved.isMaxMode,
+          ...(model.context_window === undefined ? {} : { contextWindow: model.context_window }),
+        },
+      ];
+    });
   }
 
   /** Resolves unified ids (plus reasoning_effort) or legacy slugs to a RequestedModel. */
   resolveRequestedModel(model: string, effort?: string): RequestedModel | undefined {
-    const direct = this.requestedModels.get(model);
-    if (direct) return direct;
-    const slug = resolveVariantSlug(model, effort, this.requestedModels.keys());
-    return slug ? this.requestedModels.get(slug) : undefined;
+    return this.resolveVariant(model, effort)?.model;
+  }
+
+  /** Last advertised list, without forcing a refresh. */
+  cachedModels(): BridgeModel[] {
+    return [...(this.modelCache?.models ?? [])];
   }
 
   async listModels(): Promise<BridgeModel[]> {
@@ -188,8 +244,11 @@ export class CursorApiDiscovery {
       const mapped = mapRequestedModels(available, usable);
       this.requestedModels.clear();
       for (const [id, model] of mapped) this.requestedModels.set(id, model);
+      const maxMapped = mapMaxModeModels(available);
+      this.maxModeModels.clear();
+      for (const [id, model] of maxMapped) this.maxModeModels.set(id, model);
     }
-    const models = unifiedModelList(mapUsableModels(usable), (id) => this.liveContextWindow(id));
+    const models = unifiedModelList(mapUsableModels(usable), (id) => this.liveVariant(id));
     const discovered = this.runtime.codec.decode(
       'agent.v1.GetDefaultModelForCliResponse',
       defaultResponse,

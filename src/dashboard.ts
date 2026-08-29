@@ -131,6 +131,22 @@ export function renderDashboard(version: string): string {
 
       <section class="card wide" aria-labelledby="modelsTitle">
         <h2 id="modelsTitle">모델 <span id="modelHeadingCount" class="sub">활성 0 / 전체 0</span></h2>
+        <div class="policy-panel" role="group" aria-labelledby="maxModeTitle">
+          <div class="policy-heading">
+            <div><h3 id="maxModeTitle">Max Mode 기본값</h3><p>Cursor가 max 변형을 게시한 모델에 한해 해당 변형을 선택합니다. max 변형이 없으면 표준 변형을 그대로 사용합니다.</p></div>
+            <div class="policy-active" aria-live="polite"><span>현재 적용</span><code id="activeMaxMode">—</code></div>
+          </div>
+          <div class="policy-grid">
+            <label class="policy-field" for="maxModeDefault">
+              <span class="policy-label">Max Mode default</span>
+              <select id="maxModeDefault" data-admin-control aria-describedby="maxModeDescription">
+                <option value="off">off</option>
+                <option value="on">on</option>
+              </select>
+              <span id="maxModeDescription" class="policy-description">reasoning_effort=max와는 별개입니다. 이 설정만 Cursor의 isMaxMode 변형을 선택합니다.</span>
+            </label>
+          </div>
+        </div>
         <div class="model-tools"><label class="search"><span class="visually-hidden">모델 검색</span><input id="modelSearch" type="search" placeholder="모델 ID 검색" autocomplete="off" /></label><span id="modelTotal" class="model-total">활성 0 / 전체 0</span></div>
         <div id="modelGroups" class="families"><div class="empty">불러오는 중</div></div>
       </section>
@@ -488,7 +504,14 @@ function renderModels(){
   if(visible===0)container.append(make('div','empty',query?'검색 결과가 없습니다.':'표시할 모델이 없습니다.'));
 }
 
-function renderAll(){renderHealth();renderStatus();renderCredentialPolicy();renderCredentials();renderCredentialUsage();renderModels();$('app').setAttribute('aria-busy','false');}
+function renderMaxMode(){
+  if(!dashboardData)return;
+  const enabled=Boolean(dashboardData.config&&dashboardData.config.maxModeDefault);
+  $('maxModeDefault').value=enabled?'on':'off';
+  setText('activeMaxMode',enabled?'on':'off');
+}
+
+function renderAll(){renderHealth();renderStatus();renderCredentialPolicy();renderCredentials();renderCredentialUsage();renderMaxMode();renderModels();$('app').setAttribute('aria-busy','false');}
 function setBusy(value){patching=value;$('app').classList.toggle('busy',value);$('app').setAttribute('aria-busy',String(value));}
 
 async function loadCredentialUsage(force=false){
@@ -556,6 +579,7 @@ $('authForm').addEventListener('submit',async event=>{
 });
 $('authCancel').addEventListener('click',()=>$('authDialog').close());
 $('changeKey').addEventListener('click',()=>showAuth());
+$('maxModeDefault').addEventListener('change',async event=>{await patchConfig({maxModeDefault:event.currentTarget.value==='on'});});
 $('modelSearch').addEventListener('input',renderModels);
 $('refreshCredentialUsage').addEventListener('click',async()=>{await loadCredentialUsage(true);});
 $('credentialRoutingPolicy').addEventListener('change',async event=>{await patchConfig({credentialPolicy:{routingPolicy:event.currentTarget.value}});});

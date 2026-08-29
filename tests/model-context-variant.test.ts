@@ -30,7 +30,12 @@ describe('live variant context windows', () => {
     // When: the unified list is built with the live resolver.
     const models = unifiedModelList(
       [slug('claude-opus-5-medium-fast'), slug('claude-opus-5-medium')],
-      (id) => live.get(id),
+      (id) => {
+        const contextWindow = live.get(id);
+        return contextWindow === undefined
+          ? undefined
+          : { contextWindow, isMaxMode: contextWindow === 1_000_000 };
+      },
     );
 
     // Then: the fast id reports 1M while the untouched id keeps its documented window.
