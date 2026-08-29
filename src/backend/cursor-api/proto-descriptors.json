@@ -1,8 +1,8 @@
 {
   "format": 1,
-  "extractedAt": "2026-08-20T12:12:57.438Z",
-  "bundleVersion": "2026.08.11-e8db854",
-  "clientVersion": "cli-2026.08.11-e8db854",
+  "extractedAt": "2026-08-29T08:33:24.326Z",
+  "bundleVersion": "2026.08.25-3e8eec8",
+  "clientVersion": "cli-2026.08.25-3e8eec8",
   "roots": [
     "aiserver.v1.GetMeRequest",
     "aiserver.v1.GetMeResponse",
@@ -510,7 +510,7 @@
         }
       ]
     },
-    "agent.v1.DeletePermissionDenied": {
+    "agent.v1.DeleteArgs": {
       "fields": [
         {
           "no": 1,
@@ -522,19 +522,11 @@
         },
         {
           "no": 2,
-          "name": "client_visible_error",
-          "localName": "clientVisibleError",
+          "name": "tool_call_id",
+          "localName": "toolCallId",
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
-        },
-        {
-          "no": 3,
-          "name": "is_readonly",
-          "localName": "isReadonly",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 8
         }
       ]
     },
@@ -1045,6 +1037,14 @@
           "scalar": 9
         },
         {
+          "no": 57,
+          "name": "machine_id",
+          "localName": "machineId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
           "no": 2,
           "name": "shell_args",
           "localName": "shellArgs",
@@ -1431,6 +1431,26 @@
         }
       ]
     },
+    "agent.v1.FetchArgs": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "url",
+          "localName": "url",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "tool_call_id",
+          "localName": "toolCallId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
     "agent.v1.FetchError": {
       "fields": [
         {
@@ -1555,6 +1575,138 @@
         }
       ]
     },
+    "agent.v1.GrepArgs": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "pattern",
+          "localName": "pattern",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "path",
+          "localName": "path",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "glob",
+          "localName": "glob",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "output_mode",
+          "localName": "outputMode",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 8,
+          "name": "case_insensitive",
+          "localName": "caseInsensitive",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 10,
+          "name": "head_limit",
+          "localName": "headLimit",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 14,
+          "name": "tool_call_id",
+          "localName": "toolCallId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 16,
+          "name": "offset",
+          "localName": "offset",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        }
+      ]
+    },
+    "agent.v1.GrepContentMatch": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "line_number",
+          "localName": "lineNumber",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 2,
+          "name": "content",
+          "localName": "content",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "content_truncated",
+          "localName": "contentTruncated",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 4,
+          "name": "is_context_line",
+          "localName": "isContextLine",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        }
+      ]
+    },
+    "agent.v1.GrepContentResult": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "matches",
+          "localName": "matches",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.GrepFileMatch"
+        },
+        {
+          "no": 2,
+          "name": "total_lines",
+          "localName": "totalLines",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 3,
+          "name": "total_matched_lines",
+          "localName": "totalMatchedLines",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        }
+      ]
+    },
     "agent.v1.GrepError": {
       "fields": [
         {
@@ -1564,6 +1716,26 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.GrepFileMatch": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "file",
+          "localName": "file",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "matches",
+          "localName": "matches",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.GrepContentMatch"
         }
       ]
     },
@@ -1625,6 +1797,18 @@
         }
       ]
     },
+    "agent.v1.GrepToolCall": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "args",
+          "localName": "args",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.GrepArgs"
+        }
+      ]
+    },
     "agent.v1.GrepUnionResult": {
       "fields": [
         {
@@ -1635,90 +1819,6 @@
           "repeated": false,
           "oneof": "result",
           "message": "agent.v1.GrepContentResult"
-        }
-      ]
-    },
-    "agent.v1.GrepContentResult": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "matches",
-          "localName": "matches",
-          "kind": "message",
-          "repeated": true,
-          "message": "agent.v1.GrepFileMatch"
-        },
-        {
-          "no": 2,
-          "name": "total_lines",
-          "localName": "totalLines",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 5
-        },
-        {
-          "no": 3,
-          "name": "total_matched_lines",
-          "localName": "totalMatchedLines",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 5
-        }
-      ]
-    },
-    "agent.v1.GrepFileMatch": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "file",
-          "localName": "file",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 2,
-          "name": "matches",
-          "localName": "matches",
-          "kind": "message",
-          "repeated": true,
-          "message": "agent.v1.GrepContentMatch"
-        }
-      ]
-    },
-    "agent.v1.GrepContentMatch": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "line_number",
-          "localName": "lineNumber",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 5
-        },
-        {
-          "no": 2,
-          "name": "content",
-          "localName": "content",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 3,
-          "name": "content_truncated",
-          "localName": "contentTruncated",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 8
-        },
-        {
-          "no": 4,
-          "name": "is_context_line",
-          "localName": "isContextLine",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 8
         }
       ]
     },
@@ -1874,7 +1974,7 @@
         }
       ]
     },
-    "agent.v1.LsError": {
+    "agent.v1.LsArgs": {
       "fields": [
         {
           "no": 1,
@@ -1886,45 +1986,27 @@
         },
         {
           "no": 2,
-          "name": "error",
-          "localName": "error",
+          "name": "ignore",
+          "localName": "ignore",
           "kind": "scalar",
-          "repeated": false,
+          "repeated": true,
           "scalar": 9
-        }
-      ]
-    },
-    "agent.v1.LsResult": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "success",
-          "localName": "success",
-          "kind": "message",
-          "repeated": false,
-          "oneof": "result",
-          "message": "agent.v1.LsSuccess"
         },
         {
           "no": 3,
-          "name": "rejected",
-          "localName": "rejected",
-          "kind": "message",
+          "name": "tool_call_id",
+          "localName": "toolCallId",
+          "kind": "scalar",
           "repeated": false,
-          "oneof": "result",
-          "message": "agent.v1.LsRejected"
-        }
-      ]
-    },
-    "agent.v1.LsSuccess": {
-      "fields": [
+          "scalar": 9
+        },
         {
-          "no": 1,
-          "name": "directory_tree_root",
-          "localName": "directoryTreeRoot",
-          "kind": "message",
+          "no": 5,
+          "name": "timeout_ms",
+          "localName": "timeoutMs",
+          "kind": "scalar",
           "repeated": false,
-          "message": "agent.v1.LsDirectoryTreeNode"
+          "scalar": 13
         }
       ]
     },
@@ -1981,6 +2063,52 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.LsResult": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "success",
+          "localName": "success",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.LsSuccess"
+        },
+        {
+          "no": 3,
+          "name": "rejected",
+          "localName": "rejected",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.LsRejected"
+        }
+      ]
+    },
+    "agent.v1.LsSuccess": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "directory_tree_root",
+          "localName": "directoryTreeRoot",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.LsDirectoryTreeNode"
+        }
+      ]
+    },
+    "agent.v1.LsToolCall": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "args",
+          "localName": "args",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.LsArgs"
         }
       ]
     },
@@ -2557,7 +2685,7 @@
         }
       ]
     },
-    "agent.v1.ReadError": {
+    "agent.v1.ReadArgs": {
       "fields": [
         {
           "no": 1,
@@ -2569,8 +2697,32 @@
         },
         {
           "no": 2,
-          "name": "error",
-          "localName": "error",
+          "name": "tool_call_id",
+          "localName": "toolCallId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "offset",
+          "localName": "offset",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 5,
+          "name": "limit",
+          "localName": "limit",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 13
+        },
+        {
+          "no": 6,
+          "name": "encoding_hint",
+          "localName": "encodingHint",
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
@@ -2699,6 +2851,54 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 8
+        }
+      ]
+    },
+    "agent.v1.ReadToolArgs": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "path",
+          "localName": "path",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "offset",
+          "localName": "offset",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 3,
+          "name": "limit",
+          "localName": "limit",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
+        },
+        {
+          "no": 5,
+          "name": "include_line_numbers",
+          "localName": "includeLineNumbers",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        }
+      ]
+    },
+    "agent.v1.ReadToolCall": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "args",
+          "localName": "args",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.ReadToolArgs"
         }
       ]
     },
@@ -3036,6 +3236,14 @@
           "kind": "message",
           "repeated": true,
           "message": "agent.v1.MountedAgentStore"
+        },
+        {
+          "no": 26,
+          "name": "user_agent_store_web_context",
+          "localName": "userAgentStoreWebContext",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.UserAgentStoreWebContext"
         }
       ]
     },
@@ -3391,7 +3599,7 @@
         }
       ]
     },
-    "agent.v1.ShellFailure": {
+    "agent.v1.ShellArgs": {
       "fields": [
         {
           "no": 1,
@@ -3411,107 +3619,43 @@
         },
         {
           "no": 3,
-          "name": "exit_code",
-          "localName": "exitCode",
+          "name": "timeout",
+          "localName": "timeout",
           "kind": "scalar",
           "repeated": false,
           "scalar": 5
         },
         {
           "no": 4,
-          "name": "signal",
-          "localName": "signal",
+          "name": "tool_call_id",
+          "localName": "toolCallId",
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
         },
         {
           "no": 5,
-          "name": "stdout",
-          "localName": "stdout",
+          "name": "simple_commands",
+          "localName": "simpleCommands",
           "kind": "scalar",
-          "repeated": false,
+          "repeated": true,
           "scalar": 9
-        },
-        {
-          "no": 6,
-          "name": "stderr",
-          "localName": "stderr",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 7,
-          "name": "execution_time",
-          "localName": "executionTime",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 5
-        },
-        {
-          "no": 8,
-          "name": "output_location",
-          "localName": "outputLocation",
-          "kind": "message",
-          "repeated": false,
-          "message": "agent.v1.OutputLocation"
-        },
-        {
-          "no": 9,
-          "name": "interleaved_output",
-          "localName": "interleavedOutput",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 10,
-          "name": "abort_reason",
-          "localName": "abortReason",
-          "kind": "enum",
-          "repeated": false,
-          "enum": "agent.v1.ShellAbortReason"
         },
         {
           "no": 11,
-          "name": "aborted",
-          "localName": "aborted",
+          "name": "is_background",
+          "localName": "isBackground",
           "kind": "scalar",
           "repeated": false,
           "scalar": 8
         },
         {
-          "no": 12,
-          "name": "local_execution_time_ms",
-          "localName": "localExecutionTimeMs",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 5
-        },
-        {
-          "no": 13,
-          "name": "output_head",
-          "localName": "outputHead",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 14,
-          "name": "output_tail",
-          "localName": "outputTail",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
           "no": 15,
-          "name": "elided_chars",
-          "localName": "elidedChars",
+          "name": "description",
+          "localName": "description",
           "kind": "scalar",
           "repeated": false,
-          "scalar": 13
+          "scalar": 9
         }
       ]
     },
@@ -3573,6 +3717,19 @@
         }
       ]
     },
+    "agent.v1.ShellStream": {
+      "fields": [
+        {
+          "no": 5,
+          "name": "rejected",
+          "localName": "rejected",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "event",
+          "message": "agent.v1.ShellRejected"
+        }
+      ]
+    },
     "agent.v1.ShellSuccess": {
       "fields": [
         {
@@ -3625,16 +3782,15 @@
         }
       ]
     },
-    "agent.v1.ShellStream": {
+    "agent.v1.ShellToolCall": {
       "fields": [
         {
-          "no": 5,
-          "name": "rejected",
-          "localName": "rejected",
+          "no": 1,
+          "name": "args",
+          "localName": "args",
           "kind": "message",
           "repeated": false,
-          "oneof": "event",
-          "message": "agent.v1.ShellRejected"
+          "message": "agent.v1.ShellArgs"
         }
       ]
     },
@@ -3762,366 +3918,6 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 5
-        }
-      ]
-    },
-    "agent.v1.DeleteArgs": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "path",
-          "localName": "path",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 2,
-          "name": "tool_call_id",
-          "localName": "toolCallId",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        }
-      ]
-    },
-    "agent.v1.FetchArgs": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "url",
-          "localName": "url",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 2,
-          "name": "tool_call_id",
-          "localName": "toolCallId",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        }
-      ]
-    },
-    "agent.v1.GrepArgs": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "pattern",
-          "localName": "pattern",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 2,
-          "name": "path",
-          "localName": "path",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 3,
-          "name": "glob",
-          "localName": "glob",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 4,
-          "name": "output_mode",
-          "localName": "outputMode",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 8,
-          "name": "case_insensitive",
-          "localName": "caseInsensitive",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 8
-        },
-        {
-          "no": 10,
-          "name": "head_limit",
-          "localName": "headLimit",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 5
-        },
-        {
-          "no": 14,
-          "name": "tool_call_id",
-          "localName": "toolCallId",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 16,
-          "name": "offset",
-          "localName": "offset",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 5
-        }
-      ]
-    },
-    "agent.v1.GrepToolCall": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "args",
-          "localName": "args",
-          "kind": "message",
-          "repeated": false,
-          "message": "agent.v1.GrepArgs"
-        }
-      ]
-    },
-    "agent.v1.LsArgs": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "path",
-          "localName": "path",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 2,
-          "name": "ignore",
-          "localName": "ignore",
-          "kind": "scalar",
-          "repeated": true,
-          "scalar": 9
-        },
-        {
-          "no": 3,
-          "name": "tool_call_id",
-          "localName": "toolCallId",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 5,
-          "name": "timeout_ms",
-          "localName": "timeoutMs",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 13
-        }
-      ]
-    },
-    "agent.v1.LsToolCall": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "args",
-          "localName": "args",
-          "kind": "message",
-          "repeated": false,
-          "message": "agent.v1.LsArgs"
-        }
-      ]
-    },
-    "agent.v1.ReadArgs": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "path",
-          "localName": "path",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 2,
-          "name": "tool_call_id",
-          "localName": "toolCallId",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 4,
-          "name": "offset",
-          "localName": "offset",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 5
-        },
-        {
-          "no": 5,
-          "name": "limit",
-          "localName": "limit",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 13
-        },
-        {
-          "no": 6,
-          "name": "encoding_hint",
-          "localName": "encodingHint",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        }
-      ]
-    },
-    "agent.v1.ReadToolArgs": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "path",
-          "localName": "path",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 2,
-          "name": "offset",
-          "localName": "offset",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 5
-        },
-        {
-          "no": 3,
-          "name": "limit",
-          "localName": "limit",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 5
-        },
-        {
-          "no": 5,
-          "name": "include_line_numbers",
-          "localName": "includeLineNumbers",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 8
-        }
-      ]
-    },
-    "agent.v1.ReadToolCall": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "args",
-          "localName": "args",
-          "kind": "message",
-          "repeated": false,
-          "message": "agent.v1.ReadToolArgs"
-        }
-      ]
-    },
-    "agent.v1.ShellArgs": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "command",
-          "localName": "command",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 2,
-          "name": "working_directory",
-          "localName": "workingDirectory",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 3,
-          "name": "timeout",
-          "localName": "timeout",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 5
-        },
-        {
-          "no": 4,
-          "name": "tool_call_id",
-          "localName": "toolCallId",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 5,
-          "name": "simple_commands",
-          "localName": "simpleCommands",
-          "kind": "scalar",
-          "repeated": true,
-          "scalar": 9
-        },
-        {
-          "no": 11,
-          "name": "is_background",
-          "localName": "isBackground",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 8
-        },
-        {
-          "no": 15,
-          "name": "description",
-          "localName": "description",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        }
-      ]
-    },
-    "agent.v1.ShellToolCall": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "args",
-          "localName": "args",
-          "kind": "message",
-          "repeated": false,
-          "message": "agent.v1.ShellArgs"
-        }
-      ]
-    },
-    "agent.v1.WriteArgs": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "path",
-          "localName": "path",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 2,
-          "name": "file_text",
-          "localName": "fileText",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 3,
-          "name": "tool_call_id",
-          "localName": "toolCallId",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
         }
       ]
     },
@@ -4322,7 +4118,7 @@
         }
       ]
     },
-    "agent.v1.WritePermissionDenied": {
+    "agent.v1.WriteArgs": {
       "fields": [
         {
           "no": 1,
@@ -4334,35 +4130,19 @@
         },
         {
           "no": 2,
-          "name": "directory",
-          "localName": "directory",
+          "name": "file_text",
+          "localName": "fileText",
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
         },
         {
           "no": 3,
-          "name": "operation",
-          "localName": "operation",
+          "name": "tool_call_id",
+          "localName": "toolCallId",
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
-        },
-        {
-          "no": 4,
-          "name": "error",
-          "localName": "error",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 5,
-          "name": "is_readonly",
-          "localName": "isReadonly",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 8
         }
       ]
     },
@@ -4388,26 +4168,6 @@
         }
       ]
     },
-    "agent.v1.WriteSuccess": {
-      "fields": [
-        {
-          "no": 1,
-          "name": "path",
-          "localName": "path",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 4,
-          "name": "file_content_after_write",
-          "localName": "fileContentAfterWrite",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        }
-      ]
-    },
     "agent.v1.WriteShellStdinError": {
       "fields": [
         {
@@ -4430,6 +4190,26 @@
           "repeated": false,
           "oneof": "result",
           "message": "agent.v1.WriteShellStdinError"
+        }
+      ]
+    },
+    "agent.v1.WriteSuccess": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "path",
+          "localName": "path",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "file_content_after_write",
+          "localName": "fileContentAfterWrite",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
         }
       ]
     },
@@ -4966,6 +4746,14 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 8
+        },
+        {
+          "no": 19,
+          "name": "public_user_id",
+          "localName": "publicUserId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
         }
       ]
     },
