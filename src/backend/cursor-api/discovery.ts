@@ -1,4 +1,5 @@
 import type { BackendHealth, BridgeModel } from '../types.js';
+import { parseCursorContextParameter } from '../../model-context.js';
 import { CursorBackendError } from '../cursor-cli.js';
 import { awaitWithAbort } from './auth.js';
 import { withCursorCredential } from './credential-route.js';
@@ -70,6 +71,13 @@ export class CursorApiDiscovery {
         detail: error instanceof Error ? error.message : 'direct Cursor API unavailable',
       };
     }
+  }
+
+  /** Token window of the variant this bridge selects for an advertised id. */
+  private liveContextWindow(unifiedId: string): number | undefined {
+    const resolved = this.resolveRequestedModel(unifiedId);
+    const context = resolved?.parameters.find((parameter) => parameter.id === 'context');
+    return context ? parseCursorContextParameter(context.value) : undefined;
   }
 
   /** Resolves unified ids (plus reasoning_effort) or legacy slugs to a RequestedModel. */
@@ -172,7 +180,6 @@ export class CursorApiDiscovery {
     availableResponse?: Buffer,
   ): BridgeModel[] {
     const usable = this.runtime.codec.decode('agent.v1.GetUsableModelsResponse', modelsResponse);
-    const models = unifiedModelList(mapUsableModels(usable));
     if (availableResponse) {
       const available = this.runtime.codec.decode(
         'aiserver.v1.AvailableModelsResponse',
@@ -182,6 +189,7 @@ export class CursorApiDiscovery {
       this.requestedModels.clear();
       for (const [id, model] of mapped) this.requestedModels.set(id, model);
     }
+    const models = unifiedModelList(mapUsableModels(usable), (id) => this.liveContextWindow(id));
     const discovered = this.runtime.codec.decode(
       'agent.v1.GetDefaultModelForCliResponse',
       defaultResponse,

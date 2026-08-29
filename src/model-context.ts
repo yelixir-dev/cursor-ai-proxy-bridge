@@ -23,7 +23,7 @@ export const CURSOR_MODEL_CONTEXT_DEFINITIONS: readonly CursorModelContextDefini
   {
     family: 'sonnet-5',
     pattern: /^(?:claude-)?sonnet-5(?:-|$)/u,
-    contextWindow: 200_000,
+    contextWindow: 300_000,
     sourceUrl: 'https://cursor.com/docs/models/claude-sonnet-5',
   },
   {
@@ -89,16 +89,39 @@ export function cursorModelContextWindow(
     ?.contextWindow;
 }
 
-export function withCursorModelContext<T extends BridgeModel>(
-  model: T,
-  defaultModel = 'composer-2.5',
-): T {
-  const contextWindow = cursorModelContextWindow(model.id, defaultModel);
-  if (contextWindow === undefined) return model;
+/**
+ * Decode a Cursor variant `context` parameter (`1m`, `300k`, `272k`) into a
+ * token count. Cursor advertises the same legacy slug twice — one non-max
+ * variant and one max-mode variant — so this value, not the family default,
+ * is what the selected variant actually serves.
+ */
+export function parseCursorContextParameter(value: string): number | undefined {
+  const match = /^(\d+)(k|m)$/iu.exec(value.trim());
+  if (!match) return undefined;
+  const magnitude = match[2]?.toLowerCase() === 'm' ? 1_000_000 : 1_000;
+  return Number(match[1]) * magnitude;
+}
+
+export function withContextWindow<T extends BridgeModel>(model: T, contextWindow: number): T {
   return {
     ...model,
     context_window: contextWindow,
     context_length: contextWindow,
     max_context_length: contextWindow,
   };
+}
+
+/**
+ * Apply the curated documented window. A backend that already resolved the
+ * live variant window keeps it: that value comes from the exact variant the
+ * request will run on, so it outranks the family default.
+ */
+export function withCursorModelContext<T extends BridgeModel>(
+  model: T,
+  defaultModel = 'composer-2.5',
+): T {
+  if (model.context_window !== undefined) return model;
+  const contextWindow = cursorModelContextWindow(model.id, defaultModel);
+  if (contextWindow === undefined) return model;
+  return withContextWindow(model, contextWindow);
 }

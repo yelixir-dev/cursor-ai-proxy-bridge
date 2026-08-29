@@ -1,4 +1,4 @@
-import { withCursorModelContext } from '../../model-context.js';
+import { withContextWindow, withCursorModelContext } from '../../model-context.js';
 import type { BridgeModel } from '../types.js';
 import { modelCredentialRequirement } from './credential-plan.js';
 
@@ -79,8 +79,17 @@ export function unifiedFromSlug(slug: string): string | undefined {
 
 const MEDIUM_LESS_FAMILIES = new Set(['kimi-k3', 'glm-5.2']);
 
-/** Collapse the live slug list into the advertised unified model list. */
-export function unifiedModelList(models: readonly BridgeModel[]): BridgeModel[] {
+/**
+ * Collapse the live slug list into the advertised unified model list.
+ *
+ * `liveContextWindow` reports the window of the variant this bridge actually
+ * selects for an advertised id. It wins over the curated family default so a
+ * 1M max-mode variant is never advertised as its smaller non-max sibling.
+ */
+export function unifiedModelList(
+  models: readonly BridgeModel[],
+  liveContextWindow?: (unifiedId: string) => number | undefined,
+): BridgeModel[] {
   const seen = new Set<string>();
   const unified: BridgeModel[] = [];
   for (const model of models) {
@@ -88,14 +97,16 @@ export function unifiedModelList(models: readonly BridgeModel[]): BridgeModel[] 
     if (seen.has(id)) continue;
     seen.add(id);
     const credentialRequirement = modelCredentialRequirement(id);
+    const advertised = {
+      ...model,
+      id,
+      ...(credentialRequirement === undefined
+        ? {}
+        : { credential_requirement: credentialRequirement }),
+    };
+    const live = liveContextWindow?.(id);
     unified.push(
-      withCursorModelContext({
-        ...model,
-        id,
-        ...(credentialRequirement === undefined
-          ? {}
-          : { credential_requirement: credentialRequirement }),
-      }),
+      live === undefined ? withCursorModelContext(advertised) : withContextWindow(advertised, live),
     );
   }
   return unified;

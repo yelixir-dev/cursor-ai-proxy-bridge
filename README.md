@@ -34,13 +34,17 @@
 
 ### Model context windows
 
-`GET /v1/models` returns `context_window`, `context_length`, and `max_context_length` for every curated model. All three fields intentionally report Cursor's standard context window, not the optional Max Mode ceiling: proxy clients must not assume that Kimi K3 or another model can use extended context unless the request path explicitly enables Max Mode.
+`GET /v1/models` returns `context_window`, `context_length`, and `max_context_length` for every curated model.
+
+With the `cursor-api` backend these fields are derived from the **live variant** the bridge will actually run: Cursor advertises the same legacy slug twice, once as a standard variant and once as a max-mode variant, and only the resolved variant's `context` parameter states the real window. A model whose resolved variant reports `context=1m` is therefore advertised as `1000000`. On this account that currently applies to `opus-5-fast` and `opus-5-thinking-fast`.
+
+The table below is the documented fallback used when Cursor exposes no `context` parameter for a family (Composer, Grok, Kimi, GLM) or when the backend cannot reach discovery.
 
 | Model family    | Advertised context | Cursor source                                                                                              |
 | --------------- | ------------------ | ---------------------------------------------------------------------------------------------------------- |
 | Composer 2.5    | 200,000            | [Cursor Docs](https://cursor.com/docs/models/cursor-composer-2-5)                                          |
 | Claude Opus 5   | 300,000            | [Cursor Docs](https://cursor.com/docs/models/claude-opus-5)                                                |
-| Claude Sonnet 5 | 200,000            | [Cursor Docs](https://cursor.com/docs/models/claude-sonnet-5)                                              |
+| Claude Sonnet 5 | 300,000            | [Cursor Docs](https://cursor.com/docs/models/claude-sonnet-5)                                              |
 | Claude Fable 5  | 300,000            | [Cursor Docs](https://cursor.com/docs/models/claude-fable-5)                                               |
 | GPT-5.6 Sol     | 272,000            | [Cursor Docs](https://cursor.com/docs/models/gpt-5-6-sol)                                                  |
 | GPT-5.6 Terra   | 272,000            | [Cursor Docs](https://cursor.com/docs/models/gpt-5-6-terra)                                                |
@@ -52,6 +56,29 @@
 | `auto`          | 200,000            | Conservative proxy floor; [Cursor Router](https://cursor.com/docs/cursor-router) has no fixed context card |
 
 Legacy effort, thinking, and fast slugs inherit their family's value. Models exposed only through an explicit dashboard override remain unchanged when Cursor has no official context card.
+
+Cursor documents extended windows "up to 1M tokens" for several families, but the 1M variants are published as separate max-mode variants rather than as the family default. The bridge never upgrades a request to a wider window on its own: it advertises exactly the window of the variant it resolves, so a client that reads `context_window` can fill it safely.
+
+#### Max Mode context windows
+
+Cursor publishes every parameterized family twice: a standard variant and an `isMaxMode` variant that differ only in the `context` parameter. The windows below were read from `aiserver.v1.AvailableModelsResponse` (`useModelParameters: true`) on an Ultra account with `cursor-agent` 2026.08.25, so they are the values Cursor actually serves rather than a marketing figure.
+
+| Model family    | Standard variant       | Max Mode variant | Max Mode variants published |
+| --------------- | ---------------------- | ---------------- | --------------------------- |
+| Composer 2.5    | no `context` parameter | none             | 0                           |
+| Claude Opus 5   | 300,000                | **1,000,000**    | 16                          |
+| Claude Sonnet 5 | 300,000                | **1,000,000**    | 10                          |
+| Claude Fable 5  | 300,000                | **1,000,000**    | 10                          |
+| GPT-5.6 Sol     | 272,000                | **1,000,000**    | 6                           |
+| GPT-5.6 Terra   | 272,000                | **1,000,000**    | 6                           |
+| GPT-5.6 Luna    | 272,000                | **1,000,000**    | 6                           |
+| Grok 4.6        | no `context` parameter | none             | 0                           |
+| Kimi K3         | no `context` parameter | none             | 0                           |
+| GLM 5.2         | no `context` parameter | none             | 0                           |
+
+A family having a Max Mode variant does not mean the bridge selects it. `GetUsableModels` decides, per legacy slug, which of the two variants the account may use, and the bridge follows that decision instead of forcing Max Mode. On the account used for this measurement only the fast Opus 5 slugs resolve to their 1M variant, which is why `opus-5-fast` and `opus-5-thinking-fast` advertise `1000000` while `sonnet-5` stays at its 300,000 standard variant.
+
+Families advertised without a `context` parameter have no Max Mode variant at all; they fall back to the documented table above.
 
 ## Install
 
