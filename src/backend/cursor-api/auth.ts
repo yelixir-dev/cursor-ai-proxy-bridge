@@ -70,6 +70,14 @@ async function macOsKeychainToken(): Promise<string> {
   return stdout.trim();
 }
 
+export class CursorAuthInvalidatedError extends Error {
+  readonly name = 'CursorAuthInvalidatedError';
+
+  constructor() {
+    super('Cursor credential changed while authentication was pending');
+  }
+}
+
 export class CursorAuthProvider {
   private readonly environment: NodeJS.ProcessEnv;
   private readonly endpoint: string;
@@ -78,9 +86,14 @@ export class CursorAuthProvider {
   private readonly fetchImplementation: typeof globalThis.fetch;
   private readonly cached = new Map<
     string,
-    { token: string; expiration?: number; source: 'env' | 'keychain' | 'api-key' }
+    {
+      token: string;
+      expiration?: number;
+      source: 'env' | 'keychain' | 'api-key';
+    }
   >();
   private readonly refreshes = new Map<string, Promise<string>>();
+  private readonly generations = new Map<string, symbol>();
 
   constructor(options: AuthProviderOptions = {}) {
     this.environment = options.environment ?? process.env;
@@ -115,8 +128,12 @@ export class CursorAuthProvider {
     if (cached && !this.needsRefresh(cached.expiration)) return cached.token;
     let refresh = this.refreshes.get(credential.id);
     if (!refresh) {
-      refresh = this.refreshToken(credential).finally(() => {
-        this.refreshes.delete(credential.id);
+      const generation = Symbol();
+      this.generations.set(credential.id, generation);
+      refresh = this.refreshToken(credential, generation).finally(() => {
+        if (this.refreshes.get(credential.id) === refresh) {
+          this.refreshes.delete(credential.id);
+        }
       });
       this.refreshes.set(credential.id, refresh);
     }
@@ -126,9 +143,13 @@ export class CursorAuthProvider {
   invalidate(id?: string): void {
     if (id === undefined) {
       this.cached.clear();
+      this.refreshes.clear();
+      this.generations.clear();
       return;
     }
     this.cached.delete(id);
+    this.refreshes.delete(id);
+    this.generations.delete(id);
   }
 
   private needsRefresh(expiration: number | undefined): boolean {
@@ -137,26 +158,39 @@ export class CursorAuthProvider {
     );
   }
 
-  private remember(id: string, token: string, source: 'env' | 'keychain' | 'api-key'): string {
+  private remember(
+    id: string,
+    token: string,
+    source: 'env' | 'keychain' | 'api-key',
+    generation: symbol,
+  ): string {
+    if (this.generations.get(id) !== generation) throw new CursorAuthInvalidatedError();
     const trimmed = token.trim();
     if (!trimmed) throw new Error('Cursor authentication token is empty');
-    this.cached.set(id, { token: trimmed, expiration: jwtExpiration(trimmed), source });
+    this.cached.set(id, {
+      token: trimmed,
+      expiration: jwtExpiration(trimmed),
+      source,
+    });
     return trimmed;
   }
 
-  private async refreshToken(credential: CursorApiCredential): Promise<string> {
-    if (credential.apiKey) return this.exchangeApiKey(credential.id, credential.apiKey);
+  private async refreshToken(credential: CursorApiCredential, generation: symbol): Promise<string> {
+    if (credential.apiKey) {
+      return this.exchangeApiKey(credential.id, credential.apiKey, generation);
+    }
 
     const direct = this.environment.CURSOR_AUTH_TOKEN?.trim();
     const apiKey = this.environment.CURSOR_API_KEY?.trim();
     if (direct && !this.needsRefresh(jwtExpiration(direct))) {
-      return this.remember(credential.id, direct, 'env');
+      return this.remember(credential.id, direct, 'env', generation);
     }
-    if (apiKey) return this.exchangeApiKey(credential.id, apiKey);
+    if (apiKey) return this.exchangeApiKey(credential.id, apiKey, generation);
     try {
-      return this.remember(credential.id, await this.readKeychain(), 'keychain');
+      return this.remember(credential.id, await this.readKeychain(), 'keychain', generation);
     } catch (error) {
-      if (direct) return this.remember(credential.id, direct, 'env');
+      if (error instanceof CursorAuthInvalidatedError) throw error;
+      if (direct) return this.remember(credential.id, direct, 'env', generation);
       throw new Error(
         `Cursor authentication unavailable. Set CURSOR_AUTH_TOKEN or CURSOR_API_KEY, or log in with Cursor so the macOS Keychain contains cursor-access-token (${error instanceof Error ? error.message : String(error)}).`,
         { cause: error },
@@ -164,7 +198,7 @@ export class CursorAuthProvider {
     }
   }
 
-  private async exchangeApiKey(id: string, apiKey: string): Promise<string> {
+  private async exchangeApiKey(id: string, apiKey: string, generation: symbol): Promise<string> {
     const response = await this.fetchImplementation(`${this.endpoint}/auth/exchange_user_api_key`, {
       method: 'POST',
       headers: {
@@ -184,6 +218,6 @@ export class CursorAuthProvider {
     if (typeof payload.accessToken !== 'string' || !payload.accessToken.trim()) {
       throw new Error('Cursor API key exchange response did not contain accessToken');
     }
-    return this.remember(id, payload.accessToken, 'api-key');
+    return this.remember(id, payload.accessToken, 'api-key', generation);
   }
 }
