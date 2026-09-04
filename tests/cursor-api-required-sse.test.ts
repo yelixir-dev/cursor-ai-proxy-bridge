@@ -193,6 +193,17 @@ describe('cursor-api required tool recovery over SSE', () => {
     const wireName = wireToolName(request);
     const transport = new ScriptedTransport((stream) => {
       stream.emit('response', { ':status': 200 });
+      if (transport.opened.length > 1) {
+        stream.emit(
+          'data',
+          Buffer.concat([
+            update('textDelta', { text: 'JSON_SERIAL_DONE' }),
+            update('turnEnded', { inputTokens: 6, outputTokens: 2 }),
+            trailer(),
+          ]),
+        );
+        return;
+      }
       stream.emit(
         'data',
         Buffer.concat([
@@ -223,30 +234,23 @@ describe('cursor-api required tool recovery over SSE', () => {
       }
 
       // Then: all three OpenAI responses came from one native Run; the final
-      // auto continuation consumes C and returns ordinary text.
+      // auto policy starts a fresh Run with C in replayed history.
       const run = await transport.firstRun;
-      const resultWritten = Promise.withResolvers<void>();
-      run.stream.once('write', () => resultWritten.resolve());
+      expect(transport.opened).toHaveLength(1);
+      const originalWrites = run.stream.writes.length;
       const finalPromise = server.inject({
         method: 'POST',
         url: '/v1/chat/completions',
         headers: { authorization: 'Bearer test-key' },
         payload: { ...request, tool_choice: 'auto', messages },
       });
-      await resultWritten.promise;
-      run.stream.emit(
-        'data',
-        Buffer.concat([
-          update('textDelta', { text: 'JSON_SERIAL_DONE' }),
-          update('turnEnded', { inputTokens: 6, outputTokens: 2 }),
-        ]),
-      );
       const final = await finalPromise;
       expect(final.statusCode).toBe(200);
       expect(final.json()).toMatchObject({
         choices: [{ message: { content: 'JSON_SERIAL_DONE' }, finish_reason: 'stop' }],
       });
-      expect(transport.opened).toHaveLength(1);
+      expect(run.stream.writes).toHaveLength(originalWrites);
+      expect(transport.opened).toHaveLength(2);
     } finally {
       await server.close();
     }
@@ -264,6 +268,17 @@ describe('cursor-api required tool recovery over SSE', () => {
     const wireName = wireToolName(request);
     const transport = new ScriptedTransport((stream) => {
       stream.emit('response', { ':status': 200 });
+      if (transport.opened.length > 1) {
+        stream.emit(
+          'data',
+          Buffer.concat([
+            update('textDelta', { text: 'SSE_SERIAL_DONE' }),
+            update('turnEnded', { inputTokens: 6, outputTokens: 2 }),
+            trailer(),
+          ]),
+        );
+        return;
+      }
       stream.emit(
         'data',
         Buffer.concat([
@@ -294,28 +309,21 @@ describe('cursor-api required tool recovery over SSE', () => {
       }
 
       const run = await transport.firstRun;
-      const resultWritten = Promise.withResolvers<void>();
-      run.stream.once('write', () => resultWritten.resolve());
+      expect(transport.opened).toHaveLength(1);
+      const originalWrites = run.stream.writes.length;
       const finalPromise = server.inject({
         method: 'POST',
         url: '/v1/chat/completions',
         headers: { authorization: 'Bearer test-key' },
         payload: { ...request, stream: true, tool_choice: 'auto', messages },
       });
-      await resultWritten.promise;
-      run.stream.emit(
-        'data',
-        Buffer.concat([
-          update('textDelta', { text: 'SSE_SERIAL_DONE' }),
-          update('turnEnded', { inputTokens: 6, outputTokens: 2 }),
-        ]),
-      );
       const final = await finalPromise;
       expect(final.statusCode).toBe(200);
       expect(final.body).toContain('SSE_SERIAL_DONE');
       expect(final.body).toContain('"finish_reason":"stop"');
       expect(final.body.trim().endsWith('data: [DONE]')).toBe(true);
-      expect(transport.opened).toHaveLength(1);
+      expect(run.stream.writes).toHaveLength(originalWrites);
+      expect(transport.opened).toHaveLength(2);
     } finally {
       await server.close();
     }

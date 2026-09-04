@@ -58,7 +58,25 @@ export class CursorApiBackend implements CursorBackend {
   }
 
   updateCredentials(credentials: CursorApiCredential[]): void {
-    this.runtime.auth.invalidate();
+    const replacements = new Map(credentials.map((credential) => [credential.id, credential]));
+    const invalidated = this.runtime.credentialRouter.credentials().filter((previous) => {
+      const next = replacements.get(previous.id);
+      return (
+        !next ||
+        previous.apiKey !== next.apiKey ||
+        previous.enabled !== next.enabled ||
+        previous.plan !== next.plan ||
+        previous.capabilities?.fable !== next.capabilities?.fable
+      );
+    });
+    for (const credential of invalidated) {
+      this.runtime.auth.invalidate(credential.id);
+      this.runtime.stickyRuns.releaseCredential(
+        credential.id,
+        new CursorCommandAbortedError('Cursor credential configuration changed'),
+      );
+    }
+    this.discovery.invalidateCredentials(invalidated.map((credential) => credential.id));
     this.runtime.credentialUsage.invalidate();
     this.runtime.credentialRouter.replaceCredentials(credentials);
   }

@@ -27,7 +27,7 @@ const MAX_TRANSPORT_RETRIES = 1;
 export class CursorApiCompletion {
   constructor(
     private readonly runtime: CursorApiRuntime,
-    private readonly discovery: CursorApiDiscovery,
+    private readonly discovery: Pick<CursorApiDiscovery, 'prepare' | 'maxModeEnabled'>,
   ) {}
 
   async complete(request: ChatCompletionRequest, signal?: AbortSignal): Promise<CompletionResult> {
@@ -195,6 +195,7 @@ export class CursorApiCompletion {
         const resumed = resumeCursorRun({
           runtime: this.runtime,
           request,
+          maxModeDefault: this.discovery.maxModeEnabled,
           signal: lifecycle.signal,
           emit: trackedEmit,
           trace: lifecycle.trace,
@@ -204,17 +205,27 @@ export class CursorApiCompletion {
         return await withCursorCredential(this.runtime, {
           operation: async (credential, accessToken) => {
             preferredCredentialId = credential.id;
+            const prepared = await this.discovery.prepare(
+              credential,
+              accessToken,
+              lifecycle.signal,
+            );
             return executeCursorRun({
               runtime: this.runtime,
-              discovery: this.discovery,
+              agentUrl: prepared.agentUrl,
+              requestedModel: prepared.resolveRequestedModel(
+                request.model,
+                request.reasoning_effort,
+              ),
               request,
               accessToken,
               history,
               credentialId: credential.id,
+              maxModeDefault: prepared.maxModeEnabled,
+              credentialSignal: prepared.signal,
               signal: lifecycle.signal,
               emit: trackedEmit,
               trace: lifecycle.trace,
-              resolveModel: (model, effort) => this.discovery.resolveRequestedModel(model, effort),
             });
           },
           signal: lifecycle.signal,

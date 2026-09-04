@@ -24,7 +24,7 @@ function completedValues(events: readonly CompletionStreamEvent[]): unknown[] {
 }
 
 describe('cursor-api sticky hold with an incomplete sibling', () => {
-  it('rejects a late sibling forbidden by the resumed tool policy', async () => {
+  it('replays changed tool policy on a fresh Run and rejects forbidden tool output', async () => {
     // Given: response 1 surfaces A and parks its still-active Run.
     const request = parallelToolRequest();
     const wireName = wireToolName(request);
@@ -39,8 +39,7 @@ describe('cursor-api sticky hold with an incomplete sibling', () => {
 
     // When: response 2 explicitly forbids tools while submitting A's result.
     const run = await transport.firstRun;
-    const resultWritten = Promise.withResolvers<void>();
-    run.stream.once('write', () => resultWritten.resolve());
+    const originalWrites = run.stream.writes.length;
     const emitted: CompletionStreamEvent[] = [];
     const continuation = (async () => {
       for await (const event of cursor.completeStream({
@@ -55,18 +54,16 @@ describe('cursor-api sticky hold with an incomplete sibling', () => {
         emitted.push(event);
       }
     })();
-    await resultWritten.promise;
-    run.stream.emit('data', callBatch(wireName, 'call-b', 'B'));
-
-    // Then: B is rejected before its start or arguments reach the client.
-    await expect(continuation).rejects.toThrow('forbidden by the current request');
+    // Then: the fresh Run enforces the new policy before any forbidden output.
+    await expect(continuation).rejects.toMatchObject({ name: 'CursorUndeclaredToolCallError' });
     expect(
       emitted.filter(
         (event) => event.type === 'tool_call_start' || event.type === 'tool_call_arguments_delta',
       ),
     ).toEqual([]);
     expect(run.stream.destroyed || run.stream.writableEnded).toBe(true);
-    expect(transport.opened).toHaveLength(1);
+    expect(run.stream.writes).toHaveLength(originalWrites);
+    expect(transport.opened).toHaveLength(2);
   });
 
   it('preserves a completed hidden sibling before a malformed payload', async () => {

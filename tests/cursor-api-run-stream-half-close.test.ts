@@ -2,7 +2,6 @@ import http2, { type ClientHttp2Stream, type OutgoingHttpHeaders } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CursorAuthProvider } from '../src/backend/cursor-api/auth.js';
-import type { CursorApiDiscovery } from '../src/backend/cursor-api/discovery.js';
 import {
   fingerprintCredential,
   H2SessionPool,
@@ -179,10 +178,8 @@ describe('Run stream HTTP/2 half-close', () => {
     const controller = new AbortController();
     const run = executeCursorRun({
       runtime,
-      discovery: {
-        requestedModels: new Map<string, never>(),
-        agentUrl: async () => server.origin,
-      } as unknown as CursorApiDiscovery,
+      agentUrl: server.origin,
+      maxModeDefault: false,
       request,
       accessToken: 'token',
       credentialId: 'test-credential',

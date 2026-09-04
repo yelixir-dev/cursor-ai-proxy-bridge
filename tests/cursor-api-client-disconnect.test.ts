@@ -145,10 +145,17 @@ describe('client disconnect mid-Run', () => {
       credentialRouter: new CursorCredentialRouter({ credentials: [{ id: 'system' }] }),
     });
     const discovery = {
-      requestedModels: new Map<string, never>(),
-      agentUrl: async () => upstream.origin,
-      resolveRequestedModel: () => undefined,
-    } as unknown as CursorApiDiscovery;
+      maxModeEnabled: false,
+      prepare: async (credential) => ({
+        credentialId: credential.id,
+        generation: 0,
+        agentUrl: upstream.origin,
+        maxModeEnabled: false,
+        signal: new AbortController().signal,
+        resolveVariant: () => undefined,
+        resolveRequestedModel: () => undefined,
+      }),
+    } satisfies Pick<CursorApiDiscovery, 'prepare' | 'maxModeEnabled'>;
     const completion = new CursorApiCompletion(runtime, discovery);
     const backend: CursorBackend = {
       type: 'cursor-api',

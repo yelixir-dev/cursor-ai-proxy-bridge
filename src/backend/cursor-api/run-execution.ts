@@ -4,7 +4,6 @@ import { type RequestTrace, traceCredentialSlot, traceStage } from '../../trace.
 import { CursorBackendError, CursorCommandAbortedError } from '../cursor-cli.js';
 import type { ChatCompletionRequest } from '../types.js';
 import { ConnectFrameDecoder, ConnectRpcError, encodeConnectFrame } from './connect-frame.js';
-import type { CursorApiDiscovery } from './discovery.js';
 import { type HeldToolExec, sendHeldToolResult } from './exec-responses.js';
 import type { CursorHistory } from './history.js';
 import { enforceNativeToolChoice, heartbeatMessage, runRequestMessage } from './mapper.js';
@@ -14,7 +13,12 @@ import { CursorRunTimeoutError, type CursorRunPhase } from './run-errors.js';
 import { CursorRunMessages } from './run-messages.js';
 import type { RunEmitter, RunOutcome } from './run-types.js';
 import { boundedInteger, type CursorApiRuntime } from './runtime.js';
-import { stickyKey, type HeldRun, trailingToolResults } from './sticky-run-store.js';
+import {
+  captureContinuationContract,
+  stickyKey,
+  type HeldRun,
+  trailingToolResults,
+} from './sticky-run-store.js';
 import { CursorApiHttpError } from './transport.js';
 
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -25,20 +29,23 @@ type Dict = Record<string, unknown>;
 
 export interface CursorRunExecutionOptions {
   readonly runtime: CursorApiRuntime;
-  readonly discovery: CursorApiDiscovery;
+  readonly agentUrl: string;
+  readonly requestedModel?: RequestedModel;
   readonly request: ChatCompletionRequest;
   readonly accessToken: string;
   readonly history: CursorHistory;
   readonly credentialId: string;
+  readonly maxModeDefault: boolean;
+  readonly credentialSignal?: AbortSignal;
   readonly signal?: AbortSignal;
   readonly emit?: RunEmitter;
   readonly trace?: RequestTrace;
-  readonly resolveModel?: (model: string, effort?: string) => RequestedModel | undefined;
 }
 
 export interface CursorRunResumeOptions {
   readonly runtime: CursorApiRuntime;
   readonly request: ChatCompletionRequest;
+  readonly maxModeDefault: boolean;
   readonly signal?: AbortSignal;
   readonly emit?: RunEmitter;
   readonly trace?: RequestTrace;
@@ -57,25 +64,22 @@ function errorValue(error: unknown): Error {
 export function resumeCursorRun(options: CursorRunResumeOptions): Promise<RunOutcome> | undefined {
   const toolResults = trailingToolResults(options.request);
   if (toolResults.length === 0) return undefined;
-  const resumed = options.runtime.stickyRuns.take(options.request);
+  const resumed = options.runtime.stickyRuns.take(options.request, options.maxModeDefault);
   if (!resumed) return undefined;
   options.onCredential?.(resumed.credentialId);
   traceCredentialSlot(options.trace, resumed.credentialId);
   return new Promise<RunOutcome>((resolve, reject) => {
-    resumed.resume(resolve, reject, toolResults, options.emit, options.signal);
+    resumed.resume(resolve, reject, toolResults, options.request, options.emit, options.signal);
   });
 }
 
 export async function executeCursorRun(options: CursorRunExecutionOptions): Promise<RunOutcome> {
   const { runtime, request, signal, trace } = options;
-  if (signal?.aborted) throw new CursorCommandAbortedError();
-
-  const resumed = resumeCursorRun(options);
-  if (resumed) return resumed;
+  if (signal?.aborted || options.credentialSignal?.aborted) throw new CursorCommandAbortedError();
 
   const requestId = randomUUID();
   const stream = await runtime.transport.openRun(
-    await options.discovery.agentUrl(options.accessToken, signal),
+    options.agentUrl,
     requestId,
     options.accessToken,
     trace,
@@ -100,6 +104,8 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
   return new Promise<RunOutcome>((resolve, reject) => {
     let settled = false;
     let parked = false;
+    let latestRequest = request;
+    let currentEmit = options.emit;
     let activeSignal = signal;
     let outputBytes = 0;
     let decodedOutputBytes = 0;
@@ -191,7 +197,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       if (holdForResults) {
         parked = true;
         phase = 'awaiting_client_tool_results';
-        parkedRun = createHeld(stickyKey(calls.map((call) => call.id)));
+        parkedRun = createHeld(calls, currentEmit ? text : '');
         runtime.stickyRuns.park(parkedRun);
       } else {
         settled = true;
@@ -238,12 +244,18 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       }
       drain();
     }
-    function createHeld(key: string): HeldRun {
+    function createHeld(calls: RunOutcome['toolCalls'], text: string): HeldRun {
       const held: HeldRun = {
-        key,
+        key: stickyKey(calls.map((call) => call.id)),
         credentialId: options.credentialId,
-        resume(nextResolve, nextReject, results, nextEmit, nextSignal) {
+        continuation: captureContinuationContract(latestRequest, options.maxModeDefault, [
+          ...latestRequest.messages,
+          { role: 'assistant', content: text, tool_calls: calls },
+        ]),
+        resume(nextResolve, nextReject, results, nextRequest, nextEmit, nextSignal) {
           if (settled) return;
+          latestRequest = nextRequest;
+          currentEmit = nextEmit;
           if (parkedRun === held) parkedRun = undefined;
           parked = false;
           phase = 'resumed_after_tool_results';
@@ -318,7 +330,11 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     }
     function bindSignal(nextSignal: AbortSignal | undefined): void {
       activeSignal?.removeEventListener('abort', onAbort);
-      activeSignal = nextSignal;
+      activeSignal = options.credentialSignal
+        ? nextSignal
+          ? AbortSignal.any([nextSignal, options.credentialSignal])
+          : options.credentialSignal
+        : nextSignal;
       if (activeSignal?.aborted) {
         onAbort();
         return;
@@ -547,13 +563,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
         finish(new CursorRunClosedError('Cursor Agent Run stream closed without a trailer'));
     });
     writeMessage(
-      runRequestMessage(
-        request,
-        requestId,
-        options.discovery.requestedModels,
-        options.history,
-        options.resolveModel?.(request.model, request.reasoning_effort),
-      ),
+      runRequestMessage(request, requestId, undefined, options.history, options.requestedModel),
       false,
     );
     if (activeSignal?.aborted) onAbort();

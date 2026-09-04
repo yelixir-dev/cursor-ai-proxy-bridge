@@ -1,35 +1,43 @@
 import type { BackendHealth, BridgeModel, ModelVariantView } from '../types.js';
-import { parseCursorContextParameter } from '../../model-context.js';
-import { CursorBackendError } from '../cursor-cli.js';
 import { awaitWithAbort } from './auth.js';
 import { withCursorCredential } from './credential-route.js';
+import type { CursorApiCredential } from './credentials.js';
 import {
-  type CursorVariantCatalogue,
-  resolveModelVariant,
-  type ResolvedModelVariant,
-} from './max-mode-policy.js';
-import {
-  mapMaxModeModels,
-  mapRequestedModels,
-  mapUsableModels,
-  type RequestedModel,
-} from './requested-models.js';
-import { type LiveVariantFacts, unifiedModelList } from './unified-models.js';
+  CursorDiscoveryInvalidatedError,
+  decodeDiscoveryEndpoint,
+  DiscoveryModels,
+  DiscoverySlot,
+} from './discovery-snapshot.js';
+import type { ResolvedModelVariant } from './max-mode-policy.js';
+import type { RequestedModel } from './requested-models.js';
 import type { CursorApiRuntime } from './runtime.js';
 import { CURSOR_API_STARTUP_SEQUENCE } from './startup-sequence.js';
 
-const DISCOVERY_TTL_MS = 60 * 60 * 1000;
-const MODEL_TTL_MS = 60 * 1000;
+export { CursorDiscoveryInvalidatedError } from './discovery-snapshot.js';
+
+export interface PreparedCursorDiscovery {
+  readonly credentialId: string;
+  readonly generation: number;
+  readonly agentUrl: string;
+  readonly signal: AbortSignal;
+  readonly maxModeEnabled: boolean;
+  resolveVariant(model: string, effort?: string): ResolvedModelVariant | undefined;
+  resolveRequestedModel(model: string, effort?: string): RequestedModel | undefined;
+}
+
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
 
+interface AdvertisedDiscovery {
+  readonly slot: DiscoverySlot;
+  readonly models: DiscoveryModels;
+}
+
 export class CursorApiDiscovery {
-  readonly requestedModels = new Map<string, RequestedModel>();
-  readonly maxModeModels = new Map<string, RequestedModel>();
   private maxMode: boolean;
-  private discoveryCache?: { readonly url: string; readonly expiresAt: number };
-  private discoveryRefresh?: Promise<string>;
-  private modelCache?: { readonly models: BridgeModel[]; readonly expiresAt: number };
-  private modelRefresh?: Promise<BridgeModel[]>;
+  private readonly slots = new Map<string, DiscoverySlot>();
+  private readonly generations = new Map<string, number>();
+  private advertised?: AdvertisedDiscovery;
+  private listing?: { slot?: DiscoverySlot; readonly promise: Promise<AdvertisedDiscovery> };
   private initialization?: Promise<void>;
   private initialized = false;
 
@@ -40,18 +48,154 @@ export class CursorApiDiscovery {
   get maxModeEnabled(): boolean {
     return this.maxMode;
   }
-
-  /** Switch the Max Mode policy; the advertised catalogue is rebuilt on read. */
   setMaxMode(enabled: boolean): void {
-    if (this.maxMode === enabled) return;
     this.maxMode = enabled;
-    this.modelCache = undefined;
+  }
+
+  /** Compatibility views of the last listing; inference must use prepare instead. */
+  get requestedModels(): Map<string, RequestedModel> {
+    return this.advertised?.models.standardModels() ?? new Map();
+  }
+  get maxModeModels(): Map<string, RequestedModel> {
+    return this.advertised?.models.maxModels() ?? new Map();
+  }
+
+  async prepare(
+    credential: CursorApiCredential,
+    accessToken: string,
+    signal?: AbortSignal,
+  ): Promise<PreparedCursorDiscovery> {
+    signal?.throwIfAborted();
+    const maxModeEnabled = this.maxMode;
+    const slot = this.slot(credential);
+    const [agentUrl, models] = await awaitWithAbort(
+      Promise.all([slot.endpoint(accessToken), slot.models(accessToken)]),
+      signal,
+    );
+    slot.assertCurrent();
+    signal?.throwIfAborted();
+    return Object.freeze({
+      credentialId: credential.id,
+      generation: slot.generation,
+      agentUrl,
+      signal: slot.controller.signal,
+      maxModeEnabled,
+      resolveVariant: (model: string, effort?: string) =>
+        models.resolve(model, effort, maxModeEnabled),
+      resolveRequestedModel: (model: string, effort?: string) =>
+        models.resolve(model, effort, maxModeEnabled)?.model,
+    });
+  }
+
+  invalidateCredentials(ids: Iterable<string>): void {
+    for (const id of new Set(ids)) {
+      const slot = this.slots.get(id);
+      const generation = this.generations.get(id) ?? 0;
+      this.generations.set(id, generation + 1);
+      this.slots.delete(id);
+      slot?.controller.abort(new CursorDiscoveryInvalidatedError(id, generation));
+      if (this.advertised?.slot.credential.id === id) this.advertised = undefined;
+      if (this.listing?.slot?.credential.id === id) this.listing = undefined;
+    }
+  }
+
+  private slot(credential: CursorApiCredential): DiscoverySlot {
+    const current = this.runtime.credentialRouter
+      .credentials()
+      .find((candidate) => candidate.id === credential.id);
+    if (!current?.enabled || current.apiKey !== credential.apiKey) {
+      throw new CursorDiscoveryInvalidatedError(
+        credential.id,
+        this.generations.get(credential.id) ?? 0,
+      );
+    }
+    const previous = this.slots.get(credential.id);
+    if (previous && previous.credential.apiKey !== credential.apiKey)
+      this.invalidateCredentials([credential.id]);
+    let slot = this.slots.get(credential.id);
+    if (!slot) {
+      slot = new DiscoverySlot(
+        this.runtime,
+        { ...credential },
+        this.generations.get(credential.id) ?? 0,
+      );
+      this.slots.set(credential.id, slot);
+    }
+    slot.assertCurrent();
+    return slot;
+  }
+
+  resolveVariant(model: string, effort?: string): ResolvedModelVariant | undefined {
+    return this.advertised?.models.resolve(model, effort, this.maxMode);
+  }
+  resolveRequestedModel(model: string, effort?: string): RequestedModel | undefined {
+    return this.resolveVariant(model, effort)?.model;
+  }
+  modelVariants(models: readonly BridgeModel[]): ModelVariantView[] {
+    return models.flatMap((model) => {
+      const resolved = this.resolveVariant(model.id);
+      return resolved
+        ? [
+            {
+              id: model.id,
+              resolvedVariant: resolved.slug,
+              isMaxMode: resolved.isMaxMode,
+              ...(model.context_window === undefined
+                ? {}
+                : { contextWindow: model.context_window }),
+            },
+          ]
+        : [];
+    });
+  }
+  cachedModels(): BridgeModel[] {
+    return this.advertised?.models.list(this.maxMode) ?? [];
+  }
+
+  async listModels(): Promise<BridgeModel[]> {
+    if (this.advertised && this.advertised.models.expiresAt > Date.now()) {
+      this.advertised.slot.assertCurrent();
+      return this.cachedModels();
+    }
+    if (!this.listing) {
+      const listing: { slot?: DiscoverySlot; readonly promise: Promise<AdvertisedDiscovery> } = {
+        promise: withCursorCredential(this.runtime, {
+          operation: async (credential, accessToken) => {
+            const slot = this.slot(credential);
+            listing.slot = slot;
+            const models = await slot.models(accessToken);
+            slot.assertCurrent();
+            const advertised = { slot, models };
+            this.advertised = advertised;
+            return advertised;
+          },
+        }).finally(() => {
+          if (this.listing === listing) this.listing = undefined;
+        }),
+      };
+      this.listing = listing;
+    }
+    const advertised = await this.listing.promise;
+    advertised.slot.assertCurrent();
+    return advertised.models.list(this.maxMode);
   }
 
   async initialize(timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): Promise<void> {
     if (this.initialized) return;
     if (!this.initialization) {
-      this.initialization = this.startup(timeoutMs)
+      this.initialization = withCursorCredential(this.runtime, {
+        operation: async (credential, accessToken) => {
+          const slot = this.slot(credential);
+          const signal = AbortSignal.any([slot.controller.signal, AbortSignal.timeout(timeoutMs)]);
+          const startup = awaitWithAbort(this.startup(slot, accessToken, signal), signal);
+          slot.startup = startup;
+          try {
+            await startup;
+          } finally {
+            if (slot.startup === startup) slot.startup = undefined;
+          }
+        },
+      })
         .then(() => {
           this.initialized = true;
         })
@@ -64,227 +208,124 @@ export class CursorApiDiscovery {
 
   async probe(timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): Promise<void> {
     await withCursorCredential(this.runtime, {
-      operation: async (_credential, accessToken) => {
-        const response = await this.runtime.transport.unary(
-          '/aiserver.v1.ServerConfigService/GetServerConfig',
-          this.runtime.codec.encode('aiserver.v1.GetServerConfigRequest'),
-          AbortSignal.timeout(timeoutMs),
-          false,
-          accessToken,
+      operation: async (credential, accessToken) => {
+        const slot = this.slot(credential);
+        const signal = AbortSignal.any([slot.controller.signal, AbortSignal.timeout(timeoutMs)]);
+        const url = decodeDiscoveryEndpoint(
+          this.runtime,
+          await awaitWithAbort(
+            this.runtime.transport.unary(
+              '/aiserver.v1.ServerConfigService/GetServerConfig',
+              this.runtime.codec.encode('aiserver.v1.GetServerConfigRequest'),
+              signal,
+              false,
+              accessToken,
+            ),
+            signal,
+          ),
         );
-        this.cacheAgentUrl(response);
+        slot.assertCurrent();
+        slot.endpoints.value = { data: url, expiresAt: Date.now() + 3_600_000 };
       },
     });
   }
 
   async health(): Promise<BackendHealth> {
+    const authConfigured = this.runtime.credentialRouter
+      .credentials()
+      .some((credential) => credential.enabled);
     try {
       await withCursorCredential(this.runtime, {
-        operation: async (_credential, accessToken) => this.agentUrl(accessToken),
+        operation: (credential, accessToken) => this.slot(credential).endpoint(accessToken),
       });
       return {
         ok: true,
         type: 'cursor-api',
-        authConfigured: this.hasEnabledCredential(),
+        authConfigured,
         detail: 'direct Cursor API available',
       };
     } catch (error) {
       return {
         ok: false,
         type: 'cursor-api',
-        authConfigured: this.hasEnabledCredential(),
+        authConfigured,
         detail: error instanceof Error ? error.message : 'direct Cursor API unavailable',
       };
     }
   }
 
-  private catalogue(): CursorVariantCatalogue {
-    return { standard: this.requestedModels, max: this.maxModeModels };
-  }
-
-  /** The variant this bridge selects for an advertised id under the policy. */
-  resolveVariant(model: string, effort?: string): ResolvedModelVariant | undefined {
-    return resolveModelVariant(this.catalogue(), { model, effort, maxMode: this.maxMode });
-  }
-
-  private liveVariant(unifiedId: string): LiveVariantFacts | undefined {
-    const resolved = this.resolveVariant(unifiedId);
-    if (!resolved) return undefined;
-    const context = resolved.model.parameters.find((parameter) => parameter.id === 'context');
-    const contextWindow = context ? parseCursorContextParameter(context.value) : undefined;
-    return {
-      isMaxMode: resolved.isMaxMode,
-      ...(contextWindow === undefined ? {} : { contextWindow }),
-    };
-  }
-
-  /** Which variant each advertised model currently resolves to. */
-  modelVariants(models: readonly BridgeModel[]): ModelVariantView[] {
-    return models.flatMap((model) => {
-      const resolved = this.resolveVariant(model.id);
-      if (!resolved) return [];
-      return [
-        {
-          id: model.id,
-          resolvedVariant: resolved.slug,
-          isMaxMode: resolved.isMaxMode,
-          ...(model.context_window === undefined ? {} : { contextWindow: model.context_window }),
-        },
-      ];
-    });
-  }
-
-  /** Resolves unified ids (plus reasoning_effort) or legacy slugs to a RequestedModel. */
-  resolveRequestedModel(model: string, effort?: string): RequestedModel | undefined {
-    return this.resolveVariant(model, effort)?.model;
-  }
-
-  /** Last advertised list, without forcing a refresh. */
-  cachedModels(): BridgeModel[] {
-    return [...(this.modelCache?.models ?? [])];
-  }
-
-  async listModels(): Promise<BridgeModel[]> {
-    if (this.modelCache && this.modelCache.expiresAt > Date.now()) {
-      return [...this.modelCache.models];
-    }
-    if (!this.modelRefresh) {
-      this.modelRefresh = withCursorCredential(this.runtime, {
-        operation: async (_credential, accessToken) => {
-          const [modelsResponse, defaultResponse] = await Promise.all([
-            this.runtime.transport.unary(
-              '/aiserver.v1.AiService/GetUsableModels',
-              this.runtime.codec.encode('agent.v1.GetUsableModelsRequest'),
-              undefined,
-              false,
-              accessToken,
-            ),
-            this.runtime.transport.unary(
-              '/aiserver.v1.AiService/GetDefaultModelForCli',
-              this.runtime.codec.encode('agent.v1.GetDefaultModelForCliRequest'),
-              undefined,
-              false,
-              accessToken,
-            ),
-          ]);
-          return this.cacheModels(modelsResponse, defaultResponse);
-        },
-      }).finally(() => {
-        this.modelRefresh = undefined;
-      });
-    }
-    return [...(await this.modelRefresh)];
-  }
-
+  /** @deprecated Pass the selected credential to prepare; token-only callers cannot share caches. */
   async agentUrl(accessToken: string, signal?: AbortSignal): Promise<string> {
-    if (this.discoveryCache && this.discoveryCache.expiresAt > Date.now()) {
-      return awaitWithAbort(Promise.resolve(this.discoveryCache.url), signal);
-    }
-    if (!this.discoveryRefresh) {
-      this.discoveryRefresh = (async () => {
-        const response = await this.runtime.transport.unary(
-          '/aiserver.v1.ServerConfigService/GetServerConfig',
-          this.runtime.codec.encode('aiserver.v1.GetServerConfigRequest'),
-          undefined,
-          false,
-          accessToken,
-        );
-        return this.cacheAgentUrl(response);
-      })().finally(() => {
-        this.discoveryRefresh = undefined;
-      });
-    }
-    return awaitWithAbort(this.discoveryRefresh, signal);
-  }
-
-  private async startup(timeoutMs: number): Promise<void> {
-    await withCursorCredential(this.runtime, {
-      operation: async (_credential, accessToken) => {
-        const signal = AbortSignal.timeout(timeoutMs);
-        const unary = (index: number, type: string, value?: Record<string, unknown>) =>
-          this.runtime.transport.unary(
-            CURSOR_API_STARTUP_SEQUENCE[index] ?? '',
-            this.runtime.codec.encode(type, value),
-            signal,
-            index === 0,
-            accessToken,
-          );
-        await unary(0, 'aiserver.v1.GetMeRequest');
-        this.cacheAgentUrl(await unary(1, 'aiserver.v1.GetServerConfigRequest'));
-        const available = await unary(2, 'aiserver.v1.AvailableModelsRequest', {
-          useModelParameters: true,
-          doNotUseMarkdown: true,
-        });
-        const usable = await unary(3, 'agent.v1.GetUsableModelsRequest');
-        const defaultModel = await unary(4, 'agent.v1.GetDefaultModelForCliRequest');
-        this.cacheModels(usable, defaultModel, available);
-        await unary(5, 'aiserver.v1.GetMeRequest');
-        this.cacheAgentUrl(await unary(6, 'aiserver.v1.GetServerConfigRequest'));
-        const telemetry = this.runtime.transport.telemetry?.bind(this.runtime.transport);
-        if (!telemetry) return;
-        await telemetry(CURSOR_API_STARTUP_SEQUENCE[7], { logs: [] }, signal, accessToken);
-        await telemetry(CURSOR_API_STARTUP_SEQUENCE[8], { events: [] }, signal, accessToken);
-        await telemetry(CURSOR_API_STARTUP_SEQUENCE[9], { logs: [] }, signal, accessToken);
-        await telemetry(CURSOR_API_STARTUP_SEQUENCE[10], { logs: [] }, signal, accessToken);
-      },
-    });
-  }
-
-  private cacheModels(
-    modelsResponse: Buffer,
-    defaultResponse: Buffer,
-    availableResponse?: Buffer,
-  ): BridgeModel[] {
-    const usable = this.runtime.codec.decode('agent.v1.GetUsableModelsResponse', modelsResponse);
-    if (availableResponse) {
-      const available = this.runtime.codec.decode(
-        'aiserver.v1.AvailableModelsResponse',
-        availableResponse,
-      );
-      const mapped = mapRequestedModels(available, usable);
-      this.requestedModels.clear();
-      for (const [id, model] of mapped) this.requestedModels.set(id, model);
-      const maxMapped = mapMaxModeModels(available);
-      this.maxModeModels.clear();
-      for (const [id, model] of maxMapped) this.maxModeModels.set(id, model);
-    }
-    const models = unifiedModelList(mapUsableModels(usable), (id) => this.liveVariant(id));
-    const discovered = this.runtime.codec.decode(
-      'agent.v1.GetDefaultModelForCliResponse',
-      defaultResponse,
-    ).model?.modelId;
-    for (const defaultModel of [discovered, this.runtime.config.defaultModel]) {
-      if (typeof defaultModel !== 'string' || !defaultModel) continue;
-      const existing = models.findIndex((model) => model.id === defaultModel);
-      if (existing >= 0) models.unshift(...models.splice(existing, 1));
-      else
-        models.unshift({
-          id: defaultModel,
-          object: 'model',
-          created: 1_700_000_000,
-          owned_by: 'cursor',
-        });
-    }
-    this.modelCache = { models, expiresAt: Date.now() + MODEL_TTL_MS };
-    return models;
-  }
-
-  private cacheAgentUrl(response: Buffer): string {
-    const override = this.runtime.environment.CURSOR_BRIDGE_CURSOR_AGENT_ENDPOINT?.replace(
-      /\/$/,
-      '',
+    signal?.throwIfAborted();
+    const response = await awaitWithAbort(
+      this.runtime.transport.unary(
+        '/aiserver.v1.ServerConfigService/GetServerConfig',
+        this.runtime.codec.encode('aiserver.v1.GetServerConfigRequest'),
+        signal,
+        false,
+        accessToken,
+      ),
+      signal,
     );
-    const decoded = this.runtime.codec.decode('aiserver.v1.GetServerConfigResponse', response);
-    const discovered = decoded.agentUrlConfig?.agentnUrl || decoded.agentUrlConfig?.agentUrl;
-    const url = override || discovered;
-    if (typeof url !== 'string' || !url.startsWith('https://')) {
-      throw new CursorBackendError('Cursor server discovery did not return agentnUrl');
-    }
-    this.discoveryCache = { url, expiresAt: Date.now() + DISCOVERY_TTL_MS };
-    return url;
+    return decodeDiscoveryEndpoint(this.runtime, response);
   }
 
-  private hasEnabledCredential(): boolean {
-    return this.runtime.credentialRouter.credentials().some((credential) => credential.enabled);
+  private async startup(
+    slot: DiscoverySlot,
+    accessToken: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const unary = (index: number, type: string, value?: Record<string, unknown>) => {
+      slot.assertCurrent();
+      signal.throwIfAborted();
+      return awaitWithAbort(
+        this.runtime.transport.unary(
+          CURSOR_API_STARTUP_SEQUENCE[index] ?? '',
+          this.runtime.codec.encode(type, value),
+          signal,
+          index === 0,
+          accessToken,
+        ),
+        signal,
+      );
+    };
+    await unary(0, 'aiserver.v1.GetMeRequest');
+    decodeDiscoveryEndpoint(this.runtime, await unary(1, 'aiserver.v1.GetServerConfigRequest'));
+    const available = await unary(2, 'aiserver.v1.AvailableModelsRequest', {
+      useModelParameters: true,
+      doNotUseMarkdown: true,
+    });
+    const usable = await unary(3, 'agent.v1.GetUsableModelsRequest');
+    const defaultModel = await unary(4, 'agent.v1.GetDefaultModelForCliRequest');
+    const models = new DiscoveryModels(this.runtime, [available, usable, defaultModel]);
+    await unary(5, 'aiserver.v1.GetMeRequest');
+    const url = decodeDiscoveryEndpoint(
+      this.runtime,
+      await unary(6, 'aiserver.v1.GetServerConfigRequest'),
+    );
+    const telemetry = this.runtime.transport.telemetry?.bind(this.runtime.transport);
+    if (telemetry) {
+      await awaitWithAbort(
+        telemetry(CURSOR_API_STARTUP_SEQUENCE[7], { logs: [] }, signal, accessToken),
+        signal,
+      );
+      await awaitWithAbort(
+        telemetry(CURSOR_API_STARTUP_SEQUENCE[8], { events: [] }, signal, accessToken),
+        signal,
+      );
+      await awaitWithAbort(
+        telemetry(CURSOR_API_STARTUP_SEQUENCE[9], { logs: [] }, signal, accessToken),
+        signal,
+      );
+      await awaitWithAbort(
+        telemetry(CURSOR_API_STARTUP_SEQUENCE[10], { logs: [] }, signal, accessToken),
+        signal,
+      );
+    }
+    slot.assertCurrent();
+    signal.throwIfAborted();
+    slot.endpoints.value = { data: url, expiresAt: Date.now() + 3_600_000 };
+    slot.catalogues.value = { data: models, expiresAt: models.expiresAt };
+    this.advertised = { slot, models };
   }
 }
