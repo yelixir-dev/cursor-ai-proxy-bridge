@@ -1,4 +1,46 @@
-# Cursor Composer Parity — Current Status (2026-08-22)
+# Cursor Composer Parity — Current Status (2026-09-05)
+
+## Current installed-CLI verification
+
+The August benchmark results below are historical. Its pinned OMO comparator
+uses a separate HTTP client; those results do not establish equivalence to the
+installed Cursor CLI. Historical user overrides do not close the current work.
+
+The current campaign uses `scripts/native-parity-live.mjs` with the actual
+installed CLI `2026.08.25-3e8eec8`, the same account, workspace, model and MCP
+fixture in both lanes. It captures complete Connect frames and compares full
+Run/request-context values using the installed CLI schema, rather than accepting
+field-presence equality or a bridge-only-field allowance. Generated conversation
+and fresh repository IDs are normalized; account encryption keys, model
+parameters, skill data and caller text remain significant.
+
+The four live scenarios pass for this isolated remote-CLI profile. Evidence:
+`.omo/evidence/native-parity-20260905/` (local, private captures are not committed).
+
+| Scenario         | Verified outcome                                                                                  | Evidence directory       |
+| ---------------- | ------------------------------------------------------------------------------------------------- | ------------------------ |
+| Chat             | Both return `WIRE_OK`; full profile matches                                                       | `live-chat-green/`       |
+| Parallel tools   | Two actual MCP calls/results in one Run; bridge returns both together                             | `live-parallel-green/`   |
+| Sequential tools | The first result supplies the second argument; three HTTP rounds reuse one Run                    | `live-sequential-green/` |
+| Cancellation     | Both upstream streams close before cleanup; the same bridge serves a subsequent `WIRE_OK` request | `live-cancel-green/`     |
+
+Every passing pair has zero full-profile differences and correct correlated exec
+stream closes. Every attempt, including retained failing baselines, has successful
+cleanup receipts. Controlled-upstream HTTP regressions also pass: 20 continuation
+scenarios and 10 credential-isolation scenarios. Final automated validation:
+110 files, 1,088 tests; typecheck, lint, formatting and strict checks pass.
+
+The fixes include credential-owned managed/plugin context, confined virtual file
+reads, isolated queued-read failures, native signed-int32 decoding, skill field
+presence/order, and upstream cancellation rather than a surviving half-closed Run.
+The comparator recognizes schema discovery for the declared MCP server without
+counting it as an extra external tool action.
+
+This is evidence for the named CLI version, account profile, model and scenarios,
+not a claim that stochastic server response streams are byte-identical or that
+every interactive CLI command and local workspace configuration is implemented.
+
+## Historical August benchmark
 
 Scope: deterministic native Cursor Composer vs yorha bridge benchmark, bridge
 remediation, and final verification. Plan:

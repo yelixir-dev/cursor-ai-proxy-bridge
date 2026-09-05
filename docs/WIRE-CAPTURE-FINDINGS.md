@@ -1,5 +1,13 @@
 # Wire-capture findings (P1 / P2)
 
+Historical analysis below describes the August captures and their instrument
+limits. The September installed-CLI campaign uses the opt-in exact capture path
+in `scripts/native-parity-live.mjs`: complete frames beyond the legacy binary
+caps, actual external MCP execution/results, full CLI-schema Run/context
+comparison, and correlated exec stream-close checks. Current acceptance and
+evidence are recorded in `docs/PARITY-STATUS.md`; the old reduced projection and
+historical overrides are not a current parity verdict.
+
 Diagnosis only. Captures from 2026-08-20 todo-7; compared with
 `scripts/wire-capture/diff.mjs` on `normalized.ndjson`. No product fix in this
 round.

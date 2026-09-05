@@ -1,5 +1,17 @@
 # Next Parity Plan — Planning Seed (new session)
 
+## Current execution (2026-09-05)
+
+The retained August failures below are historical context, not the current task
+cursor. Credential-scoped discovery and compatible-only Run continuation were
+verified and committed in `39082d8`; authentication invalidation in `67689e0`.
+The September campaign completed account-context integration and the four actual
+installed-CLI scenarios; see `docs/PARITY-STATUS.md` for evidence and scope. Use
+`scripts/native-parity-live.mjs` for chat/parallel/sequential/cancel, and
+`scripts/native-parity-qa.mjs` for the controlled-upstream HTTP regression
+scenarios. Neither a pinned OMO HTTP comparator nor the old reduced wire
+projection proves current installed-CLI equivalence.
+
 Goal for the follow-up session: make the yorha bridge **theoretically and
 practically indistinguishable from native cursor-agent CLI** on the wire and in
 behavior. The user's position: there is no reason full parity is impossible;
