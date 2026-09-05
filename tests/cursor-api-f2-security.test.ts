@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { fixtureNativeContext } from './support/native-context-fixture.js';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import { CursorAuthProvider } from '../src/backend/cursor-api/auth.js';
@@ -128,6 +129,7 @@ function backend(
   const auth = new CursorAuthProvider({ environment: {} });
   vi.spyOn(auth, 'getToken').mockImplementation(async (credential) => credential?.apiKey ?? '');
   return new CursorApiBackend(config, {
+    loadNativeContext: fixtureNativeContext,
     auth,
     transport,
     credentialRouter: new CursorCredentialRouter({ credentials }),

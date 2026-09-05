@@ -3,6 +3,11 @@ import { CursorCredentialUsageService } from './account-usage.js';
 import { CursorAuthProvider } from './auth.js';
 import { cursorCredentialPolicyFromEnv } from './credential-policy.js';
 import { CursorCredentialRouter, cursorCredentialsFromConfig } from './credentials.js';
+import {
+  loadNativeAccountContext,
+  type NativeAccountContext,
+  type NativeContextOptions,
+} from './native-context.js';
 import { loadProtoDescriptors, ProtoCodec, type ProtoDescriptorSet } from './protobuf.js';
 import { StickyRunStore } from './sticky-run-store.js';
 import {
@@ -25,6 +30,7 @@ export interface CursorApiBackendDependencies {
   readonly credentialRouter?: CursorCredentialRouter;
   readonly credentialUsage?: CursorCredentialUsageService;
   readonly fetch?: typeof globalThis.fetch;
+  readonly loadNativeContext?: typeof loadNativeAccountContext;
   readonly now?: () => number;
 }
 
@@ -45,6 +51,9 @@ export interface CursorApiRuntime {
   };
   readonly wait: (delayMs: number, signal?: AbortSignal) => Promise<void>;
   readonly stickyRuns: StickyRunStore;
+  readonly loadNativeContext: (
+    options: Pick<NativeContextOptions, 'rpc' | 'signal'>,
+  ) => Promise<NativeAccountContext>;
 }
 
 export function boundedInteger(raw: string | undefined, fallback: number): number {
@@ -128,6 +137,12 @@ export function createCursorApiRuntime(
     credentialUsage,
     transport,
     environment,
+    loadNativeContext: (options) =>
+      (dependencies.loadNativeContext ?? loadNativeAccountContext)({
+        ...options,
+        codec,
+        fetch: dependencies.fetch ?? globalThis.fetch,
+      }),
     timers,
     wait,
     activeStreams: new Set(),

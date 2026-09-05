@@ -11,8 +11,6 @@ export const AGENT_MODE = {
   ASK: 2,
 } as const;
 
-const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
-
 export interface CursorHistory {
   readonly conversationState: {
     rootPromptMessagesJson: readonly Buffer[];
@@ -52,11 +50,12 @@ function nativeToolInstruction(request: ChatCompletionRequest): string {
   if (request.tool_choice === 'required') {
     return 'Call at least one MCP/OpenAI tool listed in this request by its exact function name. Do not answer directly or use Cursor built-in Read, Shell, LS, Grep, or Web tools.';
   }
-  return 'When a tool is needed, call only an MCP/OpenAI tool listed in this request by its exact function name. Do not use Cursor built-in Read, Shell, LS, Grep, or Web tools. Never say tool execution is delegated; emit a tool call instead.';
+  return '';
 }
 
 /** Bridge tool-scheduling guidance rides as a trailing root-prompt system entry. */
 function guidanceFor(request: ChatCompletionRequest): string {
+  if (request.tool_choice === undefined || request.tool_choice === 'auto') return '';
   const parallelNote =
     request.tools?.length && request.parallel_tool_calls === false
       ? '\nReturn at most one tool call.'
@@ -120,9 +119,6 @@ function rootPromptEntries(
       });
     }
   }
-  if (!entries.some((entry) => entry.role === 'system')) {
-    entries.unshift({ role: 'system', content: DEFAULT_SYSTEM_PROMPT });
-  }
   const guidance = guidanceFor(request);
   if (guidance) entries.push({ role: 'system', content: guidance });
   return entries;
@@ -140,11 +136,7 @@ function actionFor(request: ChatCompletionRequest): Record<string, unknown> {
           text,
           messageId: randomUUID(),
           selectedContext: {},
-          mode:
-            request.tools?.length && request.tool_choice !== 'none'
-              ? AGENT_MODE.AGENT
-              : AGENT_MODE.ASK,
-          conversationStateBlobId: Buffer.alloc(0),
+          mode: AGENT_MODE.AGENT,
         },
       },
     },

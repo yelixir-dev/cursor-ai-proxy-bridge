@@ -1,5 +1,6 @@
 // allow: SIZE_OK — one stateful Run lifecycle owns transport, timers, parking, and resume.
 import { randomUUID } from 'node:crypto';
+import { homedir } from 'node:os';
 import { type RequestTrace, traceCredentialSlot, traceStage } from '../../trace.js';
 import { CursorBackendError, CursorCommandAbortedError } from '../cursor-cli.js';
 import type { ChatCompletionRequest } from '../types.js';
@@ -7,8 +8,10 @@ import { ConnectFrameDecoder, ConnectRpcError, encodeConnectFrame } from './conn
 import { type HeldToolExec, sendHeldToolResult } from './exec-responses.js';
 import type { CursorHistory } from './history.js';
 import { enforceNativeToolChoice, heartbeatMessage, runRequestMessage } from './mapper.js';
+import type { NativeAccountContext } from './native-context.js';
 import { cursorInferenceErrorType } from './provider-error.js';
 import type { RequestedModel } from './requested-models.js';
+import type { SelectedSubagentModel } from './subagent-models.js';
 import { CursorRunTimeoutError, type CursorRunPhase } from './run-errors.js';
 import { CursorRunMessages } from './run-messages.js';
 import type { RunEmitter, RunOutcome } from './run-types.js';
@@ -31,6 +34,8 @@ export interface CursorRunExecutionOptions {
   readonly runtime: CursorApiRuntime;
   readonly agentUrl: string;
   readonly requestedModel?: RequestedModel;
+  readonly selectedSubagentModels: readonly SelectedSubagentModel[];
+  readonly nativeContext: NativeAccountContext;
   readonly request: ChatCompletionRequest;
   readonly accessToken: string;
   readonly history: CursorHistory;
@@ -78,6 +83,20 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
   if (signal?.aborted || options.credentialSignal?.aborted) throw new CursorCommandAbortedError();
 
   const requestId = randomUUID();
+  const initialMessage = runRequestMessage(
+    request,
+    requestId,
+    undefined,
+    options.history,
+    options.requestedModel,
+    options.selectedSubagentModels,
+  );
+  const nativeContext = options.nativeContext.forConversation({
+    homeDir: runtime.environment.HOME?.trim() || homedir(),
+    dataDir: runtime.environment.CURSOR_DATA_DIR?.trim() || undefined,
+    workspacePath: process.cwd(),
+    conversationId: initialMessage.message.value.conversationId,
+  });
   const stream = await runtime.transport.openRun(
     options.agentUrl,
     requestId,
@@ -107,6 +126,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     let latestRequest = request;
     let currentEmit = options.emit;
     let activeSignal = signal;
+    const readLifecycle = new AbortController();
     let outputBytes = 0;
     let decodedOutputBytes = 0;
     const surfacedCallIds = new Set<string>();
@@ -130,6 +150,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       holdTimer = undefined;
     };
     const cleanup = () => {
+      readLifecycle.abort(new CursorCommandAbortedError());
       clearHoldTimer();
       if (timerHandles.heartbeat !== undefined) {
         runtime.timers.clearInterval(timerHandles.heartbeat);
@@ -349,6 +370,11 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
     const messages = new CursorRunMessages({
       codec: runtime.codec,
       request,
+      conversationId: initialMessage.message.value.conversationId,
+      environment: runtime.environment,
+      nativeContext,
+      readSignal: () =>
+        activeSignal ? AbortSignal.any([activeSignal, readLifecycle.signal]) : readLifecycle.signal,
       callIdPrefix: requestId,
       trace,
       emit: options.emit,
@@ -562,10 +588,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       if (!settled)
         finish(new CursorRunClosedError('Cursor Agent Run stream closed without a trailer'));
     });
-    writeMessage(
-      runRequestMessage(request, requestId, undefined, options.history, options.requestedModel),
-      false,
-    );
+    writeMessage(initialMessage, false);
     if (activeSignal?.aborted) onAbort();
   });
 }

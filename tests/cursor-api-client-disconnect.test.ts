@@ -1,4 +1,5 @@
 import http2 from 'node:http2';
+import { fixtureNativeContext } from './support/native-context-fixture.js';
 import { request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -151,6 +152,8 @@ describe('client disconnect mid-Run', () => {
         generation: 0,
         agentUrl: upstream.origin,
         maxModeEnabled: false,
+        selectedSubagentModels: [],
+        nativeContext: await fixtureNativeContext(),
         signal: new AbortController().signal,
         resolveVariant: () => undefined,
         resolveRequestedModel: () => undefined,

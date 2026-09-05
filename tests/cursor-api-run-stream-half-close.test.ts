@@ -1,4 +1,5 @@
 import http2, { type ClientHttp2Stream, type OutgoingHttpHeaders } from 'node:http2';
+import { fixtureNativeContext } from './support/native-context-fixture.js';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CursorAuthProvider } from '../src/backend/cursor-api/auth.js';
@@ -180,6 +181,8 @@ describe('Run stream HTTP/2 half-close', () => {
       runtime,
       agentUrl: server.origin,
       maxModeDefault: false,
+      selectedSubagentModels: [],
+      nativeContext: await fixtureNativeContext(),
       request,
       accessToken: 'token',
       credentialId: 'test-credential',

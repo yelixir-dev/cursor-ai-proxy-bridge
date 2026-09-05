@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "extractedAt": "2026-08-29T08:33:24.326Z",
+  "extractedAt": "2026-09-05T01:11:17.902Z",
   "bundleVersion": "2026.08.25-3e8eec8",
   "clientVersion": "cli-2026.08.25-3e8eec8",
   "roots": [
@@ -15,9 +15,27 @@
     "agent.v1.GetDefaultModelForCliRequest",
     "agent.v1.GetDefaultModelForCliResponse",
     "agent.v1.AgentClientMessage",
-    "agent.v1.AgentServerMessage"
+    "agent.v1.AgentServerMessage",
+    "aiserver.v1.GetManagedSkillsRequest",
+    "aiserver.v1.GetManagedSkillsResponse",
+    "aiserver.v1.GetEffectiveUserPluginsRequest",
+    "aiserver.v1.GetEffectiveUserPluginsResponse"
   ],
   "services": [
+    {
+      "service": "aiserver.v1.DashboardService",
+      "method": "GetManagedSkills",
+      "input": "aiserver.v1.GetManagedSkillsRequest",
+      "output": "aiserver.v1.GetManagedSkillsResponse",
+      "kind": "unary"
+    },
+    {
+      "service": "aiserver.v1.DashboardService",
+      "method": "GetEffectiveUserPlugins",
+      "input": "aiserver.v1.GetEffectiveUserPluginsRequest",
+      "output": "aiserver.v1.GetEffectiveUserPluginsResponse",
+      "kind": "unary"
+    },
     {
       "service": "aiserver.v1.DashboardService",
       "method": "GetMe",
@@ -92,6 +110,15 @@
           "message": "agent.v1.KvClientMessage"
         },
         {
+          "no": 5,
+          "name": "exec_client_control_message",
+          "localName": "execClientControlMessage",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ExecClientControlMessage"
+        },
+        {
           "no": 7,
           "name": "client_heartbeat",
           "localName": "clientHeartbeat",
@@ -141,14 +168,6 @@
           "message": "agent.v1.ConversationAction"
         },
         {
-          "no": 9,
-          "name": "requested_model",
-          "localName": "requestedModel",
-          "kind": "message",
-          "repeated": false,
-          "message": "agent.v1.RequestedModel"
-        },
-        {
           "no": 4,
           "name": "mcp_tools",
           "localName": "mcpTools",
@@ -163,6 +182,14 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
+        },
+        {
+          "no": 9,
+          "name": "requested_model",
+          "localName": "requestedModel",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.RequestedModel"
         },
         {
           "no": 12,
@@ -226,6 +253,106 @@
           "repeated": false,
           "oneof": "message",
           "message": "agent.v1.KvServerMessage"
+        }
+      ]
+    },
+    "agent.v1.AgentSkill": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "full_path",
+          "localName": "fullPath",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "description",
+          "localName": "description",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "environments",
+          "localName": "environments",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        },
+        {
+          "no": 6,
+          "name": "disabled_environments",
+          "localName": "disabledEnvironments",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        },
+        {
+          "no": 7,
+          "name": "git_remote_origin",
+          "localName": "gitRemoteOrigin",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 8,
+          "name": "disable_model_invocation",
+          "localName": "disableModelInvocation",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 9,
+          "name": "plugin",
+          "localName": "plugin",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 10,
+          "name": "marketplace",
+          "localName": "marketplace",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 11,
+          "name": "plugin_id",
+          "localName": "pluginId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 12,
+          "name": "marketplace_id",
+          "localName": "marketplaceId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 13,
+          "name": "globs",
+          "localName": "globs",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        },
+        {
+          "no": 14,
+          "name": "scoped_to",
+          "localName": "scopedTo",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
         }
       ]
     },
@@ -510,6 +637,106 @@
         }
       ]
     },
+    "agent.v1.CustomSubagent": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "full_path",
+          "localName": "fullPath",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "name",
+          "localName": "name",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "description",
+          "localName": "description",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "tools",
+          "localName": "tools",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "model",
+          "localName": "model",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 6,
+          "name": "prompt",
+          "localName": "prompt",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 7,
+          "name": "permission_mode",
+          "localName": "permissionMode",
+          "kind": "enum",
+          "repeated": false,
+          "enum": "agent.v1.CustomSubagentPermissionMode"
+        },
+        {
+          "no": 9,
+          "name": "plugin",
+          "localName": "plugin",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 10,
+          "name": "marketplace",
+          "localName": "marketplace",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 11,
+          "name": "plugin_id",
+          "localName": "pluginId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 12,
+          "name": "marketplace_id",
+          "localName": "marketplaceId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 14,
+          "name": "source",
+          "localName": "source",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
     "agent.v1.DeleteArgs": {
       "fields": [
         {
@@ -613,6 +840,19 @@
         }
       ]
     },
+    "agent.v1.ExecClientControlMessage": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "stream_close",
+          "localName": "streamClose",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ExecClientStreamClose"
+        }
+      ]
+    },
     "agent.v1.ExecClientMessage": {
       "fields": [
         {
@@ -622,30 +862,6 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 13
-        },
-        {
-          "no": 15,
-          "name": "exec_id",
-          "localName": "execId",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 39,
-          "name": "local_execution_time_ms",
-          "localName": "localExecutionTimeMs",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 5
-        },
-        {
-          "no": 45,
-          "name": "hook_additional_contexts",
-          "localName": "hookAdditionalContexts",
-          "kind": "message",
-          "repeated": true,
-          "message": "agent.v1.HookAdditionalContext"
         },
         {
           "no": 2,
@@ -687,15 +903,6 @@
           "no": 7,
           "name": "read_result",
           "localName": "readResult",
-          "kind": "message",
-          "repeated": false,
-          "oneof": "message",
-          "message": "agent.v1.ReadResult"
-        },
-        {
-          "no": 29,
-          "name": "redacted_read_result",
-          "localName": "redactedReadResult",
           "kind": "message",
           "repeated": false,
           "oneof": "message",
@@ -747,6 +954,14 @@
           "message": "agent.v1.ShellStream"
         },
         {
+          "no": 15,
+          "name": "exec_id",
+          "localName": "execId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
           "no": 16,
           "name": "background_shell_spawn_result",
           "localName": "backgroundShellSpawnResult",
@@ -772,15 +987,6 @@
           "repeated": false,
           "oneof": "message",
           "message": "agent.v1.ReadMcpResourceExecResult"
-        },
-        {
-          "no": 36,
-          "name": "mcp_state_exec_result",
-          "localName": "mcpStateExecResult",
-          "kind": "message",
-          "repeated": false,
-          "oneof": "message",
-          "message": "agent.v1.McpStateExecResult"
         },
         {
           "no": 20,
@@ -837,6 +1043,15 @@
           "message": "agent.v1.SubagentResult"
         },
         {
+          "no": 29,
+          "name": "redacted_read_result",
+          "localName": "redactedReadResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ReadResult"
+        },
+        {
           "no": 30,
           "name": "force_background_shell_result",
           "localName": "forceBackgroundShellResult",
@@ -855,6 +1070,15 @@
           "message": "agent.v1.ForceBackgroundSubagentResult"
         },
         {
+          "no": 36,
+          "name": "mcp_state_exec_result",
+          "localName": "mcpStateExecResult",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.McpStateExecResult"
+        },
+        {
           "no": 37,
           "name": "subagent_await_result",
           "localName": "subagentAwaitResult",
@@ -871,6 +1095,14 @@
           "repeated": false,
           "oneof": "message",
           "message": "agent.v1.SmartModeClassifierResult"
+        },
+        {
+          "no": 39,
+          "name": "local_execution_time_ms",
+          "localName": "localExecutionTimeMs",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 5
         },
         {
           "no": 40,
@@ -916,6 +1148,14 @@
           "repeated": false,
           "oneof": "message",
           "message": "aiserver.v1.GetDiffResponse"
+        },
+        {
+          "no": 45,
+          "name": "hook_additional_contexts",
+          "localName": "hookAdditionalContexts",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.HookAdditionalContext"
         },
         {
           "no": 46,
@@ -1018,6 +1258,18 @@
         }
       ]
     },
+    "agent.v1.ExecClientStreamClose": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "id",
+          "localName": "id",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 13
+        }
+      ]
+    },
     "agent.v1.ExecServerMessage": {
       "fields": [
         {
@@ -1027,22 +1279,6 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 13
-        },
-        {
-          "no": 15,
-          "name": "exec_id",
-          "localName": "execId",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 57,
-          "name": "machine_id",
-          "localName": "machineId",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
         },
         {
           "no": 2,
@@ -1084,15 +1320,6 @@
           "no": 7,
           "name": "read_args",
           "localName": "readArgs",
-          "kind": "message",
-          "repeated": false,
-          "oneof": "message",
-          "message": "agent.v1.ReadArgs"
-        },
-        {
-          "no": 29,
-          "name": "redacted_read_args",
-          "localName": "redactedReadArgs",
           "kind": "message",
           "repeated": false,
           "oneof": "message",
@@ -1144,6 +1371,14 @@
           "message": "agent.v1.ShellArgs"
         },
         {
+          "no": 15,
+          "name": "exec_id",
+          "localName": "execId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
           "no": 16,
           "name": "background_shell_spawn_args",
           "localName": "backgroundShellSpawnArgs",
@@ -1171,13 +1406,12 @@
           "message": "agent.v1.ReadMcpResourceExecArgs"
         },
         {
-          "no": 36,
-          "name": "mcp_state_exec_args",
-          "localName": "mcpStateExecArgs",
+          "no": 19,
+          "name": "span_context",
+          "localName": "spanContext",
           "kind": "message",
           "repeated": false,
-          "oneof": "message",
-          "message": "agent.v1.McpStateExecArgs"
+          "message": "agent.v1.SpanContext"
         },
         {
           "no": 20,
@@ -1234,6 +1468,15 @@
           "message": "agent.v1.SubagentArgs"
         },
         {
+          "no": 29,
+          "name": "redacted_read_args",
+          "localName": "redactedReadArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.ReadArgs"
+        },
+        {
           "no": 30,
           "name": "force_background_shell_args",
           "localName": "forceBackgroundShellArgs",
@@ -1250,6 +1493,15 @@
           "repeated": false,
           "oneof": "message",
           "message": "agent.v1.ForceBackgroundSubagentArgs"
+        },
+        {
+          "no": 36,
+          "name": "mcp_state_exec_args",
+          "localName": "mcpStateExecArgs",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.McpStateExecArgs"
         },
         {
           "no": 37,
@@ -1405,6 +1657,14 @@
           "message": "agent.v1.AgentStoreConflictArgs"
         },
         {
+          "no": 55,
+          "name": "accept_hook_additional_contexts",
+          "localName": "acceptHookAdditionalContexts",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
           "no": 56,
           "name": "adopt_args",
           "localName": "adoptArgs",
@@ -1414,20 +1674,12 @@
           "message": "agent.v1.AdoptArgs"
         },
         {
-          "no": 19,
-          "name": "span_context",
-          "localName": "spanContext",
-          "kind": "message",
-          "repeated": false,
-          "message": "agent.v1.SpanContext"
-        },
-        {
-          "no": 55,
-          "name": "accept_hook_additional_contexts",
-          "localName": "acceptHookAdditionalContexts",
+          "no": 57,
+          "name": "machine_id",
+          "localName": "machineId",
           "kind": "scalar",
           "repeated": false,
-          "scalar": 8
+          "scalar": 9
         }
       ]
     },
@@ -1822,6 +2074,9 @@
         }
       ]
     },
+    "agent.v1.HooksConfigInfo": {
+      "fields": []
+    },
     "agent.v1.InteractionUpdate": {
       "fields": [
         {
@@ -1832,15 +2087,6 @@
           "repeated": false,
           "oneof": "message",
           "message": "agent.v1.TextDeltaUpdate"
-        },
-        {
-          "no": 7,
-          "name": "partial_tool_call",
-          "localName": "partialToolCall",
-          "kind": "message",
-          "repeated": false,
-          "oneof": "message",
-          "message": "agent.v1.PartialToolCallUpdate"
         },
         {
           "no": 2,
@@ -1868,6 +2114,15 @@
           "repeated": false,
           "oneof": "message",
           "message": "agent.v1.ThinkingDeltaUpdate"
+        },
+        {
+          "no": 7,
+          "name": "partial_tool_call",
+          "localName": "partialToolCall",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "message",
+          "message": "agent.v1.PartialToolCallUpdate"
         },
         {
           "no": 8,
@@ -2172,6 +2427,82 @@
         }
       ]
     },
+    "agent.v1.McpDescriptor": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "server_name",
+          "localName": "serverName",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "server_identifier",
+          "localName": "serverIdentifier",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "folder_path",
+          "localName": "folderPath",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "server_use_instructions",
+          "localName": "serverUseInstructions",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "tools",
+          "localName": "tools",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.McpToolDescriptor"
+        },
+        {
+          "no": 7,
+          "name": "plugin",
+          "localName": "plugin",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 8,
+          "name": "marketplace",
+          "localName": "marketplace",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 9,
+          "name": "plugin_db_id",
+          "localName": "pluginDbId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 10,
+          "name": "marketplace_id",
+          "localName": "marketplaceId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
     "agent.v1.McpError": {
       "fields": [
         {
@@ -2181,6 +2512,26 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.McpMetaToolOptions": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "enabled",
+          "localName": "enabled",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 2,
+          "name": "mcp_descriptors",
+          "localName": "mcpDescriptors",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.McpDescriptor"
         }
       ]
     },
@@ -2203,6 +2554,26 @@
           "repeated": false,
           "oneof": "result",
           "message": "agent.v1.McpError"
+        }
+      ]
+    },
+    "agent.v1.McpStateExecArgs": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "server_identifiers",
+          "localName": "serverIdentifiers",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "kick_only",
+          "localName": "kickOnly",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
         }
       ]
     },
@@ -2322,22 +2693,6 @@
           "scalar": 9
         },
         {
-          "no": 4,
-          "name": "provider_identifier",
-          "localName": "providerIdentifier",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
-          "no": 5,
-          "name": "tool_name",
-          "localName": "toolName",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 9
-        },
-        {
           "no": 2,
           "name": "description",
           "localName": "description",
@@ -2354,9 +2709,77 @@
           "message": "google.protobuf.Value"
         },
         {
+          "no": 4,
+          "name": "provider_identifier",
+          "localName": "providerIdentifier",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "tool_name",
+          "localName": "toolName",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
           "no": 6,
           "name": "input_schema_json",
           "localName": "inputSchemaJson",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.McpToolDescriptor": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "tool_name",
+          "localName": "toolName",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "definition_path",
+          "localName": "definitionPath",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "description",
+          "localName": "description",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "input_schema",
+          "localName": "inputSchema",
+          "kind": "message",
+          "repeated": false,
+          "message": "google.protobuf.Value"
+        },
+        {
+          "no": 5,
+          "name": "input_schema_json",
+          "localName": "inputSchemaJson",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 6,
+          "name": "annotations_json",
+          "localName": "annotationsJson",
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
@@ -2729,6 +3152,58 @@
         }
       ]
     },
+    "agent.v1.ReadError": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "path",
+          "localName": "path",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.ReadFileNotFound": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "path",
+          "localName": "path",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.ReadInvalidFile": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "path",
+          "localName": "path",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "reason",
+          "localName": "reason",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
     "agent.v1.ReadMcpResourceError": {
       "fields": [
         {
@@ -2762,6 +3237,38 @@
         }
       ]
     },
+    "agent.v1.ReadPermissionDenied": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "path",
+          "localName": "path",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.ReadRejected": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "path",
+          "localName": "path",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "reason",
+          "localName": "reason",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
     "agent.v1.ReadResult": {
       "fields": [
         {
@@ -2774,6 +3281,15 @@
           "message": "agent.v1.ReadSuccess"
         },
         {
+          "no": 2,
+          "name": "error",
+          "localName": "error",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.ReadError"
+        },
+        {
           "no": 3,
           "name": "rejected",
           "localName": "rejected",
@@ -2781,6 +3297,33 @@
           "repeated": false,
           "oneof": "result",
           "message": "agent.v1.ReadRejected"
+        },
+        {
+          "no": 4,
+          "name": "file_not_found",
+          "localName": "fileNotFound",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.ReadFileNotFound"
+        },
+        {
+          "no": 5,
+          "name": "permission_denied",
+          "localName": "permissionDenied",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.ReadPermissionDenied"
+        },
+        {
+          "no": 6,
+          "name": "invalid_file",
+          "localName": "invalidFile",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "result",
+          "message": "agent.v1.ReadInvalidFile"
         }
       ]
     },
@@ -2804,15 +3347,6 @@
           "scalar": 9
         },
         {
-          "no": 5,
-          "name": "data",
-          "localName": "data",
-          "kind": "scalar",
-          "repeated": false,
-          "oneof": "output",
-          "scalar": 12
-        },
-        {
           "no": 3,
           "name": "total_lines",
           "localName": "totalLines",
@@ -2827,6 +3361,15 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 3
+        },
+        {
+          "no": 5,
+          "name": "data",
+          "localName": "data",
+          "kind": "scalar",
+          "repeated": false,
+          "oneof": "output",
+          "scalar": 12
         },
         {
           "no": 6,
@@ -2927,6 +3470,50 @@
         }
       ]
     },
+    "agent.v1.RepositoryIndexingInfo": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "relative_workspace_path",
+          "localName": "relativeWorkspacePath",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "repo_name",
+          "localName": "repoName",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "repo_owner",
+          "localName": "repoOwner",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 8,
+          "name": "orthogonal_transform_seed",
+          "localName": "orthogonalTransformSeed",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 1
+        },
+        {
+          "no": 10,
+          "name": "path_encryption_key",
+          "localName": "pathEncryptionKey",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
     "agent.v1.RequestContext": {
       "fields": [
         {
@@ -2938,12 +3525,36 @@
           "message": "agent.v1.RequestContextEnv"
         },
         {
+          "no": 6,
+          "name": "repository_info",
+          "localName": "repositoryInfo",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.RepositoryIndexingInfo"
+        },
+        {
           "no": 7,
           "name": "tools",
           "localName": "tools",
           "kind": "message",
           "repeated": true,
           "message": "agent.v1.McpToolDefinition"
+        },
+        {
+          "no": 8,
+          "name": "conversation_notes_listing",
+          "localName": "conversationNotesListing",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 9,
+          "name": "shared_notes_listing",
+          "localName": "sharedNotesListing",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
         },
         {
           "no": 17,
@@ -2954,12 +3565,52 @@
           "scalar": 8
         },
         {
+          "no": 22,
+          "name": "custom_subagents",
+          "localName": "customSubagents",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.CustomSubagent"
+        },
+        {
           "no": 24,
           "name": "web_fetch_enabled",
           "localName": "webFetchEnabled",
           "kind": "scalar",
           "repeated": false,
           "scalar": 8
+        },
+        {
+          "no": 26,
+          "name": "commit_attribution_message",
+          "localName": "commitAttributionMessage",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 27,
+          "name": "pr_attribution_message",
+          "localName": "prAttributionMessage",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 28,
+          "name": "hooks_config",
+          "localName": "hooksConfig",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.HooksConfigInfo"
+        },
+        {
+          "no": 29,
+          "name": "agent_skills",
+          "localName": "agentSkills",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.AgentSkill"
         },
         {
           "no": 32,
@@ -2976,6 +3627,14 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 8
+        },
+        {
+          "no": 34,
+          "name": "mcp_meta_tool_options",
+          "localName": "mcpMetaToolOptions",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.McpMetaToolOptions"
         },
         {
           "no": 36,
@@ -3366,14 +4025,6 @@
           "scalar": 9
         },
         {
-          "no": 16,
-          "name": "extra_context_entries",
-          "localName": "extraContextEntries",
-          "kind": "message",
-          "repeated": true,
-          "message": "agent.v1.ExtraContextEntry"
-        },
-        {
           "no": 4,
           "name": "files",
           "localName": "files",
@@ -3430,14 +4081,6 @@
           "message": "agent.v1.SelectedCursorRule"
         },
         {
-          "no": 18,
-          "name": "git_diff",
-          "localName": "gitDiff",
-          "kind": "message",
-          "repeated": false,
-          "message": "agent.v1.SelectedGitDiff"
-        },
-        {
           "no": 11,
           "name": "git_diff_from_branch_to_main",
           "localName": "gitDiffFromBranchToMain",
@@ -3478,12 +4121,28 @@
           "message": "agent.v1.SelectedConsoleLog"
         },
         {
+          "no": 16,
+          "name": "extra_context_entries",
+          "localName": "extraContextEntries",
+          "kind": "message",
+          "repeated": true,
+          "message": "agent.v1.ExtraContextEntry"
+        },
+        {
           "no": 17,
           "name": "git_commits",
           "localName": "gitCommits",
           "kind": "message",
           "repeated": true,
           "message": "agent.v1.SelectedGitCommit"
+        },
+        {
+          "no": 18,
+          "name": "git_diff",
+          "localName": "gitDiff",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.SelectedGitDiff"
         },
         {
           "no": 19,
@@ -4316,14 +4975,6 @@
           "enum": "aiserver.v1.AvailableModelsScope"
         },
         {
-          "no": 14,
-          "name": "byok_enabled",
-          "localName": "byokEnabled",
-          "kind": "scalar",
-          "repeated": false,
-          "scalar": 8
-        },
-        {
           "no": 11,
           "name": "use_react_model_picker",
           "localName": "useReactModelPicker",
@@ -4346,19 +4997,19 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
+        },
+        {
+          "no": 14,
+          "name": "byok_enabled",
+          "localName": "byokEnabled",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
         }
       ]
     },
     "aiserver.v1.AvailableModelsResponse": {
       "fields": [
-        {
-          "no": 2,
-          "name": "models",
-          "localName": "models",
-          "kind": "message",
-          "repeated": true,
-          "message": "aiserver.v1.AvailableModelsResponse.AvailableModel"
-        },
         {
           "no": 1,
           "name": "model_names",
@@ -4366,6 +5017,14 @@
           "kind": "scalar",
           "repeated": true,
           "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "models",
+          "localName": "models",
+          "kind": "message",
+          "repeated": true,
+          "message": "aiserver.v1.AvailableModelsResponse.AvailableModel"
         },
         {
           "no": 4,
@@ -4424,18 +5083,6 @@
           "message": "aiserver.v1.AvailableModelsResponse.FeatureModelConfig"
         },
         {
-          "no": 16,
-          "name": "subagent_model_configs",
-          "localName": "subagentModelConfigs",
-          "kind": "map",
-          "repeated": false,
-          "map": {
-            "keyScalar": 9,
-            "valueKind": "message",
-            "valueMessage": "aiserver.v1.AvailableModelsResponse.FeatureModelConfig"
-          }
-        },
-        {
           "no": 11,
           "name": "use_model_parameters",
           "localName": "useModelParameters",
@@ -4466,6 +5113,18 @@
           "kind": "message",
           "repeated": false,
           "message": "aiserver.v1.AvailableModelsResponse.ModelPickerDisplayConfiguration"
+        },
+        {
+          "no": 16,
+          "name": "subagent_model_configs",
+          "localName": "subagentModelConfigs",
+          "kind": "map",
+          "repeated": false,
+          "map": {
+            "keyScalar": 9,
+            "valueKind": "message",
+            "valueMessage": "aiserver.v1.AvailableModelsResponse.FeatureModelConfig"
+          }
         },
         {
           "no": 19,
@@ -4502,6 +5161,22 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "default_on",
+          "localName": "defaultOn",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 5,
+          "name": "supports_agent",
+          "localName": "supportsAgent",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
         },
         {
           "no": 18,
@@ -4570,6 +5245,81 @@
           "kind": "scalar",
           "repeated": false,
           "scalar": 9
+        }
+      ]
+    },
+    "aiserver.v1.EffectivePlugin": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "plugin",
+          "localName": "plugin",
+          "kind": "message",
+          "repeated": false,
+          "message": "aiserver.v1.Plugin"
+        },
+        {
+          "no": 4,
+          "name": "is_enabled",
+          "localName": "isEnabled",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 6,
+          "name": "pinned_git_ref",
+          "localName": "pinnedGitRef",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "aiserver.v1.GetEffectiveUserPluginsRequest": {
+      "fields": [
+        {
+          "no": 4,
+          "name": "exclude_configured_variables",
+          "localName": "excludeConfiguredVariables",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        }
+      ]
+    },
+    "aiserver.v1.GetEffectiveUserPluginsResponse": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "plugins",
+          "localName": "plugins",
+          "kind": "message",
+          "repeated": true,
+          "message": "aiserver.v1.EffectivePlugin"
+        },
+        {
+          "no": 2,
+          "name": "marketplaces",
+          "localName": "marketplaces",
+          "kind": "message",
+          "repeated": true,
+          "message": "aiserver.v1.Marketplace"
+        }
+      ]
+    },
+    "aiserver.v1.GetManagedSkillsRequest": {
+      "fields": []
+    },
+    "aiserver.v1.GetManagedSkillsResponse": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "skills",
+          "localName": "skills",
+          "kind": "message",
+          "repeated": true,
+          "message": "aiserver.v1.ManagedSkill"
         }
       ]
     },
@@ -4763,12 +5513,296 @@
     "aiserver.v1.GetServerConfigResponse": {
       "fields": [
         {
+          "no": 3,
+          "name": "indexing_config",
+          "localName": "indexingConfig",
+          "kind": "message",
+          "repeated": false,
+          "message": "aiserver.v1.IndexingConfig"
+        },
+        {
           "no": 27,
           "name": "agent_url_config",
           "localName": "agentUrlConfig",
           "kind": "message",
           "repeated": false,
           "message": "aiserver.v1.AgentUrlConfig"
+        }
+      ]
+    },
+    "aiserver.v1.IndexingConfig": {
+      "fields": [
+        {
+          "no": 9,
+          "name": "default_user_path_encryption_key",
+          "localName": "defaultUserPathEncryptionKey",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 10,
+          "name": "default_team_path_encryption_key",
+          "localName": "defaultTeamPathEncryptionKey",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "aiserver.v1.ManagedSkill": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "id",
+          "localName": "id",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "description",
+          "localName": "description",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "content",
+          "localName": "content",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "disable_model_invocation",
+          "localName": "disableModelInvocation",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 5,
+          "name": "environments",
+          "localName": "environments",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        },
+        {
+          "no": 6,
+          "name": "disabled_environments",
+          "localName": "disabledEnvironments",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        },
+        {
+          "no": 7,
+          "name": "enabled",
+          "localName": "enabled",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 8
+        },
+        {
+          "no": 9,
+          "name": "resources",
+          "localName": "resources",
+          "kind": "map",
+          "repeated": false,
+          "map": {
+            "keyScalar": 9,
+            "valueKind": "scalar",
+            "valueScalar": 9
+          }
+        }
+      ]
+    },
+    "aiserver.v1.Marketplace": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "id",
+          "localName": "id",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 3
+        },
+        {
+          "no": 2,
+          "name": "name",
+          "localName": "name",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "aiserver.v1.Plugin": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "id",
+          "localName": "id",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 3
+        },
+        {
+          "no": 2,
+          "name": "name",
+          "localName": "name",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 22,
+          "name": "marketplace_id",
+          "localName": "marketplaceId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 3
+        },
+        {
+          "no": 23,
+          "name": "marketplace",
+          "localName": "marketplace",
+          "kind": "message",
+          "repeated": false,
+          "message": "aiserver.v1.Marketplace"
+        },
+        {
+          "no": 24,
+          "name": "git_url",
+          "localName": "gitUrl",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 25,
+          "name": "git_ref",
+          "localName": "gitRef",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 26,
+          "name": "git_path",
+          "localName": "gitPath",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 28,
+          "name": "skills",
+          "localName": "skills",
+          "kind": "message",
+          "repeated": true,
+          "message": "aiserver.v1.SkillDescriptor"
+        },
+        {
+          "no": 29,
+          "name": "subagents",
+          "localName": "subagents",
+          "kind": "message",
+          "repeated": true,
+          "message": "aiserver.v1.SubagentDescriptor"
+        }
+      ]
+    },
+    "aiserver.v1.SkillDescriptor": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "name",
+          "localName": "name",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "description",
+          "localName": "description",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "source_path",
+          "localName": "sourcePath",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "source_url",
+          "localName": "sourceUrl",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 5,
+          "name": "environments",
+          "localName": "environments",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        },
+        {
+          "no": 6,
+          "name": "disabled_environments",
+          "localName": "disabledEnvironments",
+          "kind": "scalar",
+          "repeated": true,
+          "scalar": 9
+        }
+      ]
+    },
+    "aiserver.v1.SubagentDescriptor": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "name",
+          "localName": "name",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "description",
+          "localName": "description",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "source_path",
+          "localName": "sourcePath",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "source_url",
+          "localName": "sourceUrl",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
         }
       ]
     },

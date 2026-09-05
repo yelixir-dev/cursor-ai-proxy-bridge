@@ -117,7 +117,11 @@ export function buildDescriptorOutput({
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([name, type]) => [
           name,
-          { fields: selectedFields(name, type, selections).map(fieldDescriptor) },
+          {
+            fields: selectedFields(name, type, selections)
+              .map(fieldDescriptor)
+              .sort((a, b) => a.no - b.no),
+          },
         ]),
     ),
   };

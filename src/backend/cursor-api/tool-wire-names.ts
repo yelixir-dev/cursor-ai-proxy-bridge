@@ -1,11 +1,8 @@
 import type { ChatCompletionRequest, ToolCall } from '../types.js';
 
-const WIRE_NAME_PREFIX = 'bridge_tool';
-const WIRE_NAME_SUFFIX_LENGTH = 120;
-
-function wireToolName(name: string, index: number): string {
-  const suffix = name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, WIRE_NAME_SUFFIX_LENGTH) || 'tool';
-  return `${WIRE_NAME_PREFIX}_${index}_${suffix}`;
+/** Called on tools after mapCursorApiToolRequest adds the virtual server prefix. */
+export function rawCursorApiToolName(name: string): string {
+  return name.replace(/^bridge-/, '');
 }
 
 function mapToolCallName(call: ToolCall, names: ReadonlyMap<string, string>): ToolCall {
@@ -33,8 +30,8 @@ export function mapCursorApiToolRequest(
 
   const toWire = new Map<string, string>();
   const toOpenAi = new Map<string, string>();
-  const tools = request.tools.map((tool, index) => {
-    const wireName = wireToolName(tool.function.name, index);
+  const tools = request.tools.map((tool) => {
+    const wireName = `bridge-${tool.function.name}`;
     toWire.set(tool.function.name, wireName);
     toOpenAi.set(wireName, tool.function.name);
     return { ...tool, function: { ...tool.function, name: wireName } };
@@ -48,9 +45,7 @@ export function mapCursorApiToolRequest(
       : message,
   );
   const requestedToolChoice =
-    (request.tool_choice === 'required' ||
-      (request.tool_choice === 'auto' && request.max_tool_calls === 1)) &&
-    request.tools.length === 1
+    request.tool_choice === 'required' && request.tools.length === 1
       ? {
           type: 'function' as const,
           function: { name: request.tools[0]?.function.name ?? '' },
@@ -67,20 +62,10 @@ export function mapCursorApiToolRequest(
           },
         }
       : requestedToolChoice;
-  const aliasInstruction =
-    request.tool_choice === 'none'
-      ? []
-      : [
-          {
-            role: 'developer' as const,
-            content: `External OpenAI tool aliases: ${JSON.stringify(Object.fromEntries(toWire))}. If you choose or are required to call an original tool, call its mapped external tool and never a built-in tool as a substitute.`,
-          },
-        ];
-
   return {
     request: {
       ...request,
-      messages: [...aliasInstruction, ...messages],
+      messages,
       tools,
       tool_choice: toolChoice,
     },

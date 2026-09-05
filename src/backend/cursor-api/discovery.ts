@@ -9,9 +9,11 @@ import {
   DiscoverySlot,
 } from './discovery-snapshot.js';
 import type { ResolvedModelVariant } from './max-mode-policy.js';
+import type { NativeAccountContext } from './native-context.js';
 import type { RequestedModel } from './requested-models.js';
 import type { CursorApiRuntime } from './runtime.js';
 import { CURSOR_API_STARTUP_SEQUENCE } from './startup-sequence.js';
+import type { SelectedSubagentModel } from './subagent-models.js';
 
 export { CursorDiscoveryInvalidatedError } from './discovery-snapshot.js';
 
@@ -21,6 +23,8 @@ export interface PreparedCursorDiscovery {
   readonly agentUrl: string;
   readonly signal: AbortSignal;
   readonly maxModeEnabled: boolean;
+  readonly selectedSubagentModels: readonly SelectedSubagentModel[];
+  readonly nativeContext: NativeAccountContext;
   resolveVariant(model: string, effort?: string): ResolvedModelVariant | undefined;
   resolveRequestedModel(model: string, effort?: string): RequestedModel | undefined;
 }
@@ -68,8 +72,12 @@ export class CursorApiDiscovery {
     signal?.throwIfAborted();
     const maxModeEnabled = this.maxMode;
     const slot = this.slot(credential);
-    const [agentUrl, models] = await awaitWithAbort(
-      Promise.all([slot.endpoint(accessToken), slot.models(accessToken)]),
+    const [agentUrl, models, nativeContext] = await awaitWithAbort(
+      Promise.all([
+        slot.endpoint(accessToken),
+        slot.models(accessToken),
+        slot.context(accessToken),
+      ]),
       signal,
     );
     slot.assertCurrent();
@@ -80,6 +88,8 @@ export class CursorApiDiscovery {
       agentUrl,
       signal: slot.controller.signal,
       maxModeEnabled,
+      selectedSubagentModels: models.selectedSubagentModels,
+      nativeContext,
       resolveVariant: (model: string, effort?: string) =>
         models.resolve(model, effort, maxModeEnabled),
       resolveRequestedModel: (model: string, effort?: string) =>

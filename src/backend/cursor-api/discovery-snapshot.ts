@@ -4,9 +4,17 @@ import { CursorBackendError } from '../cursor-cli.js';
 import { awaitWithAbort } from './auth.js';
 import type { CursorApiCredential } from './credentials.js';
 import { resolveModelVariant, type ResolvedModelVariant } from './max-mode-policy.js';
+import type { NativeAccountContext } from './native-context.js';
 import { mapMaxModeModels, mapRequestedModels, mapUsableModels } from './requested-models.js';
 import type { CursorApiRuntime } from './runtime.js';
+import { mapSelectedSubagentModels } from './subagent-models.js';
 import { unifiedModelList } from './unified-models.js';
+
+function dict(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value))
+    : undefined;
+}
 
 export class CursorDiscoveryInvalidatedError extends CursorBackendError {
   readonly name = 'CursorDiscoveryInvalidatedError';
@@ -21,6 +29,7 @@ export class CursorDiscoveryInvalidatedError extends CursorBackendError {
 /** Maps never escape this object; all returned parameter values are deeply frozen. */
 export class DiscoveryModels {
   readonly expiresAt = Date.now() + 60_000;
+  readonly selectedSubagentModels;
   private readonly catalogue;
   private readonly usable;
   private readonly defaults;
@@ -32,10 +41,10 @@ export class DiscoveryModels {
       availableResponse,
     );
     const usable = runtime.codec.decode('agent.v1.GetUsableModelsResponse', usableResponse);
-    const discovered = runtime.codec.decode(
-      'agent.v1.GetDefaultModelForCliResponse',
-      defaultResponse,
-    ).model?.modelId;
+    const discovered = dict(
+      runtime.codec.decode('agent.v1.GetDefaultModelForCliResponse', defaultResponse).model,
+    )?.modelId;
+    this.selectedSubagentModels = mapSelectedSubagentModels(available);
     this.catalogue = {
       standard: mapRequestedModels(available, usable),
       max: mapMaxModeModels(available),
@@ -122,6 +131,7 @@ export class DiscoverySlot {
   readonly controller = new AbortController();
   readonly endpoints = new DiscoveryCache<string>();
   readonly catalogues = new DiscoveryCache<DiscoveryModels>();
+  private readonly contexts = new DiscoveryCache<NativeAccountContext>();
   startup?: Promise<void>;
 
   constructor(
@@ -186,6 +196,21 @@ export class DiscoverySlot {
     );
   }
 
+  context(accessToken: string): Promise<NativeAccountContext> {
+    return this.contexts.get(
+      this,
+      () =>
+        this.runtime.loadNativeContext({
+          signal: this.controller.signal,
+          rpc: (path, body, signal) => {
+            this.assertCurrent();
+            return this.runtime.transport.unary(path, body, signal, false, accessToken);
+          },
+        }),
+      Number.POSITIVE_INFINITY,
+    );
+  }
+
   private unary(path: string, type: string, accessToken: string): Promise<Buffer> {
     this.assertCurrent();
     return this.runtime.transport.unary(
@@ -206,7 +231,8 @@ export class DiscoverySlot {
 export function decodeDiscoveryEndpoint(runtime: CursorApiRuntime, response: Buffer): string {
   const override = runtime.environment.CURSOR_BRIDGE_CURSOR_AGENT_ENDPOINT?.replace(/\/$/, '');
   const decoded = runtime.codec.decode('aiserver.v1.GetServerConfigResponse', response);
-  const url = override || decoded.agentUrlConfig?.agentnUrl || decoded.agentUrlConfig?.agentUrl;
+  const endpoint = dict(decoded.agentUrlConfig);
+  const url = override || endpoint?.agentnUrl || endpoint?.agentUrl;
   if (typeof url !== 'string' || !url.startsWith('https://')) {
     throw new CursorBackendError('Cursor server discovery did not return agentnUrl');
   }

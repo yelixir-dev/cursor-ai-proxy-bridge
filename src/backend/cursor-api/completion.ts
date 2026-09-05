@@ -213,6 +213,8 @@ export class CursorApiCompletion {
             return executeCursorRun({
               runtime: this.runtime,
               agentUrl: prepared.agentUrl,
+              selectedSubagentModels: prepared.selectedSubagentModels,
+              nativeContext: prepared.nativeContext,
               requestedModel: prepared.resolveRequestedModel(
                 request.model,
                 request.reasoning_effort,

@@ -6,6 +6,7 @@ import { loadProtoDescriptors, ProtoCodec } from '../src/backend/cursor-api/prot
 import { createCursorApiRuntime } from '../src/backend/cursor-api/runtime.js';
 import { CURSOR_API_STARTUP_SEQUENCE } from '../src/backend/cursor-api/startup-sequence.js';
 import type { CursorApiTransport } from '../src/backend/cursor-api/transport.js';
+import { fixtureNativeContext } from './support/native-context-fixture.js';
 
 const codec = new ProtoCodec(loadProtoDescriptors());
 const A: CursorApiCredential = { id: 'A', apiKey: 'key-A', enabled: true, weight: 1 };
@@ -104,6 +105,7 @@ function fixture(credentials = [A, B]) {
     {
       transport,
       environment: {},
+      loadNativeContext: fixtureNativeContext,
       auth: new CursorAuthProvider({
         environment: {},
         fetch: async (_url, init) =>

@@ -676,6 +676,8 @@ describe('cursor-api sticky hold with an incomplete sibling', () => {
       if (completed?.type !== 'tool_call_complete') throw new Error('missing drifted tool call');
       expect(completed.call.id).toMatch(/^call_[a-f0-9]{32}_0$/);
       const writesBeforeResult = run.stream.writes.length;
+      const resultWritten = Promise.withResolvers<void>();
+      run.stream.once('write', () => resultWritten.resolve());
 
       // When: the client returns the id it was actually shown.
       const continuation = cursor.complete(
@@ -689,10 +691,10 @@ describe('cursor-api sticky hold with an incomplete sibling', () => {
         },
         continuationAbort.signal,
       );
-      await Promise.resolve();
+      await resultWritten.promise;
 
       // Then: the result is written to the authoritative held exec.
-      expect(run.stream.writes).toHaveLength(writesBeforeResult + 1);
+      expect(run.stream.writes).toHaveLength(writesBeforeResult + 2);
       run.stream.emit(
         'data',
         Buffer.concat([

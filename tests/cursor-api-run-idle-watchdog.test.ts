@@ -188,7 +188,8 @@ describe('cursor-api interaction idle watchdog', () => {
         (error: unknown) => error,
       );
       await vi.advanceTimersByTimeAsync(0);
-      expect(transport.opened[0]?.stream.writes).toHaveLength(2);
+      // Run request, MCP result, and the native exec-stream close.
+      expect(transport.opened[0]?.stream.writes).toHaveLength(3);
       await vi.advanceTimersByTimeAsync(45);
       const error = await continuation;
 

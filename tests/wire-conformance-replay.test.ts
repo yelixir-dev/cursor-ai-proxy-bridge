@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -15,16 +16,12 @@ import type { CursorApiTransport, CursorRunStream } from '../src/backend/cursor-
 import type { ChatCompletionRequest } from '../src/backend/types.js';
 import type { BridgeConfig } from '../src/config.js';
 import { buildServer } from '../src/server.js';
+import { fixtureNativeContext } from './support/native-context-fixture.js';
 import { normalizeCapture } from '../scripts/wire-capture/normalize.mjs';
 import { DiffInputError, diffCaptures } from '../scripts/wire-capture/diff.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const NATIVE_RUN_FIXTURE = join(
-  HERE,
-  'fixtures',
-  'wire',
-  'native-tool-parallel-run-request.ndjson',
-);
+const NATIVE_RUN_FIXTURE = join(HERE, 'fixtures', 'wire', 'native-cli-20260825-chat.ndjson');
 
 const codec = new ProtoCodec(loadProtoDescriptors());
 
@@ -38,59 +35,13 @@ const config: BridgeConfig = {
   version: 'test',
 };
 
-/**
- * FINDING: extra field paths the bridge currently emits on Run that native does not.
- * Todo 5: list unchanged after 71174c7 (abort half-close) and 1d96c2b (mcpResult exec
- * answer) — those fixes touch stream close / exec answers, not the runRequest surface.
- */
-const BRIDGE_RUN_REQUEST_EXTRA_FIELD_PATHS = [
-  // Empty conversationStateBlobId on userMessageAction; native omits the proto3 default.
-  'message.value.action.action.value.userMessage.conversationStateBlobId',
-  // Injected DEFAULT_SYSTEM_PROMPT blob; native first-turn capture has no rootPromptMessagesJson.
-  'message.value.conversationState.rootPromptMessagesJson[0]',
-  // Injected tool-scheduling guidance blob; native omits root-prompt entries on this surface.
-  'message.value.conversationState.rootPromptMessagesJson[1]',
-  // fallbackRequestedModel always sets builtInModel=false; native omits proto3 default false.
-  'message.value.requestedModel.builtInModel',
-  // fallbackRequestedModel always sets isVariantStringRepresentation=false; native omits.
-  'message.value.requestedModel.isVariantStringRepresentation',
-  // fallbackRequestedModel always sets maxMode=false; native omits proto3 default false.
-  'message.value.requestedModel.maxMode',
-  // mapper copies requestedModel onto selectedSubagentModels[2] (composer-2.5), including builtInModel.
-  'message.value.selectedSubagentModels[2].builtInModel',
-  // Same copy of isVariantStringRepresentation onto the composer-2.5 subagent slot.
-  'message.value.selectedSubagentModels[2].isVariantStringRepresentation',
-  // Same copy of maxMode onto the composer-2.5 subagent slot.
-  'message.value.selectedSubagentModels[2].maxMode',
-] as const;
-
+// Exact first-turn input from the installed 2026.08.25 CLI capture.
 const TOOL_SURFACE_REQUEST: ChatCompletionRequest = {
   model: 'composer-2.5',
-  messages: [
-    {
-      role: 'user',
-      content:
-        'Call the echo_value tool twice in the same turn with arguments exactly {"value":"BENCH_TOOL_PARALLEL_TWO"} and {"value":"BENCH_TOOL_PARALLEL_TWO_SECOND"}, then reply with exactly: DONE',
-    },
-  ],
-  tools: [
-    {
-      type: 'function',
-      function: {
-        name: 'echo_value',
-        parameters: {
-          type: 'object',
-          properties: { value: { type: 'string' } },
-          required: ['value'],
-        },
-      },
-    },
-  ],
-  tool_choice: 'auto',
-  parallel_tool_calls: true,
+  messages: [{ role: 'user', content: 'Reply with exactly WIRE_OK. Do not use tools.' }],
 };
 
-export class WireFixtureError extends Error {
+class WireFixtureError extends Error {
   readonly kind: string;
 
   constructor(kind: string, message: string) {
@@ -296,6 +247,22 @@ class CapturingTransport implements CursorApiTransport {
         agentUrlConfig: { agentnUrl: 'https://agent.test' },
       });
     }
+    if (path.includes('AvailableModels')) {
+      return gunzipSync(
+        Buffer.from(
+          readFileSync(
+            join(HERE, 'fixtures', 'wire', 'native-cli-20260825-models.gzip.b64'),
+            'utf8',
+          ).trim(),
+          'base64',
+        ),
+      );
+    }
+    if (path.includes('GetUsableModels')) {
+      return codec.encode('agent.v1.GetUsableModelsResponse', {
+        models: [{ modelId: 'composer-2.5', maxMode: false }],
+      });
+    }
     return Buffer.alloc(0);
   }
 
@@ -309,6 +276,7 @@ function backendFor(transport: CapturingTransport): CursorApiBackend {
   const auth = new CursorAuthProvider({ environment: {} });
   vi.spyOn(auth, 'getToken').mockImplementation(async (credential) => credential?.apiKey ?? '');
   return new CursorApiBackend(config, {
+    loadNativeContext: fixtureNativeContext,
     auth,
     transport,
     credentialRouter: new CursorCredentialRouter({
@@ -385,7 +353,7 @@ async function replayBridgeOpenAiSurface(): Promise<{
 }
 
 describe('native-replay wire conformance', () => {
-  it('replays the native Run request surface against the bridge OpenAI endpoint', async () => {
+  it('matches actual native Run values and exec closure without bridge-only field allowances', async () => {
     const native = loadNativeRunFixture();
     const nativeRun = native[0];
     if (!nativeRun) {
@@ -400,19 +368,13 @@ describe('native-replay wire conformance', () => {
     }
     expect(messageCase(bridgeRun.decoded_fields)).toBe('runRequest');
 
-    const delta = fieldPresenceDelta(nativeRun.decoded_fields, bridgeRun.decoded_fields);
-
-    // PRIMARY: native field presence is the expected parity surface.
-    expect(delta.onlyInExpected, 'native field paths missing from the bridge Run request').toEqual(
-      [],
+    // Compare values and presence. Only UUIDs are normalized in this first-turn fixture.
+    expect(bridgeRun.decoded_fields).toEqual(nativeRun.decoded_fields);
+    const controls = replay.frames.filter(
+      (frame) => messageCase(frame.decoded_fields) === 'execClientControlMessage',
     );
-
-    // COMPANION: extra bridge fields document current behavior, not native parity.
-    // FINDING: still the same 9 extras after 71174c7/1d96c2b (runRequest surface unchanged).
-    expect(
-      delta.onlyInActual,
-      'CURRENT BEHAVIOR (not native parity): extra field paths on the bridge Run request',
-    ).toEqual([...BRIDGE_RUN_REQUEST_EXTRA_FIELD_PATHS]);
+    expect(controls).toHaveLength(1);
+    expect(controls[0]?.decoded_fields).toEqual(native[1]?.decoded_fields);
   });
 
   it('fails with a typed error on a corrupt fixture line instead of crashing', () => {

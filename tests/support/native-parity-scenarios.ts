@@ -136,7 +136,13 @@ export async function changedContract(
         assert.ok(['token-A', 'token-B'].includes(fresh.token));
         assert.equal(parameter(fresh, 'context'), fresh.token === 'token-A' ? '300k' : '500k');
       }
-      const tools = array(context(fresh).tools ?? []);
+      assert.equal(context(fresh).tools, undefined);
+      const descriptors = array(object(context(fresh).mcpMetaToolOptions).mcpDescriptors ?? []);
+      const servers = array(
+        oneof(object(execReplies(fresh, 'mcpStateExecResult')[0]).result).value.servers ?? [],
+      );
+      const tools = servers.flatMap((server) => array(object(server).tools ?? []));
+      assert.equal(descriptors.length, next.tool_choice === 'none' ? 0 : 1);
       if (next.tool_choice === 'none') assert.deepEqual(tools, []);
       else {
         assert.equal(tools.length, 1);

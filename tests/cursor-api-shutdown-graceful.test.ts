@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { generateCerts } from '../scripts/wire-capture/gen-certs.mjs';
 import { encodeConnectFrame } from '../src/backend/cursor-api/connect-frame.js';
 import { loadProtoDescriptors, ProtoCodec } from '../src/backend/cursor-api/protobuf.js';
+import { nativeContextResponse } from './support/native-context-fixture.js';
 
 const codec = new ProtoCodec(loadProtoDescriptors());
 const TSX_CLI = path.join(__dirname, '..', 'node_modules', 'tsx', 'dist', 'cli.mjs');
@@ -78,12 +79,13 @@ async function startUpstream(): Promise<{
       if (request.url === '/auth/exchange_user_api_key') exchangeRequestCount += 1;
       else unarySeen.resolve();
       response.writeHead(200, { 'content-type': 'application/proto' });
+      const method = request.url?.split('/').at(-1);
       response.end(
-        Buffer.from(
-          codec.encode('aiserver.v1.GetServerConfigResponse', {
-            agentUrlConfig: { agentnUrl: 'https://127.0.0.1' },
-          }),
-        ),
+        ['GetMe', 'GetManagedSkills', 'GetEffectiveUserPlugins', 'GetServerConfig'].includes(
+          method ?? '',
+        )
+          ? nativeContextResponse(request.url ?? '')
+          : Buffer.alloc(0),
       );
     });
   });

@@ -14,6 +14,7 @@ import type {
   CursorApiTransport,
   CursorRunStream,
 } from '../../src/backend/cursor-api/transport.js';
+import { nativeContextResponse } from './native-context-fixture.js';
 
 export const codec = new ProtoCodec(loadProtoDescriptors());
 export type Dict = Record<string, unknown>;
@@ -144,7 +145,14 @@ export class NativeParityTransport implements CursorApiTransport {
     if (method === 'GetServerConfig')
       return codec.encode('aiserver.v1.GetServerConfigResponse', {
         agentUrlConfig: { agentnUrl: 'https://' + token + '.test' },
+        indexingConfig: {
+          defaultUserPathEncryptionKey: Buffer.alloc(32, token === 'token-B' ? 2 : 1).toString(
+            'base64url',
+          ),
+        },
       });
+    if (['GetMe', 'GetManagedSkills', 'GetEffectiveUserPlugins'].includes(method ?? ''))
+      return nativeContextResponse(path, token);
     if (method === 'AvailableModels') {
       const gate = this.gates.get(token);
       if (gate) {
@@ -198,6 +206,7 @@ export class NativeParityTransport implements CursorApiTransport {
     let started = false;
     let answered = false;
     let context: Dict | undefined;
+    let servers: unknown[] | undefined;
     let pendingRoots = 0;
     const send = (bytes: Buffer) => {
       if (!stream.destroyed && !stream.writableEnded) stream.emit('data', bytes);
@@ -211,18 +220,25 @@ export class NativeParityTransport implements CursorApiTransport {
         ]),
       );
     const answer = () => {
-      if (!context || pendingRoots || answered) return;
+      if (!context || !servers || pendingRoots || answered) return;
       answered = true;
       if (plan === 'text') {
         finish();
         return;
       }
-      const tool = object(array(context.tools)[0]);
+      const descriptor = object(array(object(context.mcpMetaToolOptions).mcpDescriptors)[0]);
+      const rawName = text(object(array(descriptor.tools)[0]).toolName);
+      const server = object(servers[0]);
+      assert.equal(server.serverIdentifier, descriptor.serverIdentifier);
+      const tool = object(array(server.tools)[0]);
       const wireName = text(tool.name);
+      assert.equal(wireName, text(descriptor.serverName) + '-' + rawName);
+      assert.equal(tool.toolName, rawName);
       const args = {
         name: wireName,
-        toolName: wireName,
+        toolName: rawName,
         providerIdentifier: 'bridge',
+        serverIdentifier: 'bridge',
         toolCallId: 'exec-tool',
         args: { value: jsonToProtoValue('synthetic-value') },
       };
@@ -283,6 +299,21 @@ export class NativeParityTransport implements CursorApiTransport {
               const exec = oneof(message.value.message);
               if (exec.kind === 'requestContextResult') {
                 context = object(oneof(exec.value.result).value.requestContext);
+                assert.equal(
+                  context.tools,
+                  undefined,
+                  'Pinned native slim profile omits flat external schemas',
+                );
+                assert.equal(object(context.mcpMetaToolOptions).enabled, true);
+                send(
+                  frame('execServerMessage', {
+                    id: 3,
+                    execId: 'mcp-state',
+                    message: { case: 'mcpStateExecArgs', value: {} },
+                  }),
+                );
+              } else if (exec.kind === 'mcpStateExecResult') {
+                servers = array(oneof(exec.value.result).value.servers ?? []);
                 answer();
               } else if (exec.kind === 'mcpResult') {
                 const gate = this.resultGates.get(stream);

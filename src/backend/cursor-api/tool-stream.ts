@@ -56,7 +56,7 @@ function identityFromUpdate(update: Dict): ToolIdentity | undefined {
   const envelopeId = stringField(update.callId);
   const toolCall = dict(update.toolCall);
   const args = mcpArgs(toolCall);
-  const name = stringField(args?.toolName) || stringField(args?.name);
+  const name = stringField(args?.name) || stringField(args?.toolName);
   const id = stringField(args?.toolCallId) || stringField(toolCall?.toolCallId) || envelopeId;
   if (!envelopeId || !id || !name) return undefined;
   return { envelopeId, id, name };

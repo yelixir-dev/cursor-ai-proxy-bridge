@@ -87,7 +87,7 @@ describe('extracted script contracts', () => {
     const rootTypeCount = rootBlock.match(/^ {2}'(?:aiserver|agent)\.v1\.[^']+',?$/gm)?.length;
 
     // Then: roots, format fields, and destination remain stable through extraction.
-    expect(rootTypeCount).toBe(12);
+    expect(rootTypeCount).toBe(16);
     expect(descriptors).toContain('format: 1');
     expect(descriptors).toContain('bundleVersion');
     expect(descriptors).toMatch(/clientVersion: `cli-\$\{bundleVersion\}`/);

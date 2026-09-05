@@ -17,9 +17,10 @@ export function emptyBuiltinResult(codec: ProtoCodec, resultCase: string): Dict 
     (field) => field.localName === resultCase,
   );
   if (!resultField?.message) return undefined;
-  const failureField = codec.descriptors.messages[resultField.message]?.fields.find((field) =>
-    ['rejected', 'error', 'permissionDenied', 'failure'].includes(field.localName),
-  );
+  const fields = codec.descriptors.messages[resultField.message]?.fields;
+  const failureField =
+    fields?.find((field) => field.localName === 'rejected') ??
+    fields?.find((field) => ['error', 'permissionDenied', 'failure'].includes(field.localName));
   if (!failureField?.message) return {};
   const value = Object.fromEntries(
     (codec.descriptors.messages[failureField.message]?.fields ?? [])

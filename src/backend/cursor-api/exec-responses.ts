@@ -11,6 +11,8 @@ import {
   type PromotedBuiltinExecContext,
 } from './builtin-tool-results.js';
 import { nativeToolDefinition, requestContextResult } from './mapper.js';
+import type { NativeConversationContext } from './native-context.js';
+import { serveNativeContextRead } from './native-context-read.js';
 import type { ProtoCodec } from './protobuf.js';
 
 type Dict = Record<string, unknown>;
@@ -18,6 +20,10 @@ type Dict = Record<string, unknown>;
 export interface ExecResponseContext {
   readonly codec: ProtoCodec;
   readonly request: ChatCompletionRequest;
+  readonly conversationId?: string;
+  readonly environment?: NodeJS.ProcessEnv;
+  readonly nativeContext?: NativeConversationContext;
+  readonly readSignal?: () => AbortSignal;
   readonly writeMessage: (message: Dict, compressed?: boolean) => void;
   readonly finish: (error: unknown) => void;
   readonly completeTool: (value: Dict, routing?: BuiltinToolRoutingDebug) => boolean;
@@ -26,6 +32,7 @@ export interface ExecResponseContext {
 
 export interface HeldToolExec {
   readonly exec: Dict;
+  readonly startedAt?: number;
   readonly promotedBuiltin?: PromotedBuiltinExecContext;
 }
 
@@ -35,6 +42,7 @@ interface ExecReply {
   readonly value: Dict;
   readonly compressed?: boolean;
   readonly localExecutionTimeMs?: number;
+  readonly startedAt?: number;
   readonly omitExecId?: boolean;
 }
 
@@ -49,9 +57,12 @@ function sendExec(
   reply: ExecReply,
 ): void {
   const execValue: Dict = {
-    id: reply.exec.id,
+    ...(reply.exec.id ? { id: reply.exec.id } : {}),
     message: { case: reply.messageCase, value: reply.value },
-    localExecutionTimeMs: reply.localExecutionTimeMs,
+    localExecutionTimeMs:
+      reply.startedAt === undefined
+        ? reply.localExecutionTimeMs
+        : Math.round(performance.now() - reply.startedAt),
   };
   if (reply.omitExecId !== true) execValue.execId = reply.exec.execId;
   writeMessage(
@@ -63,10 +74,24 @@ function sendExec(
     },
     reply.compressed ?? false,
   );
+  writeMessage(
+    {
+      message: {
+        case: 'execClientControlMessage',
+        value: {
+          message: {
+            case: 'streamClose',
+            value: reply.exec.id ? { id: reply.exec.id } : {},
+          },
+        },
+      },
+    },
+    false,
+  );
 }
 
 function allowedMcpToolName(request: ChatCompletionRequest, value: Dict): boolean {
-  const name = value.toolName ?? value.name;
+  const name = value.name || value.toolName;
   if (typeof name !== 'string' || name.length === 0) return false;
   return (request.tools ?? []).some((tool) => tool.function.name === name);
 }
@@ -75,7 +100,7 @@ export function sendMcpToolResult(
   writeMessage: (message: Dict, compressed?: boolean) => void,
   exec: Dict,
   text: string,
-  omitExecId = true,
+  startedAt = performance.now(),
 ): void {
   sendExec(writeMessage, {
     exec,
@@ -85,11 +110,11 @@ export function sendMcpToolResult(
         case: 'success',
         value: {
           content: [{ content: { case: 'text', value: { text } } }],
-          isError: false,
         },
       },
     },
-    omitExecId,
+    omitExecId: true,
+    startedAt,
     compressed: false,
   });
 }
@@ -100,7 +125,7 @@ export function sendHeldToolResult(
   text: string,
 ): void {
   if (!held.promotedBuiltin) {
-    sendMcpToolResult(writeMessage, held.exec, text);
+    sendMcpToolResult(writeMessage, held.exec, text, held.startedAt);
     return;
   }
   const reply = builtinToolResultReply(held.promotedBuiltin, text);
@@ -116,6 +141,7 @@ export function handleExecResponse(
   context: ExecResponseContext,
   exec: Dict,
 ): 'held' | 'ignored' | undefined {
+  const startedAt = performance.now();
   const message = dict(exec.message);
   const execCase = typeof message?.case === 'string' ? message.case : undefined;
   const value = dict(message?.value) ?? {};
@@ -124,14 +150,40 @@ export function handleExecResponse(
     sendExec(context.writeMessage, {
       exec,
       messageCase: 'requestContextResult',
-      value: requestContextResult(context.request),
+      value: requestContextResult(
+        context.request,
+        process.cwd(),
+        context.environment,
+        context.conversationId,
+        context.nativeContext?.context,
+      ),
       compressed: true,
-      localExecutionTimeMs: 1,
+      omitExecId: true,
+      startedAt,
     });
     return;
   }
+  if (execCase === 'readArgs' && context.nativeContext) {
+    if (
+      serveNativeContextRead({
+        context: context.nativeContext,
+        args: value,
+        signal: context.readSignal?.(),
+        reply: (result) =>
+          sendExec(context.writeMessage, {
+            exec,
+            messageCase: 'readResult',
+            value: result,
+            omitExecId: true,
+            startedAt,
+          }),
+        finish: context.finish,
+      })
+    )
+      return;
+  }
   if (execCase === 'mcpArgs') {
-    const name = value.toolName ?? value.name;
+    const name = value.name || value.toolName;
     if (typeof name !== 'string' || name.length === 0) {
       // Fail fast instead of leaving the server waiting on an unanswered
       // exec until the run timeout burns the full window.
@@ -141,6 +193,7 @@ export function handleExecResponse(
         value: {
           result: { case: 'error', value: { error: 'Malformed mcpArgs: missing tool name' } },
         },
+        startedAt,
         omitExecId: true,
         compressed: false,
       });
@@ -156,6 +209,7 @@ export function handleExecResponse(
             value: { error: `Tool ${JSON.stringify(name)} is not declared in this request` },
           },
         },
+        startedAt,
         omitExecId: true,
         compressed: false,
       });
@@ -171,12 +225,13 @@ export function handleExecResponse(
             value: { error: 'Tool call could not be reconciled with the declared tools' },
           },
         },
+        startedAt,
         omitExecId: true,
         compressed: false,
       });
       return 'ignored';
     }
-    context.holdMcp?.({ exec });
+    context.holdMcp?.({ exec, startedAt });
     return 'held';
   }
   if (execCase === 'mcpAllowlistPrecheckArgs') {
@@ -184,14 +239,20 @@ export function handleExecResponse(
       exec,
       messageCase: 'mcpAllowlistPrecheckResult',
       value: { allowlisted: true },
+      omitExecId: true,
+      startedAt,
     });
     return;
   }
   if (execCase === 'mcpStateExecArgs') {
+    // One virtual server: matching IDs select bridge; empty or unmatched IDs fall
+    // back to all servers. Native kickOnly requests also return this same state.
     const advertised = context.request.tool_choice === 'none' ? [] : (context.request.tools ?? []);
     sendExec(context.writeMessage, {
       exec,
       messageCase: 'mcpStateExecResult',
+      omitExecId: true,
+      startedAt,
       value: {
         result: {
           case: 'success',
@@ -218,6 +279,8 @@ export function handleExecResponse(
       exec,
       messageCase: 'listMcpResourcesExecResult',
       value: { result: { case: 'success', value: { resources: [] } } },
+      omitExecId: true,
+      startedAt,
     });
     return;
   }

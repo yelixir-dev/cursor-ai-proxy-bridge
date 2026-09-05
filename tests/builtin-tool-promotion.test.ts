@@ -122,16 +122,11 @@ describe('builtin tool promotion mapping', () => {
     expect(completed?.tool).toEqual({});
   });
 
-  it('instructs auto requests to use exact MCP names and never delegation text', () => {
+  it('does not inject tool guidance roots for auto requests', () => {
     const history = buildCursorHistory(request('read', { path: { type: 'string' } }), {
       encode: () => Buffer.alloc(0),
     });
-    const prompts = [...history.blobs.values()].map((blob) => blob.toString('utf8')).join('\n');
-
-    expect(prompts).toContain('call only an MCP/OpenAI tool');
-    expect(prompts).toContain('exact function name');
-    expect(prompts).toContain('Do not use Cursor built-in Read, Shell, LS, Grep, or Web tools');
-    expect(prompts).toContain('Never say tool execution is delegated');
+    expect(history.conversationState.rootPromptMessagesJson).toEqual([]);
   });
 
   it('encodes the client result as the original builtin success response', () => {

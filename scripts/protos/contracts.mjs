@@ -11,9 +11,27 @@ export const ROOT_TYPES = [
   'agent.v1.GetDefaultModelForCliResponse',
   'agent.v1.AgentClientMessage',
   'agent.v1.AgentServerMessage',
+  'aiserver.v1.GetManagedSkillsRequest',
+  'aiserver.v1.GetManagedSkillsResponse',
+  'aiserver.v1.GetEffectiveUserPluginsRequest',
+  'aiserver.v1.GetEffectiveUserPluginsResponse',
 ];
 
 export const SERVICES = [
+  {
+    service: 'aiserver.v1.DashboardService',
+    method: 'GetManagedSkills',
+    input: 'aiserver.v1.GetManagedSkillsRequest',
+    output: 'aiserver.v1.GetManagedSkillsResponse',
+    kind: 'unary',
+  },
+  {
+    service: 'aiserver.v1.DashboardService',
+    method: 'GetEffectiveUserPlugins',
+    input: 'aiserver.v1.GetEffectiveUserPluginsRequest',
+    output: 'aiserver.v1.GetEffectiveUserPluginsResponse',
+    kind: 'unary',
+  },
   {
     service: 'aiserver.v1.DashboardService',
     method: 'GetMe',

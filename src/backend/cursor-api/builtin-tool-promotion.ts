@@ -3,11 +3,11 @@ import { CursorBackendError } from '../cursor-cli.js';
 import { allowedToolsForRequest } from '../tool-call-policy.js';
 import type { ChatCompletionRequest, Tool } from '../types.js';
 import { jsonToProtoValue } from './protobuf.js';
+import { rawCursorApiToolName } from './tool-wire-names.js';
 
 type Dict = Record<string, unknown>;
 
 const debug = debuglog('cursor-bridge');
-const wireName = /^bridge_tool_\d+_(.+)$/u;
 const builtinNames = new Map<string, readonly string[]>([
   ['readArgs', ['read']],
   ['redactedReadArgs', ['read']],
@@ -61,7 +61,7 @@ export interface PromotedBuiltinExec {
 }
 
 function displayName(name: string): string {
-  return wireName.exec(name)?.[1] ?? name;
+  return rawCursorApiToolName(name);
 }
 
 function declaredMatch(

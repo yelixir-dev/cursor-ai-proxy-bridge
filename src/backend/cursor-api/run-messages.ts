@@ -9,6 +9,8 @@ import {
   logBuiltinToolRouting,
 } from './builtin-tool-promotion.js';
 import { type HeldToolExec, handleExecResponse } from './exec-responses.js';
+import type { NativeConversationContext } from './native-context.js';
+import { nativeReadDisposition } from './native-context-read.js';
 import type { ProtoCodec } from './protobuf.js';
 import type { RunEmitter } from './run-types.js';
 import { CursorToolStream } from './tool-stream.js';
@@ -31,13 +33,17 @@ function attemptedToolName(update: Dict): string {
   const tool = dict(toolCall?.tool);
   if (tool?.case !== 'mcpToolCall') return '';
   const args = dict(dict(tool.value)?.args);
-  const name = args?.toolName ?? args?.name;
+  const name = args?.name || args?.toolName;
   return typeof name === 'string' ? name : '';
 }
 
 export interface CursorRunMessageOptions {
   readonly codec: ProtoCodec;
   readonly request: ChatCompletionRequest;
+  readonly conversationId?: string;
+  readonly environment?: NodeJS.ProcessEnv;
+  readonly nativeContext?: NativeConversationContext;
+  readonly readSignal?: () => AbortSignal;
   readonly callIdPrefix?: string;
   readonly trace?: RequestTrace;
   readonly emit?: RunEmitter;
@@ -94,6 +100,10 @@ export class CursorRunMessages {
         {
           codec: this.options.codec,
           request: this.options.request,
+          conversationId: this.options.conversationId,
+          environment: this.options.environment,
+          nativeContext: this.options.nativeContext,
+          readSignal: this.options.readSignal,
           writeMessage: this.options.writeMessage,
           finish: this.options.finish,
           completeTool: (tool, routing) => {
@@ -161,6 +171,13 @@ export class CursorRunMessages {
       return false;
     }
     if (updateCase === 'toolCallStarted') {
+      const tool = dict(dict(update.toolCall)?.tool);
+      if (
+        tool?.case === 'readToolCall' &&
+        this.options.nativeContext &&
+        nativeReadDisposition(this.options.nativeContext, dict(tool.value)?.args).kind === 'owned'
+      )
+        return false;
       const declared = allowedToolNamesForRequest(this.options.request);
       if (declared.size === 0 || this.options.request.tool_choice === 'none') {
         // No exec frame follows in this state (live capture: tool_decision

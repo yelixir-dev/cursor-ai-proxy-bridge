@@ -185,16 +185,14 @@ describe('promoted builtin model matrix', () => {
 });
 
 describe('strict promoted builtin policy', () => {
-  it('strengthens single-tool auto to a named wire choice', () => {
+  it('preserves optional auto with a single-call limit', () => {
     const mapped = mapCursorApiToolRequest({
       ...request('composer-2.5-fast', 'auto'),
       max_tool_calls: 1,
     }).request;
 
-    expect(mapped.tool_choice).toEqual({
-      type: 'function',
-      function: { name: mapped.tools?.[0]?.function.name },
-    });
+    expect(mapped.tool_choice).toBe('auto');
+    expect(mapped.max_tool_calls).toBe(1);
   });
 
   it('limits a multi-tool auto request to one external call', async () => {

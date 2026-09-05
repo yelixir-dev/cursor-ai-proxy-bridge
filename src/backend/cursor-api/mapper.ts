@@ -3,6 +3,7 @@ import { homedir, platform, release } from 'node:os';
 import { basename, join } from 'node:path';
 import type { ChatCompletionRequest, Tool, ToolCall } from '../types.js';
 import { buildCursorHistory, type CursorHistory } from './history.js';
+import type { NativeContextPatch } from './native-context.js';
 import { jsonToProtoValue, loadProtoDescriptors, ProtoCodec } from './protobuf.js';
 import {
   fallbackRequestedModel,
@@ -10,69 +11,11 @@ import {
   type RequestedModelMap,
 } from './requested-models.js';
 
+import type { SelectedSubagentModel } from './subagent-models.js';
+import { rawCursorApiToolName } from './tool-wire-names.js';
+
 export { mapRequestedModels, mapUsableModels } from './requested-models.js';
 export type { RequestedModelMap } from './requested-models.js';
-
-const SELECTED_SUBAGENT_MODELS = [
-  { modelId: 'default' },
-  {
-    modelId: 'grok-4.6',
-    parameters: [
-      { id: 'effort', value: 'high' },
-      { id: 'fast', value: 'true' },
-    ],
-  },
-  { modelId: 'composer-2.5', parameters: [{ id: 'fast', value: 'false' }] },
-  {
-    modelId: 'claude-opus-5',
-    parameters: [
-      { id: 'thinking', value: 'true' },
-      { id: 'context', value: '300k' },
-      { id: 'effort', value: 'high' },
-      { id: 'fast', value: 'false' },
-    ],
-  },
-  {
-    modelId: 'gpt-5.6-sol',
-    parameters: [
-      { id: 'context', value: '272k' },
-      { id: 'reasoning', value: 'medium' },
-      { id: 'fast', value: 'false' },
-    ],
-  },
-  {
-    modelId: 'claude-fable-5',
-    parameters: [
-      { id: 'thinking', value: 'true' },
-      { id: 'context', value: '300k' },
-      { id: 'effort', value: 'high' },
-    ],
-  },
-  {
-    modelId: 'grok-4.5',
-    parameters: [
-      { id: 'effort', value: 'high' },
-      { id: 'fast', value: 'true' },
-    ],
-  },
-  { modelId: 'gemini-3.7-flash', parameters: [{ id: 'effort', value: 'high' }] },
-  {
-    modelId: 'gpt-5.6-terra',
-    parameters: [
-      { id: 'context', value: '272k' },
-      { id: 'reasoning', value: 'medium' },
-      { id: 'fast', value: 'false' },
-    ],
-  },
-  {
-    modelId: 'claude-sonnet-5',
-    parameters: [
-      { id: 'thinking', value: 'true' },
-      { id: 'context', value: '300k' },
-      { id: 'effort', value: 'high' },
-    ],
-  },
-] as const;
 
 export function runRequestMessage(
   request: ChatCompletionRequest,
@@ -80,7 +23,8 @@ export function runRequestMessage(
   requestedModels: RequestedModelMap = new Map(),
   history: CursorHistory = buildCursorHistory(request, new ProtoCodec(loadProtoDescriptors())),
   resolvedModel?: RequestedModel,
-): Record<string, unknown> {
+  selectedSubagentModels: readonly SelectedSubagentModel[] = [],
+) {
   const conversationId = randomUUID();
   const requestedModel =
     resolvedModel ?? requestedModels.get(request.model) ?? fallbackRequestedModel(request.model);
@@ -91,12 +35,23 @@ export function runRequestMessage(
         conversationState: history.conversationState,
         action: history.action,
         mcpTools: {},
-        requestedModel,
+        requestedModel: {
+          modelId: requestedModel.modelId,
+          parameters: requestedModel.parameters,
+          ...(requestedModel.maxMode ? { maxMode: true } : {}),
+          ...(requestedModel.builtInModel ? { builtInModel: true } : {}),
+          ...(requestedModel.isVariantStringRepresentation
+            ? { isVariantStringRepresentation: true }
+            : {}),
+        },
         conversationId,
         excludeWorkspaceContext: false,
-        selectedSubagentModels: SELECTED_SUBAGENT_MODELS.map((model) =>
-          model.modelId === requestedModel.modelId ? requestedModel : model,
-        ),
+        selectedSubagentModels: selectedSubagentModels.map((model) => ({
+          modelId: model.modelId,
+          parameters:
+            model.modelId === requestedModel.modelId ? requestedModel.parameters : model.parameters,
+          ...(requestedModel.maxMode ? { maxMode: true } : {}),
+        })),
         conversationGroupId: conversationId,
         runId: requestId,
       },
@@ -114,7 +69,7 @@ export function nativeToolDefinition(tool: Tool): Record<string, unknown> {
     description: tool.function.description ?? '',
     inputSchema: jsonToProtoValue(tool.function.parameters ?? { type: 'object' }),
     providerIdentifier: 'bridge',
-    toolName: tool.function.name,
+    toolName: rawCursorApiToolName(tool.function.name),
   };
 }
 
@@ -122,15 +77,19 @@ export function requestContextResult(
   request: ChatCompletionRequest,
   cwd = process.cwd(),
   environment: NodeJS.ProcessEnv = process.env,
+  conversationId: string = randomUUID(),
+  nativeContext?: NativeContextPatch,
 ): Record<string, unknown> {
   const projectName = cwd.replace(/^\/+/, '').replace(/[^a-zA-Z0-9]+/g, '-');
-  const projectFolder = join(homedir(), '.cursor', 'projects', projectName);
-  const conversationId = basename(projectFolder);
+  const home = environment.HOME?.trim() || homedir();
+  const dataDirectory = environment.CURSOR_DATA_DIR?.trim() || join(home, '.cursor');
+  const projectFolder = join(dataDirectory, 'projects', projectName);
   return {
     result: {
       case: 'success',
       value: {
         requestContext: {
+          ...nativeContext,
           env: {
             osVersion: `${platform()} ${release()}`,
             workspacePaths: [cwd],
@@ -144,12 +103,28 @@ export function requestContextResult(
             sandboxSupported: true,
             sandboxNetworkHasDefaults: true,
             computerUseSupported: false,
-            isWorkingDirHomeDir: cwd === homedir(),
+            isWorkingDirHomeDir: cwd === home,
             processWorkingDirectory: cwd,
             smartModeClassifierAutoModeEnabled: false,
+            ...nativeContext?.env,
           },
-          tools:
-            request.tool_choice === 'none' ? [] : (request.tools ?? []).map(nativeToolDefinition),
+          // Pinned installed-CLI profile: meta is enabled and this account uses slim descriptors.
+          // Full schemas are served on demand via mcpStateExec, not RequestContext.tools.
+          mcpMetaToolOptions: {
+            enabled: true,
+            mcpDescriptors:
+              request.tool_choice === 'none' || !request.tools?.length
+                ? []
+                : [
+                    {
+                      serverName: 'bridge',
+                      serverIdentifier: 'bridge',
+                      tools: request.tools.map((tool) => ({
+                        toolName: rawCursorApiToolName(tool.function.name),
+                      })),
+                    },
+                  ],
+          },
           supportsMcpAuth: true,
           gitRepoInfoComplete: true,
         },

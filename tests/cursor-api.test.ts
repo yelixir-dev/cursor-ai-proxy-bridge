@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events';
+import { fixtureNativeContext } from './support/native-context-fixture.js';
+import { arrayAt, bufferAt, objectAt, valueAt } from './support/protobuf-values.js';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import type { OutgoingHttpHeaders } from 'node:http2';
@@ -54,7 +56,7 @@ const scalar = (
   no: number,
   localName: string,
   type: number,
-  options: Partial<ProtoFieldDescriptor> = {},
+  options: Partial<Extract<ProtoFieldDescriptor, { kind: 'scalar' }>> = {},
 ): ProtoFieldDescriptor => ({
   no,
   name: localName,
@@ -68,7 +70,7 @@ const message = (
   no: number,
   localName: string,
   type: string,
-  options: Partial<ProtoFieldDescriptor> = {},
+  options: Partial<Extract<ProtoFieldDescriptor, { kind: 'message' }>> = {},
 ): ProtoFieldDescriptor => ({
   no,
   name: localName,
@@ -99,8 +101,13 @@ const descriptors: ProtoDescriptorSet = {
       oneof(1, 'runRequest', 'agent.v1.AgentRunRequest'),
       oneof(2, 'execClientMessage', 'agent.v1.ExecClientMessage'),
       oneof(3, 'kvClientMessage', 'agent.v1.KvClientMessage'),
+      oneof(5, 'execClientControlMessage', 'agent.v1.ExecClientControlMessage'),
       oneof(7, 'clientHeartbeat', 'agent.v1.ClientHeartbeat'),
     ),
+    'agent.v1.ExecClientControlMessage': fields(
+      oneof(1, 'streamClose', 'agent.v1.ExecClientStreamClose'),
+    ),
+    'agent.v1.ExecClientStreamClose': fields(scalar(1, 'id', 13)),
     'agent.v1.AgentRunRequest': fields(
       message(1, 'conversationState', 'agent.v1.ConversationStateStructure'),
       message(2, 'action', 'agent.v1.ConversationAction'),
@@ -400,6 +407,7 @@ function rootPromptEntries(history: CursorHistory): Array<Record<string, unknown
 
 function backendWith(transport: FakeTransport) {
   return new CursorApiBackend(config, {
+    loadNativeContext: fixtureNativeContext,
     descriptors,
     transport,
     auth: new CursorAuthProvider({ environment: { CURSOR_AUTH_TOKEN: 'token' } }),
@@ -727,17 +735,23 @@ describe('Cursor API startup and wire parity', () => {
       },
       { models: [{ modelId: 'cursor-grok-4.6-high', maxMode: false }] },
     );
-    const decodedRun = liveCodec.decode(
-      'agent.v1.AgentClientMessage',
-      liveCodec.encode(
+    const decodedRun = objectAt(
+      liveCodec.decode(
         'agent.v1.AgentClientMessage',
-        runRequestMessage(
-          { model: 'cursor-grok-4.6-high', messages: [{ role: 'user', content: 'hello' }] },
-          'request-id',
-          requestedModels,
+        liveCodec.encode(
+          'agent.v1.AgentClientMessage',
+          runRequestMessage(
+            { model: 'cursor-grok-4.6-high', messages: [{ role: 'user', content: 'hello' }] },
+            'request-id',
+            requestedModels,
+            undefined,
+            undefined,
+            [{ modelId: 'grok-4.6', parameters: [{ id: 'effort', value: 'low' }] }],
+          ),
         ),
       ),
-    ).message.value;
+      ['message', 'value'],
+    );
 
     expect(decodedRun.requestedModel).toMatchObject({
       modelId: 'grok-4.6',
@@ -747,24 +761,34 @@ describe('Cursor API startup and wire parity', () => {
       ],
     });
     expect(
-      decodedRun.selectedSubagentModels.find(
-        (model: Record<string, unknown>) => model.modelId === 'grok-4.6',
+      arrayAt(decodedRun.selectedSubagentModels).find(
+        (model) => objectAt(model).modelId === 'grok-4.6',
       ),
-    ).toMatchObject(decodedRun.requestedModel);
+    ).toMatchObject(objectAt(decodedRun.requestedModel));
   });
 
-  it('matches captured Run and request-context field presence', () => {
+  it('preserves Run and context fields with server-provided subagent models', () => {
     const liveCodec = new ProtoCodec(loadProtoDescriptors());
-    const decodedRun = liveCodec.decode(
-      'agent.v1.AgentClientMessage',
-      liveCodec.encode(
+    const decodedRun = objectAt(
+      liveCodec.decode(
         'agent.v1.AgentClientMessage',
-        runRequestMessage(
-          { model: 'composer-2.5', messages: [{ role: 'user', content: 'hello' }] },
-          'request-id',
+        liveCodec.encode(
+          'agent.v1.AgentClientMessage',
+          runRequestMessage(
+            { model: 'composer-2.5', messages: [{ role: 'user', content: 'hello' }] },
+            'request-id',
+            undefined,
+            undefined,
+            undefined,
+            [
+              { modelId: 'composer-2.5', parameters: [] },
+              { modelId: 'new-server-model', parameters: [{ id: 'effort', value: 'high' }] },
+            ],
+          ),
         ),
       ),
-    ).message.value;
+      ['message', 'value'],
+    );
     expect(Object.keys(decodedRun).sort()).toEqual(
       [
         'action',
@@ -778,19 +802,25 @@ describe('Cursor API startup and wire parity', () => {
         'selectedSubagentModels',
       ].sort(),
     );
-    expect(decodedRun.selectedSubagentModels).toHaveLength(10);
+    expect(decodedRun.selectedSubagentModels).toEqual([
+      { modelId: 'composer-2.5', parameters: [{ id: 'fast', value: 'false' }] },
+      { modelId: 'new-server-model', parameters: [{ id: 'effort', value: 'high' }] },
+    ]);
 
-    const context = liveCodec.decode(
-      'agent.v1.RequestContextResult',
-      liveCodec.encode(
+    const context = objectAt(
+      liveCodec.decode(
         'agent.v1.RequestContextResult',
-        requestContextResult(
-          { model: 'composer-2.5', messages: [{ role: 'user', content: 'hello' }] },
-          '/tmp/work',
-          { SHELL: '/bin/zsh' },
+        liveCodec.encode(
+          'agent.v1.RequestContextResult',
+          requestContextResult(
+            { model: 'composer-2.5', messages: [{ role: 'user', content: 'hello' }] },
+            '/tmp/work',
+            { SHELL: '/bin/zsh' },
+          ),
         ),
       ),
-    ).result.value.requestContext;
+      ['result', 'value', 'requestContext'],
+    );
     expect(context.env).toMatchObject({
       workspacePaths: ['/tmp/work'],
       shell: 'zsh',
@@ -800,7 +830,7 @@ describe('Cursor API startup and wire parity', () => {
     expect(context.gitRepoInfoComplete).toBe(true);
   });
 
-  it('uses agent mode only when client tools are available', () => {
+  it('uses the native CLI default agent mode independently of external tool availability', () => {
     const baseRequest = {
       model: 'composer-2.5',
       messages: [{ role: 'user' as const, content: 'hello' }],
@@ -833,7 +863,7 @@ describe('Cursor API startup and wire parity', () => {
       message: {
         value: {
           action: {
-            action: { value: { userMessage: { mode: 2 } } },
+            action: { value: { userMessage: { mode: 1 } } },
           },
         },
       },
@@ -851,7 +881,7 @@ describe('Cursor API startup and wire parity', () => {
       message: {
         value: {
           action: {
-            action: { value: { userMessage: { mode: 2 } } },
+            action: { value: { userMessage: { mode: 1 } } },
           },
         },
       },
@@ -881,59 +911,66 @@ describe('Cursor API startup and wire parity', () => {
         function: { name: 'multiply', parameters: { type: 'object' } },
       },
     ];
-    const guidance = (choice: ChatCompletionRequest['tool_choice']) => {
+    const roots = (choice: ChatCompletionRequest['tool_choice']) => {
       const history = buildCursorHistory(
         { model: 'composer-2.5', messages, tools, tool_choice: choice },
         liveCodec,
       );
-      const entries = rootPromptEntries(history);
-      const trailing = entries.at(-1);
-      expect(trailing?.role).toBe('system');
-      return String(trailing?.content);
+      return rootPromptEntries(history);
     };
 
-    expect(guidance('auto')).not.toContain('Do not call');
-    expect(guidance('none')).toContain('Do not call');
+    expect(roots('auto').map((entry) => entry.role)).toEqual(['user', 'assistant', 'tool']);
+    expect(roots('none').map((entry) => entry.role)).toEqual([
+      'user',
+      'assistant',
+      'tool',
+      'system',
+    ]);
   });
   it('maps the baseline two-round history into structured conversation state', () => {
     const liveCodec = new ProtoCodec(loadProtoDescriptors());
-    const decodedRun = liveCodec.decode(
-      'agent.v1.AgentClientMessage',
-      liveCodec.encode(
+    const decodedRun = objectAt(
+      liveCodec.decode(
         'agent.v1.AgentClientMessage',
-        runRequestMessage(
-          {
-            model: 'composer-2.5',
-            messages: [
-              { role: 'user', content: 'look up the seed' },
-              {
-                role: 'assistant',
-                content: '',
-                tool_calls: [
-                  {
-                    id: 'call_seed',
-                    type: 'function',
-                    function: { name: 'lookup_code', arguments: '{"file":"seed.ts"}' },
-                  },
-                ],
-              },
-              { role: 'tool', tool_call_id: 'call_seed', content: 'seed=20260818' },
-            ],
-            tools: [
-              {
-                type: 'function',
-                function: { name: 'lookup_code', parameters: { type: 'object' } },
-              },
-            ],
-          },
-          'request-id',
+        liveCodec.encode(
+          'agent.v1.AgentClientMessage',
+          runRequestMessage(
+            {
+              model: 'composer-2.5',
+              messages: [
+                { role: 'user', content: 'look up the seed' },
+                {
+                  role: 'assistant',
+                  content: '',
+                  tool_calls: [
+                    {
+                      id: 'call_seed',
+                      type: 'function',
+                      function: { name: 'lookup_code', arguments: '{"file":"seed.ts"}' },
+                    },
+                  ],
+                },
+                { role: 'tool', tool_call_id: 'call_seed', content: 'seed=20260818' },
+              ],
+              tools: [
+                {
+                  type: 'function',
+                  function: { name: 'lookup_code', parameters: { type: 'object' } },
+                },
+              ],
+            },
+            'request-id',
+          ),
         ),
       ),
-    ).message.value;
+      ['message', 'value'],
+    );
 
-    expect(decodedRun.action.action.case).toBe('resumeAction');
-    expect(decodedRun.conversationState.rootPromptMessagesJson.length).toBeGreaterThanOrEqual(3);
-    expect(decodedRun.conversationState.turns.length).toBe(1);
+    expect(valueAt(decodedRun, ['action', 'action', 'case'])).toBe('resumeAction');
+    expect(
+      arrayAt(decodedRun, ['conversationState', 'rootPromptMessagesJson']).length,
+    ).toBeGreaterThanOrEqual(3);
+    expect(arrayAt(decodedRun, ['conversationState', 'turns']).length).toBe(1);
   });
 
   it('rejects orphan and duplicate tool results before opening an upstream Run', async () => {
@@ -1044,13 +1081,23 @@ describe('Cursor API mapping and Run lifecycle', () => {
           ),
         ),
     );
-    expect(outbound.map((item) => item.message.case)).toEqual(
-      expect.arrayContaining(['runRequest', 'execClientMessage', 'kvClientMessage']),
+    expect(outbound.map((item) => objectAt(item.message).case)).toEqual(
+      expect.arrayContaining([
+        'runRequest',
+        'execClientMessage',
+        'execClientControlMessage',
+        'kvClientMessage',
+      ]),
     );
     const execCases = outbound
-      .filter((item) => item.message.case === 'execClientMessage')
-      .map((item) => item.message.value.message.case);
+      .filter((item) => objectAt(item.message).case === 'execClientMessage')
+      .map((item) => valueAt(item, ['message', 'value', 'message', 'case']));
     expect(execCases).toEqual(['requestContextResult', 'shellResult']);
+    expect(
+      outbound
+        .filter((item) => objectAt(item.message).case === 'execClientControlMessage')
+        .map((item) => valueAt(item, ['message', 'value', 'message', 'value', 'id'])),
+    ).toEqual([1, 2]);
   });
 
   it('streams text deltas and returns native MCP invocations as OpenAI tool calls', async () => {
@@ -1996,16 +2043,19 @@ describe('Cursor API structured history', () => {
       'agent.v1.ConversationTurnStructure',
       required(history.blobs.get(turnId.toString('hex')), 'turn blob'),
     );
-    const agentTurn = turn.turn.value;
+    const agentTurn = objectAt(turn, ['turn', 'value']);
     return {
       userMessage: liveCodec.decode(
         'agent.v1.UserMessage',
-        required(history.blobs.get(agentTurn.userMessage.toString('hex')), 'user message blob'),
+        required(
+          history.blobs.get(bufferAt(agentTurn.userMessage).toString('hex')),
+          'user message blob',
+        ),
       ),
-      steps: agentTurn.steps.map((stepId: Buffer) =>
+      steps: arrayAt(agentTurn.steps).map((stepId) =>
         liveCodec.decode(
           'agent.v1.ConversationStep',
-          required(history.blobs.get(stepId.toString('hex')), 'conversation step blob'),
+          required(history.blobs.get(bufferAt(stepId).toString('hex')), 'conversation step blob'),
         ),
       ),
     };
@@ -2118,9 +2168,19 @@ describe('Cursor API structured history', () => {
       ],
     });
     const turn = decodedTurn(history, 0);
-    expect(turn.steps[0].message.value.tool.value.result.result.value.content).toEqual([
-      { content: { case: 'text', value: { text: '' } } },
-    ]);
+    expect(
+      valueAt(turn.steps, [
+        0,
+        'message',
+        'value',
+        'tool',
+        'value',
+        'result',
+        'result',
+        'value',
+        'content',
+      ]),
+    ).toEqual([{ content: { case: 'text', value: { text: '' } } }]);
   });
 
   it('omits tagged thinking and reasoning at the HTTP boundary and replays no thinking', () => {
@@ -2151,7 +2211,7 @@ describe('Cursor API structured history', () => {
       Array.isArray(entry.content) ? entry.content.map((part) => testRecord(part).type) : [],
     );
     expect(partTypes.every((type) => type === 'text' || type === 'tool-call')).toBe(true);
-    expect(entries[1]).toEqual({
+    expect(entries.find((entry) => entry.role === 'user')).toEqual({
       role: 'user',
       content: [
         {
@@ -2242,12 +2302,20 @@ describe('Cursor API structured history', () => {
         {
           type: 'tool-result',
           toolCallId: 'call_1',
-          toolName: 'bridge_tool_0_lookup_code',
+          toolName: 'bridge-lookup_code',
           result: 'seed=20260818',
         },
       ],
     });
-    expect(String(entries[0].content)).toContain('bridge_tool_0_lookup_code');
+    expect(entries.find((entry) => entry.role === 'assistant')?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'tool-call',
+          toolName: 'bridge-lookup_code',
+          toolCallId: 'call_1',
+        }),
+      ]),
+    );
   });
 
   it('serves structured history blobs to Cursor KV requests on the run wire', async () => {
@@ -2261,14 +2329,24 @@ describe('Cursor API structured history', () => {
     await stream.firstWrite.promise;
     const decoder = new ConnectFrameDecoder();
     const [firstFrame] = decoder.push(required(stream.writes[0], 'first history write'));
-    const run = transport.codec.decode(
-      'agent.v1.AgentClientMessage',
-      required(required(firstFrame, 'first history frame').payload, 'first history frame payload'),
-    ).message.value;
-    expect(run.action.action.case).toBe('userMessageAction');
-    expect(run.action.action.value.userMessage.text).toBe('report the seed');
-    expect(run.conversationState.rootPromptMessagesJson.length).toBeGreaterThanOrEqual(2);
-    expect(run.conversationState.turns.length).toBe(1);
+    const run = objectAt(
+      transport.codec.decode(
+        'agent.v1.AgentClientMessage',
+        required(
+          required(firstFrame, 'first history frame').payload,
+          'first history frame payload',
+        ),
+      ),
+      ['message', 'value'],
+    );
+    expect(valueAt(run, ['action', 'action', 'case'])).toBe('userMessageAction');
+    expect(valueAt(run, ['action', 'action', 'value', 'userMessage', 'text'])).toBe(
+      'report the seed',
+    );
+    expect(
+      arrayAt(run, ['conversationState', 'rootPromptMessagesJson']).length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(arrayAt(run, ['conversationState', 'turns']).length).toBe(1);
 
     stream.emit(
       'data',
@@ -2279,20 +2357,23 @@ describe('Cursor API structured history', () => {
             id: 7,
             message: {
               case: 'getBlobArgs',
-              value: { blobId: run.conversationState.rootPromptMessagesJson[0] },
+              value: { blobId: valueAt(run, ['conversationState', 'rootPromptMessagesJson', 0]) },
             },
           }),
         ),
       ),
     );
     const [replyFrame] = decoder.push(required(stream.writes[1], 'history reply write'));
-    const clientMessage = transport.codec.decode(
-      'agent.v1.AgentClientMessage',
-      required(required(replyFrame, 'history reply frame').payload, 'history reply payload'),
-    ).message;
+    const clientMessage = objectAt(
+      transport.codec.decode(
+        'agent.v1.AgentClientMessage',
+        required(required(replyFrame, 'history reply frame').payload, 'history reply payload'),
+      ),
+      ['message'],
+    );
     expect(clientMessage.case).toBe('kvClientMessage');
     const blob = JSON.parse(
-      Buffer.from(clientMessage.value.message.value.blobData).toString('utf8'),
+      bufferAt(clientMessage, ['value', 'message', 'value', 'blobData']).toString('utf8'),
     );
     expect(blob.role).toBe('system');
 

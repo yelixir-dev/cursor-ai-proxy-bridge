@@ -20,6 +20,7 @@ import type {
 import type { ChatCompletionRequest, CompletionStreamEvent } from '../../src/backend/types.js';
 import type { BridgeConfig } from '../../src/config.js';
 import { type RequestTrace, traceRunOpen } from '../../src/trace.js';
+import { fixtureNativeContext } from './native-context-fixture.js';
 
 const config: BridgeConfig = {
   host: '127.0.0.1',
@@ -219,6 +220,7 @@ export function backend(
     {
       auth,
       transport,
+      loadNativeContext: fixtureNativeContext,
       environment: {
         CURSOR_BRIDGE_CURSOR_RETRY_BASE_MS: '1',
         CURSOR_BRIDGE_STICKY_SETTLE_MS: '5',
