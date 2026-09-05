@@ -157,7 +157,7 @@ afterEach(async () => {
 }, 15_000);
 
 describe('Run stream HTTP/2 half-close', () => {
-  it('aborts with END_STREAM/NO_ERROR and never RST INTERNAL_ERROR', async () => {
+  it('aborts with END_STREAM and peer-visible CANCEL without waiting for shutdown', async () => {
     const server = await startLoopback();
     cleanups.push(server.close);
     const captured: ClientHttp2Stream[] = [];
@@ -195,16 +195,15 @@ describe('Run stream HTTP/2 half-close', () => {
     controller.abort();
     await expect(bounded(run, 'abort settlement')).rejects.toMatchObject({ name: 'AbortError' });
     await bounded(observed.ended, 'server END_STREAM');
+    await bounded(observed.closed, 'server cancellation close');
 
     const clientStream = captured[0];
     expect(clientStream).toBeDefined();
     expect(observed.endStream).toBe(true);
     expect(observed.rstCode).not.toBe(http2.constants.NGHTTP2_INTERNAL_ERROR);
-    expect(
-      observed.rstCode === undefined || observed.rstCode === http2.constants.NGHTTP2_NO_ERROR,
-    ).toBe(true);
+    expect(observed.rstCode).toBe(http2.constants.NGHTTP2_CANCEL);
     expect(clientStream?.writableEnded).toBe(true);
-    expect(clientStream?.destroyed).toBe(false);
+    expect(clientStream?.closed).toBe(true);
   }, 15_000);
 
   it('RSTs unavoidable transport errors with CANCEL rather than INTERNAL_ERROR', async () => {

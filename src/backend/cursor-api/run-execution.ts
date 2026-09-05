@@ -348,6 +348,7 @@ export async function executeCursorRun(options: CursorRunExecutionOptions): Prom
       const error = new CursorCommandAbortedError();
       if (!stream.destroyed && !stream.writableEnded) stream.end();
       finish(error);
+      if (!stream.destroyed) stream.destroy();
     }
     function bindSignal(nextSignal: AbortSignal | undefined): void {
       activeSignal?.removeEventListener('abort', onAbort);
