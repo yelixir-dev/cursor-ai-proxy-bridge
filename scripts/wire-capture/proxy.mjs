@@ -43,13 +43,14 @@ function redactShape(name, value) {
 // --- Connect envelope frame parser: [flags:1][len:4 BE][payload] ---
 // onFrame({ flags, payload, gunzipped, error }) - error is set (not thrown) on
 // gzip corruption so malformed input can never crash the capture loop.
-function parseFrames(state, chunk, onFrame) {
+function parseFrames(state, chunk, onFrame, onRawFrame) {
   state.buf = state.buf ? Buffer.concat([state.buf, chunk]) : chunk;
   for (;;) {
     if (state.buf.length < 5) return;
     const flags = state.buf[0];
     const len = state.buf.readUInt32BE(1);
     if (state.buf.length < 5 + len) return;
+    onRawFrame?.(state.buf.subarray(0, 5 + len));
     let payload = state.buf.subarray(5, 5 + len);
     state.buf = state.buf.subarray(5 + len);
     let gunzipped = false;
@@ -163,6 +164,7 @@ function createCaptureProxy(options) {
     };
     try {
       fs.appendFileSync(lifecyclePath, `${JSON.stringify(line)}\n`);
+      options.onLifecycle?.(line);
     } catch (e) {
       // capture dir may already be gone during teardown; lifecycle is best-effort there
       if (!(e && typeof e === 'object' && 'code' in e && e.code === 'ENOENT')) throw e;
@@ -207,7 +209,34 @@ function createCaptureProxy(options) {
     }
   }
 
-  function makeStreamLogger(tag, id, spath, ctype) {
+  let exactSequence = 0;
+  function makeStreamLogger(tag, id, spath, ctype, conn = null, stream = null) {
+    const exact = (entry) => {
+      if (!options.captureExact) return;
+      fs.appendFileSync(
+        path.join(captureDir, 'exact-wire.ndjson'),
+        `${JSON.stringify({
+          schema_version: 1,
+          sequence: exactSequence++,
+          mono_ms: performance.now() - monoStart,
+          conn,
+          stream,
+          request_id: id,
+          path: spath,
+          ...entry,
+        })}\n`,
+        { mode: 0o600 },
+      );
+    };
+    const rawFrame = (dir, frame_index) => (frame) =>
+      exact({
+        event: 'frame',
+        dir,
+        frame_index,
+        flags: frame[0],
+        frame_b64: frame.toString('base64'),
+        payload_b64: frame.subarray(5).toString('base64'),
+      });
     const isStreaming = /connect\+proto/.test(ctype || '');
     const isProto = /proto/.test(ctype || '');
     const stReq = { buf: null },
@@ -218,6 +247,7 @@ function createCaptureProxy(options) {
     const want = /AgentService|StreamUnified|StreamPrompt/.test(spath);
     return {
       reqData(chunk) {
+        exact({ event: 'data', dir: 'client', chunk_b64: chunk.toString('base64') });
         if (!isProto || chunk.length === 0) return;
         if (!isStreaming) {
           log(
@@ -225,19 +255,25 @@ function createCaptureProxy(options) {
           );
           return;
         }
-        parseFrames(stReq, chunk, ({ flags, payload, error }) => {
-          const idx = reqN++;
-          const fp = fieldPath(payload, 2).join(' ');
-          if (error) log(`${tag}#${id} REQ frame[${idx}] gunzip fail ${error.message}`);
-          log(
-            `${tag}#${id} REQ frame[${idx}] flags=0x${flags.toString(16).padStart(2, '0')} len=${payload.length} fields=${fp} first${Math.min(64, payload.length)}=${payload.subarray(0, 64).toString('hex')}`,
-          );
-          summary.req.push({ f: flags, l: payload.length, fields: fp });
-          if (want && idx < maxReqFrameBins)
-            fs.writeFileSync(capFile(tag, id, idx, 'req'), payload);
-        });
+        parseFrames(
+          stReq,
+          chunk,
+          ({ flags, payload, error }) => {
+            const idx = reqN++;
+            const fp = fieldPath(payload, 2).join(' ');
+            if (error) log(`${tag}#${id} REQ frame[${idx}] gunzip fail ${error.message}`);
+            log(
+              `${tag}#${id} REQ frame[${idx}] flags=0x${flags.toString(16).padStart(2, '0')} len=${payload.length} fields=${fp} first${Math.min(64, payload.length)}=${payload.subarray(0, 64).toString('hex')}`,
+            );
+            summary.req.push({ f: flags, l: payload.length, fields: fp });
+            if (want && idx < maxReqFrameBins)
+              fs.writeFileSync(capFile(tag, id, idx, 'req'), payload);
+          },
+          (frame) => rawFrame('client', reqN)(frame),
+        );
       },
       resData(chunk) {
+        exact({ event: 'data', dir: 'server', chunk_b64: chunk.toString('base64') });
         if (!isProto || chunk.length === 0) return;
         if (!isStreaming) {
           log(
@@ -245,21 +281,26 @@ function createCaptureProxy(options) {
           );
           return;
         }
-        parseFrames(stRes, chunk, ({ flags, payload, error }) => {
-          const idx = resN++;
-          const fp = fieldPath(payload, 2).join(' ');
-          if (error) log(`${tag}#${id} RES frame[${idx}] gunzip fail ${error.message}`);
-          log(
-            `${tag}#${id} RES frame[${idx}] flags=0x${flags.toString(16).padStart(2, '0')} len=${payload.length} fields=${fp} first${Math.min(32, payload.length)}=${payload.subarray(0, 32).toString('hex')}`,
-          );
-          summary.res.push({ f: flags, l: payload.length, fields: fp });
-          if (flags & 0x02)
+        parseFrames(
+          stRes,
+          chunk,
+          ({ flags, payload, error }) => {
+            const idx = resN++;
+            const fp = fieldPath(payload, 2).join(' ');
+            if (error) log(`${tag}#${id} RES frame[${idx}] gunzip fail ${error.message}`);
             log(
-              `${tag}#${id} RES trailer frame[${idx}] JSON=${payload.toString('utf8').slice(0, 400)}`,
+              `${tag}#${id} RES frame[${idx}] flags=0x${flags.toString(16).padStart(2, '0')} len=${payload.length} fields=${fp} first${Math.min(32, payload.length)}=${payload.subarray(0, 32).toString('hex')}`,
             );
-          if (want && idx < maxResFrameBins)
-            fs.writeFileSync(capFile(tag, id, idx, 'res'), payload);
-        });
+            summary.res.push({ f: flags, l: payload.length, fields: fp });
+            if (flags & 0x02)
+              log(
+                `${tag}#${id} RES trailer frame[${idx}] JSON=${payload.toString('utf8').slice(0, 400)}`,
+              );
+            if (want && idx < maxResFrameBins)
+              fs.writeFileSync(capFile(tag, id, idx, 'res'), payload);
+          },
+          (frame) => rawFrame('server', resN)(frame),
+        );
       },
       summary,
     };
@@ -396,7 +437,7 @@ function createCaptureProxy(options) {
         detail: { dir, bytes: chunkLen, first, mono_ms: mono },
       });
     };
-    const logger = makeStreamLogger(tag, id, spath, ctype);
+    const logger = makeStreamLogger(tag, id, spath, ctype, conn, streamId);
     stream.on('data', (c) => {
       lifecycleData('req', c.length);
       logger.reqData(c);
@@ -482,6 +523,13 @@ function createCaptureProxy(options) {
     up.on('close', () => {
       done();
       const rst = up.rstCode;
+      if (options.captureExact)
+        lifecycle({
+          conn,
+          stream: streamId,
+          event: 'upstream_close',
+          detail: { origin: 'upstream', rst_code: rst, rst_name: rstName(rst) },
+        });
       if (rst !== undefined && rst !== http2.constants.NGHTTP2_NO_ERROR) {
         lifecycle({
           conn,
