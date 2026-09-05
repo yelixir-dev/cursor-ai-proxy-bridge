@@ -2,11 +2,53 @@
 
 ## Current installed-CLI verification
 
+### Linux authenticated-worker campaign
+
+The current Linux campaign passes against installed CLI `2026.09.02-c22c1a3`
+with `composer-2.5`. Evidence root: `.omo/evidence/linux-ready-20260905-auth/`.
+The actual CLI schema is extracted from that installed bundle; full-profile
+comparison remains unchanged, with no bridge-only repository allowance.
+
+| Scenario                         | Evidence                        | Strict profile         | Cleanup |
+| -------------------------------- | ------------------------------- | ---------------------- | ------- |
+| Chat                             | `final-chat/summary.json`       | PASS, zero differences | 11/11   |
+| Parallel tools                   | `final-parallel/summary.json`   | PASS, zero differences | 12/12   |
+| Sequential tools                 | `final-sequential/summary.json` | PASS, zero differences | 12/12   |
+| Cancellation and bridge recovery | `final-cancel/summary.json`     | PASS, zero differences | 11/11   |
+
+Both behavioral oracles pass in every pair. Parallel returns both tool results;
+sequential uses the first result for the second call and reuses one Run across
+three bridge HTTP rounds. Cancellation closes both upstream streams before
+cleanup; recovery is verified on the same bridge server, not on native CLI.
+
+The native repository worker requires file credentials independently of chat's
+environment-token authentication. With explicit user approval, the harness
+creates an exclusive `0600` token file in an isolated home, starts the unmodified
+native worker, and requires successful `/getRepositoryInfo` before measured CLI
+execution. Original login stores are untouched. Startup transport retries are
+bounded and do not accept HTTP errors. Evidence-write failures propagate through
+the awaited cleanup path. Regression coverage includes interruption, worker exit,
+repository failure, artifact-write failure, and a gated bind/listen race.
+
+All four temporary credential files were deleted and all 22 recorded child PIDs
+were absent. `final-aggregate.json` records the 46 successful cleanup receipts.
+Controlled HTTP regressions pass 20/20 resume checks and 10/10 credential-isolation
+checks under `final-http/`. Final `npm run verify` passes 112 files / 1,102 tests,
+typecheck, lint, formatting, strict checks, and build (`review-verify.log`).
+
+Earlier Linux failures remain under `.omo/evidence/linux-ready-20260905/`:
+the shell mismatch was fixed, and missing native repository context was traced to
+worker startup and missing worker credentials. Those failures were not relabeled
+as successes. This prepared-worker profile does not prove cold-start timing parity,
+all interactive CLI features, or byte-identical stochastic response streams.
+
+### Previous macOS campaign
+
 The August benchmark results below are historical. Its pinned OMO comparator
 uses a separate HTTP client; those results do not establish equivalence to the
 installed Cursor CLI. Historical user overrides do not close the current work.
 
-The current campaign uses `scripts/native-parity-live.mjs` with the actual
+The previous macOS campaign used `scripts/native-parity-live.mjs` with the actual
 installed CLI `2026.08.25-3e8eec8`, the same account, workspace, model and MCP
 fixture in both lanes. It captures complete Connect frames and compares full
 Run/request-context values using the installed CLI schema, rather than accepting

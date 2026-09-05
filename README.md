@@ -18,7 +18,7 @@
 
 <!-- README-I18N:END -->
 
-**[Cursor AI Bridge](https://github.com/yelixir-dev/cursor-ai-proxy-bridge)** is a local TypeScript proxy for Node.js 22+ that gives Cursor Agent an OpenAI-compatible surface at `/v1/chat/completions` and `/v1/models`. It routes between two backends, headless `cursor-api` and `cursor-cli`, with `auto` as the default.
+**[Cursor AI Bridge](https://github.com/yelixir-dev/cursor-ai-proxy-bridge)** is a local TypeScript proxy for Node.js 22+ that gives Cursor Agent an OpenAI-compatible surface at `/v1/chat/completions` and `/v1/models`. It routes between two backends, headless `cursor-api` and `cursor-cli`, with `auto` as the default. The 2026-09-05 Linux campaign passes four strict-profile scenarios for `composer-2.5` against installed CLI `2026.09.02-c22c1a3` in a prepared authenticated-worker profile.
 
 [What it does](#what-it-does) · [Install](#install) · [Usage](#usage) · [How it works](#how-it-works) · [Repository layout](#repository-layout) · [Current limitations](#current-limitations) · [License](#license)
 
@@ -31,6 +31,36 @@
 - **Weighted credentials.** `CURSOR_API_KEY` and dashboard credentials are routed by weight; an authentication failure cools down only the failed credential, retries once with another available credential, and recovers lazily after cooldown.
 - **Curated model families.** Composer 2.5, Cursor Grok 4.6, Claude 5 Opus, Sonnet, and Fable, GPT-5.6 Sol, Terra, and Luna, Kimi K3, GLM 5.2, `default`, and `auto` are enabled by policy, while dashboard overrides can expose or hide other discovered models.
 - **A local management console.** `/dashboard` shows bridge and backend status, supports managed credential CRUD, and groups model family toggles with bulk enable and disable actions.
+
+### Installed CLI verification (2026-09-05)
+
+The Linux campaign passes all four strict full-profile comparisons against installed,
+unmodified CLI `2026.09.02-c22c1a3` with `composer-2.5`: chat, parallel tools,
+sequential tools, and cancellation with bridge recovery. Each records `differences: []`
+and passing behavioral oracles in both lanes. The comparator uses the installed
+bundle's schema, with no bridge-only repository allowance.
+
+Parallel returns both tool results. Sequential uses the first result in the second
+call and reuses one Run across three bridge HTTP rounds. Cancellation closes both
+upstream streams; recovery is verified on the same bridge server, not on native CLI.
+
+This is an **isolated, prepared authenticated-worker profile**. With explicit approval,
+the harness creates an exclusive `0600` token file in an isolated home and requires
+successful `/getRepositoryInfo` before measured CLI execution. Original login stores
+remain untouched. All four temporary credential files were deleted, all 22 recorded
+child PIDs were absent, and all 46 cleanup receipts passed.
+
+Controlled HTTP regressions pass **20/20 resume checks** and **10/10 credential-isolation
+checks**. The campaign's final `npm run verify` passes **112 files / 1,102 tests**, plus
+typecheck, lint, formatting, strict checks, and build. These are recorded campaign
+results, not guarantees for another account, model, or CLI version.
+
+See [Parity status](docs/PARITY-STATUS.md) for scope and history. Local private evidence
+is in `.omo/evidence/linux-ready-20260905-auth/final-aggregate.json` and
+`review-verify.log` under the same evidence root; `.omo/` isn't committed.
+The older macOS campaign and August benchmarks are historical, not current Linux proof.
+This result does **not** establish cold-start timing parity, byte-identical stochastic
+response streams, or support for every interactive CLI feature.
 
 ### Model context windows
 
@@ -185,7 +215,7 @@ Timeout retry is opt-in because replay is safe only before client-visible conten
 
 Cursor's typed `ERROR_PROVIDER_ERROR` metadata is decoded before retry classification. Explicit
 `isRetryable:false` remains terminal by default, including provider HTTP 400 responses. Set
-`CURSOR_BRIDGE_RETRY_PROVIDER_5XX=1` only to experiment with the narrower 500–599 case. It uses
+`CURSOR_BRIDGE_RETRY_PROVIDER_5XX=1` only to experiment with the narrower 500-599 case. It uses
 the existing three-server-retry ceiling, preserves the requested model and originating credential,
 and never retries after content or tool-call output reaches the client. Provider type, retry marker,
 provider status, Connect code, and upstream Run request ID are emitted as allowlisted diagnostics;
@@ -208,7 +238,7 @@ such events measurable when they occur, it does not make them more likely.
 1. **Bridge Run timeout.** `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS` limits the complete upstream Run.
 2. **Hermes stale-stream timeout.** `stale_timeout_seconds` limits how long Hermes waits for usable stream output. Hermes versions that do not classify `composer-*` as reasoning models apply the provider default, commonly 180 seconds.
 
-If either ceiling fires first, clients can report `Response truncated — stream ended before completion`, drop partially streamed tool calls, or reconnect while the model is still thinking.
+If either ceiling fires first, clients can report a truncated-stream error, drop partially streamed tool calls, or reconnect while the model is still thinking.
 
 Configure the bridge first:
 
@@ -307,7 +337,7 @@ upstream and OpenAI SSE stages. API keys and prompt or generated text are never 
 | `npm run test`            | Run the Vitest suite with one worker.                                               |
 | `npm run test:e2e`        | Build and run the Node smoke test against a real backend.                           |
 | `npm run test:live-tools` | Run the explicitly enabled 10x live Cursor tool-call model matrix.                  |
-| `npm run verify`          | Run typecheck, lint, format check, tests, and build.                                |
+| `npm run verify`          | Run typecheck, lint, format check, strict checks, tests, and build.                 |
 
 ### End to end smoke test
 
@@ -479,8 +509,7 @@ docs/assets/banner.svg  README hero banner
 
 - **Unofficial protocol.** Cursor can change the reverse-engineered `agent.v1` service or its bundle; re-run `npm run extract-protos` after a `cursor-agent` update or when a bridge update reports an outdated descriptor snapshot, or force `CURSOR_BRIDGE_BACKEND=cursor-cli`.
 - **Local network boundary.** The default bind is `127.0.0.1`; keep it on localhost or a trusted tailnet, and keep client auth enabled when a private reverse proxy exposes it.
-- **Tool streaming boundary.** When tools are declared, model text is buffered until Cursor completes so tool markers can be converted safely; omit tools when incremental content matters.
-- **Front-proxy `content: null`.** Sequential OpenAI clients replay tool-call assistants with `content: null`. This bridge accepts that shape. If LiteLLM or another ingress still returns 400 on `messages[N].content`, fix the proxy schema or normalize `null` to `""` there.
+- **Tool streaming boundary.** When tools are declared, model text is buffered until Cursor completes so tool markers can be converted safely; omit tools when incremental content matters. **Front-proxy `content: null`.** Sequential OpenAI clients replay tool-call assistants with `content: null`. This bridge accepts that shape. If LiteLLM or another ingress still returns 400 on `messages[N].content`, fix the proxy schema or normalize `null` to `""` there.
 - **Cursor boundary.** Both real backends consume Cursor quota, and `cursor-api` may carry account or terms risk despite local execution; plan quota use and choose the CLI path when needed.
 
 ## License

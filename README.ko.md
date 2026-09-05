@@ -18,7 +18,7 @@
 
 <!-- README-I18N:END -->
 
-**[Cursor AI Bridge](https://github.com/yelixir-dev/cursor-ai-proxy-bridge)**는 Node.js 22+와 TypeScript로 만든 로컬 proxy입니다. Cursor Agent에 `/v1/chat/completions`와 `/v1/models`의 OpenAI-compatible surface를 제공하며, headless `cursor-api`와 `cursor-cli` 두 backend 사이를 기본 `auto` 모드로 라우팅합니다.
+**[Cursor AI Bridge](https://github.com/yelixir-dev/cursor-ai-proxy-bridge)**는 Node.js 22+와 TypeScript로 만든 로컬 proxy입니다. Cursor Agent에 `/v1/chat/completions`와 `/v1/models`의 OpenAI-compatible surface를 제공하며, headless `cursor-api`와 `cursor-cli` 두 backend 사이를 기본 `auto` 모드로 라우팅합니다. 2026-09-05 Linux 검증에서는 인증 worker를 미리 준비한 profile로 설치된 CLI `2026.09.02-c22c1a3`와 `composer-2.5`의 strict profile 시나리오 네 개를 통과했습니다.
 
 [기능](#기능) · [설치](#설치) · [사용법](#사용법) · [동작 방식](#동작-방식) · [레포지토리 구조](#레포지토리-구조) · [현재 한계](#현재-한계) · [라이선스](#라이선스)
 
@@ -31,6 +31,156 @@
 - **가중치 기반 credential.** `CURSOR_API_KEY`와 dashboard credential을 weight로 라우팅합니다. 인증 실패가 나면 실패한 credential만 cooldown하고, 사용 가능한 다른 credential로 한 번 retry한 뒤 cooldown이 끝나면 lazy recovery합니다.
 - **선별된 model family.** Composer 2.5, Cursor Grok 4.6, Claude 5 Opus, Sonnet, Fable, GPT-5.6 Sol, Terra, Luna, Kimi K3, GLM 5.2, `default`, `auto`를 policy로 활성화하며, dashboard override로 다른 discovered model을 노출하거나 숨길 수 있습니다.
 - **로컬 관리 console.** `/dashboard`에서 bridge와 backend status를 보고, 관리 credential CRUD를 수행하며, model family toggle을 bulk enable 또는 disable할 수 있습니다.
+
+### 설치된 CLI 검증 (2026-09-05)
+
+Linux 검증에서 설치된 원본 CLI `2026.09.02-c22c1a3`와 `composer-2.5`를 대상으로
+chat, parallel tools, sequential tools, cancellation과 bridge recovery 네 가지
+strict full-profile 비교가 모두 통과했습니다. 각각 `differences: []`를 기록했고
+양쪽 행동 검증도 통과했습니다. 설치된 bundle의 schema로 비교하며 bridge에만
+repository 필드 예외를 허용하지 않습니다.
+
+Parallel은 두 tool result를 모두 반환합니다. Sequential은 첫 결과를 두 번째 call에
+사용하고 bridge HTTP 세 round가 하나의 Run을 재사용합니다. Cancellation은 양쪽
+upstream stream을 닫습니다. Recovery는 native CLI가 아닌 같은 bridge server에서
+확인했습니다.
+
+이 결과의 범위는 **격리된 환경에서 인증 worker를 미리 준비한 profile**입니다.
+명시적 승인을 받아 harness가 격리된 home에 전용 `0600` token 파일을 생성하며,
+`/getRepositoryInfo` 성공 후 CLI 측정을 시작합니다. 기존 로그인 저장소는 건드리지
+않습니다. 임시 credential 파일 네 개는 모두 삭제됐고 기록된 child PID 22개는 모두
+종료 상태였으며 cleanup receipt 46개가 모두 통과했습니다.
+
+통제된 HTTP 회귀 검증은 **resume 20/20**, **credential isolation 10/10**을
+통과했습니다. 최종 `npm run verify`는 **112개 파일 / 1,102개 테스트**와 typecheck,
+lint, formatting, strict check, build를 통과했습니다. 이는 해당 검증 기록이며 다른
+계정, model 또는 CLI 버전의 결과를 보장하지 않습니다.
+
+범위와 이력은 [Parity 상태](docs/PARITY-STATUS.md)를 참고하세요. 로컬 비공개 근거는
+`.omo/evidence/linux-ready-20260905-auth/final-aggregate.json`과 같은 근거 디렉터리의
+`review-verify.log`에 있습니다. `.omo/`는 commit하지 않습니다. 이전 macOS 검증과
+8월 benchmark는 과거 기록이며 현재 Linux 결과의 근거가 아닙니다.
+이 결과는 cold-start 시간의 동등성, 확률적으로 생성되는 응답 stream의 byte 단위
+동일성, 모든 대화형 CLI 기능의 지원을 **입증하지 않습니다**.
+
+### 모델 context window
+
+`GET /v1/models`는 선별된 모든 model에 `context_window`, `context_length`, `max_context_length`를 반환합니다.
+
+`cursor-api`에서는 bridge가 실제 실행할 **live variant**의 window를 사용합니다. Cursor는 같은 legacy slug를 standard와 max-mode variant로 각각 제공하며 선택된 variant의 `context`가 실제 window를 결정합니다. `context=1m`이면 `1000000`으로 노출됩니다. 이 계정에서 관측한 대상은 `opus-5-fast`와 `opus-5-thinking-fast`입니다.
+
+아래 표는 Composer, Grok, Kimi, GLM처럼 `context`가 없거나 discovery에 연결하지 못할 때 사용하는 문서 기반 fallback입니다.
+
+| 모델 family     | 노출 context  | Cursor 출처                                                                                                 |
+| --------------- | ------------- | ----------------------------------------------------------------------------------------------------------- |
+| Composer 2.5    | 200,000       | [Cursor Docs](https://cursor.com/docs/models/cursor-composer-2-5)                                           |
+| Claude Opus 5   | 300,000       | [Cursor Docs](https://cursor.com/docs/models/claude-opus-5)                                                 |
+| Claude Sonnet 5 | 300,000       | [Cursor Docs](https://cursor.com/docs/models/claude-sonnet-5)                                               |
+| Claude Fable 5  | 300,000       | [Cursor Docs](https://cursor.com/docs/models/claude-fable-5)                                                |
+| GPT-5.6 Sol     | 272,000       | [Cursor Docs](https://cursor.com/docs/models/gpt-5-6-sol)                                                   |
+| GPT-5.6 Terra   | 272,000       | [Cursor Docs](https://cursor.com/docs/models/gpt-5-6-terra)                                                 |
+| GPT-5.6 Luna    | 272,000       | [Cursor Docs](https://cursor.com/docs/models/gpt-5-6-luna)                                                  |
+| Grok 4.6        | 256,000       | [Cursor Docs](https://cursor.com/docs/models/grok-4-6)                                                      |
+| Kimi K3         | 200,000       | [Cursor Docs](https://cursor.com/docs/models/kimi-k3)                                                       |
+| GLM 5.2         | 200,000       | [Cursor Docs](https://cursor.com/docs/models/glm-5-2)                                                       |
+| `default`       | 설정된 기본값 | 위 표에서 설정된 model의 행으로 결정                                                                        |
+| `auto`          | 200,000       | 보수적인 proxy 하한; [Cursor Router](https://cursor.com/docs/cursor-router) 는 고정 context card가 없습니다 |
+
+기존 effort, thinking, fast slug는 family 값을 따릅니다. 명시적인 dashboard override로만 노출된 model은 Cursor 공식 context card가 없으면 기존 값을 유지합니다.
+
+일부 family의 최대 1M token은 기본값이 아닌 별도의 max-mode variant입니다. Bridge는 임의로 window를 넓히지 않고 선택한 variant의 값을 노출하므로 client는 `context_window`를 기준으로 입력 크기를 정할 수 있습니다.
+
+#### Max Mode context window
+
+Cursor는 parameter가 있는 family를 standard와 `isMaxMode` variant로 제공하며 둘은 `context`만 다릅니다. 아래 값은 Ultra 계정과 `cursor-agent` 2026.08.25에서 `aiserver.v1.AvailableModelsResponse` (`useModelParameters: true`)를 읽은 기록으로 홍보 수치가 아닌 실제 응답 값입니다.
+
+| 모델 family     | Standard variant | Max Mode variant | 제공된 Max Mode variant 수 |
+| --------------- | ---------------- | ---------------- | -------------------------- |
+| Composer 2.5    | `context` 없음   | 없음             | 0                          |
+| Claude Opus 5   | 300,000          | **1,000,000**    | 16                         |
+| Claude Sonnet 5 | 300,000          | **1,000,000**    | 10                         |
+| Claude Fable 5  | 300,000          | **1,000,000**    | 10                         |
+| GPT-5.6 Sol     | 272,000          | **1,000,000**    | 6                          |
+| GPT-5.6 Terra   | 272,000          | **1,000,000**    | 6                          |
+| GPT-5.6 Luna    | 272,000          | **1,000,000**    | 6                          |
+| Grok 4.6        | `context` 없음   | 없음             | 0                          |
+| Kimi K3         | `context` 없음   | 없음             | 0                          |
+| GLM 5.2         | `context` 없음   | 없음             | 0                          |
+
+Max Mode variant가 있어도 bridge가 기본으로 선택하는 것은 아닙니다. `GetUsableModels`가 legacy slug별 계정 variant를 결정하며 아래 policy를 켜지 않으면 bridge는 그 결정을 따릅니다.
+
+`context` 없이 제공되는 family에는 Max Mode variant가 없으며 위 문서 기반 표를 사용합니다.
+
+#### Max Mode 선택
+
+`CURSOR_BRIDGE_MAX_MODE_DEFAULT`는 `true` 또는 `false`만 허용하며 다른 값은 추측하지 않고 startup을 실패 처리합니다.
+
+```bash
+CURSOR_BRIDGE_MAX_MODE_DEFAULT=true
+```
+
+`/dashboard`의 **Max Mode 기본값**과 admin API에서도 변경할 수 있으며 재시작 없이 다음 요청부터 적용됩니다:
+
+```bash
+curl -sS -X PATCH http://127.0.0.1:9997/admin/config \
+  -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"maxModeDefault": true}'
+```
+
+활성화하면 계정에 `isMaxMode` variant가 있는 id는 해당 variant를 선택하고 없으면 standard를 사용합니다. 기준 계정의 측정값입니다:
+
+| 노출 id        | Policy 꺼짐 | Policy 켜짐                |
+| -------------- | ----------- | -------------------------- |
+| `sonnet-5`     | 300,000     | **1,000,000**              |
+| `opus-5`       | 300,000     | **1,000,000**              |
+| `fable-5`      | 300,000     | **1,000,000**              |
+| `gpt-5.6-sol`  | 272,000     | **1,000,000**              |
+| `kimi-k3`      | 200,000     | 200,000 (max variant 없음) |
+| `composer-2.5` | 200,000     | 200,000 (max variant 없음) |
+
+`reasoning_effort`는 별도 설정이며 Max Mode를 켜지 않습니다. `reasoning_effort: "max"`는 현재 context tier의 가장 강한 effort를 선택하므로 policy가 꺼져 있으면 standard-context variant를 사용합니다.
+
+`GET /v1/models`는 client가 tier를 구별할 수 있도록 각 항목에 표시합니다:
+
+```json
+{ "id": "sonnet-5", "is_max_mode": true, "context_window": 1000000 }
+```
+
+`GET /admin/config`는 policy와 각 노출 id가 선택하는 variant를 반환합니다:
+
+```json
+{
+  "config": { "maxModeDefault": true },
+  "state": {
+    "models": [
+      {
+        "id": "sonnet-5",
+        "resolvedVariant": "claude-sonnet-5-medium",
+        "isMaxMode": true,
+        "contextWindow": 1000000
+      }
+    ]
+  }
+}
+```
+
+#### Downstream router 동기화 (LiteLLM)
+
+Downstream의 `model_info.max_input_tokens`가 bridge와 다르면 입력이 조용히 잘리거나 upstream에서 거부될 수 있습니다. `GET /v1/models`의 `context_window`는 실제 실행할 variant를 나타내므로 수치를 수동 관리하지 말고 이 값을 router 설정의 기준으로 사용하세요.
+
+```bash
+curl -sS http://127.0.0.1:9997/v1/models \
+  -H "Authorization: Bearer $CURSOR_BRIDGE_API_KEY" |
+  jq -r '.data[] | "\(.id)\t\(.context_window)\t\(.is_max_mode)"'
+```
+
+Downstream router 설정 규칙:
+
+- `context_window`를 올림 없이 그대로 `max_input_tokens`에 매핑하세요.
+- 같은 id도 policy에 따라 window가 달라지므로 `maxModeDefault` 변경 후 목록을 다시 읽으세요.
+- Standard와 Max 항목은 model id로 추측하지 말고 `is_max_mode`로 구분하세요.
+- Bridge가 1M으로 보고하지 않는 id에 1M 상한을 설정하지 마세요. Max Mode variant가 없는 Composer, Grok, Kimi, GLM은 policy와 무관하게 1M이 되지 않습니다.
 
 ## 설치
 
@@ -66,7 +216,7 @@ Timeout retry는 client-visible content나 tool-call delta가 전달되기 전�
 
 Cursor의 typed `ERROR_PROVIDER_ERROR` metadata는 retry 분류 전에 decode됩니다. Provider HTTP
 400을 포함해 명시적인 `isRetryable:false`는 기본적으로 terminal입니다.
-`CURSOR_BRIDGE_RETRY_PROVIDER_5XX=1`은 더 좁은 500–599 사례를 실험할 때만 사용하세요. 기존
+`CURSOR_BRIDGE_RETRY_PROVIDER_5XX=1`은 더 좁은 500-599 사례를 실험할 때만 사용하세요. 기존
 server retry 최대 3회 제한을 사용하고 requested model과 최초 credential을 유지하며, content
 또는 tool-call output이 client에 전달된 뒤에는 retry하지 않습니다. Provider type, retry marker,
 provider status, Connect code, upstream Run request ID만 allowlist diagnostics로 노출하며 provider
@@ -89,7 +239,7 @@ detail 원문과 임의 metadata는 log나 response에 포함하지 않습니다
 1. **Bridge Run timeout.** `CURSOR_BRIDGE_CURSOR_TIMEOUT_MS`는 전체 upstream Run의 상한입니다.
 2. **Hermes stale-stream timeout.** `stale_timeout_seconds`는 Hermes가 유효한 stream output을 기다리는 상한입니다. `composer-*`를 reasoning model로 분류하지 않는 Hermes 버전에서는 provider 기본값(일반적으로 180초)이 적용됩니다.
 
-둘 중 하나라도 먼저 만료되면 client가 `Response truncated — stream ended before completion`을 보고하거나, 일부 전송된 tool call을 버리거나, model이 아직 thinking 중인데 reconnect할 수 있습니다.
+둘 중 하나라도 먼저 만료되면 client가 stream 잘림 오류을 보고하거나, 일부 전송된 tool call을 버리거나, model이 아직 thinking 중인데 reconnect할 수 있습니다.
 
 먼저 bridge를 설정합니다.
 
@@ -98,7 +248,7 @@ detail 원문과 임의 metadata는 log나 response에 포함하지 않습니다
 CURSOR_BRIDGE_CURSOR_TIMEOUT_MS=300000
 CURSOR_BRIDGE_RUN_IDLE_MS=30000
 
-# Linux systemd 예시: 재시작한 뒤 실행 중인 process environment를 확인합니다.
+# Linux systemd example: restart and verify the running process environment.
 systemctl --user restart cursor-ai-proxy-bridge
 tr '\0' '\n' <"/proc/$(systemctl --user show -p MainPID --value cursor-ai-proxy-bridge)/environ" |
   grep CURSOR_BRIDGE_CURSOR_TIMEOUT_MS
@@ -141,26 +291,74 @@ CURSOR_BRIDGE_BACKEND=cursor-api npm start
 
 추적 중인 `src/backend/cursor-api/proto-descriptors.json`은 build 때 `dist`로 복사됩니다. `CURSOR_BRIDGE_CURSOR_API_DESCRIPTORS`로 외부 snapshot을 지정하는 override도 유지됩니다. Headless 인증에는 Cursor Dashboard -> API Keys에서 발급한 `CURSOR_API_KEY`를 설정합니다. `CURSOR_AUTH_TOKEN`도 사용할 수 있으며, env 또는 dashboard credential이 없으면 system credential이 macOS Keychain을 사용할 수 있습니다.
 
+### Tool-call 선택과 strict single-call 모드
+
+`tool_choice: "auto"`는 선언된 function 중에서 model이 선택하게 하며 여러 call을 만들 수
+있습니다. 정확히 한 function을 호출해야 한다면 named function choice를 사용하세요:
+
+```json
+{
+  "tool_choice": {
+    "type": "function",
+    "function": { "name": "read" }
+  }
+}
+```
+
+Bridge는 선택적 요청 필드 `max_tool_calls`(`1`부터 `128`)도 받습니다.
+엄격한 단일 call 동작에는 `max_tool_calls: 1`을 사용하세요. Function 하나를 선언하고
+`tool_choice: "auto"`를 사용하면 upstream choice를 해당 named function으로 강화합니다.
+여러 function을 선언하면 처음 완료된 허용 call을 노출하고 Run을 즉시 park하므로 이후
+model이 생성한 builtin은 추가 external OpenAI call이 되지 않습니다.
+`parallel_tool_calls: false`의 기존 단일 call 동작도 유지됩니다.
+
+Builtin promotion은 native MCP call과 같은 declared-tool 및 named-choice allowlist를
+적용합니다. 선언되지 않았거나 제외된 builtin은 숨은 복구 call로 보관하지 않고
+거부합니다. Tool-call ID, 이름, argument byte는 OpenAI response와 SSE 직렬화에서 보존됩니다.
+
+`NODE_DEBUG=cursor-bridge`로 안전한 tool-routing 및 content-boundary metadata를
+확인하세요. 승격된 builtin 기록에는 요청 model, reasoning effort, tool choice, 선언된
+이름, 시도한 builtin, 승격된 external 이름, call index, Run request ID, origin,
+disposition이 포함됩니다. Content 기록은 Cursor upstream과 OpenAI SSE 단계의 chunk
+길이 및 앞뒤 whitespace 여부만 포함하며 API key, prompt, 생성 text는 포함하지 않습니다.
+
 ### npm scripts
 
-| Command                  | Purpose                                                                        |
-| ------------------------ | ------------------------------------------------------------------------------ |
-| `npm run dev`            | `src/index.ts`를 `tsx` watch 모드로 실행합니다.                                |
-| `npm run build`          | TypeScript를 compile하고 descriptor snapshot이 있으면 복사합니다.              |
-| `npm start`              | `dist/index.js`를 시작합니다.                                                  |
-| `npm run clean`          | `dist`를 삭제합니다.                                                           |
-| `npm run extract-protos` | 설치된 `cursor-agent` bundle에서 도달 가능한 protocol descriptor를 추출합니다. |
-| `npm run typecheck`      | 파일을 emit하지 않고 TypeScript를 검사합니다.                                  |
-| `npm run lint`           | ESLint를 실행합니다.                                                           |
-| `npm run format`         | Prettier로 레포지토리를 format합니다.                                          |
-| `npm run format:check`   | Prettier로 레포지토리 format을 검사합니다.                                     |
-| `npm run test`           | 한 worker로 Vitest suite를 실행합니다.                                         |
-| `npm run test:e2e`       | build한 뒤 실제 backend를 대상으로 Node smoke test를 실행합니다.               |
-| `npm run verify`         | typecheck, lint, format check, test, build를 실행합니다.                       |
+| Command                   | Purpose                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------ |
+| `npm run dev`             | `src/index.ts`를 `tsx` watch 모드로 실행합니다.                                |
+| `npm run build`           | TypeScript를 compile하고 descriptor snapshot이 있으면 복사합니다.              |
+| `npm start`               | `dist/index.js`를 시작합니다.                                                  |
+| `npm run clean`           | `dist`를 삭제합니다.                                                           |
+| `npm run extract-protos`  | 설치된 `cursor-agent` bundle에서 도달 가능한 protocol descriptor를 추출합니다. |
+| `npm run typecheck`       | 파일을 emit하지 않고 TypeScript를 검사합니다.                                  |
+| `npm run lint`            | ESLint를 실행합니다.                                                           |
+| `npm run format`          | Prettier로 레포지토리를 format합니다.                                          |
+| `npm run format:check`    | Prettier로 레포지토리 format을 검사합니다.                                     |
+| `npm run test`            | 한 worker로 Vitest suite를 실행합니다.                                         |
+| `npm run test:e2e`        | build한 뒤 실제 backend를 대상으로 Node smoke test를 실행합니다.               |
+| `npm run test:live-tools` | 명시적으로 활성화한 10x live Cursor tool-call model matrix를 실행합니다.       |
+| `npm run verify`          | typecheck, lint, format check, strict check, test, build를 실행합니다.         |
 
 ### End to end smoke test
 
 사용 가능한 Cursor backend가 있는 상태에서 `npm run test:e2e`를 실행하세요. 실제 Cursor quota를 사용하며 authentication, chat, tools, SSE, malformed request, disconnect cleanup을 검사합니다.
+
+LiteLLM tool-call 회귀 검증은 live matrix에 OpenAI-compatible base URL을 지정해
+실행합니다. 지원하는 Cursor model마다 `tool_choice: "auto"` 요청을 순차적으로 열 번
+보내며 response당 정확한 `read_file` call 하나만 허용합니다. 실제 quota를 소비하므로
+다음 opt-in 없이는 시작하지 않습니다:
+
+```bash
+CURSOR_TOOL_MATRIX_LIVE=1 \
+CURSOR_TOOL_MATRIX_BASE_URL=http://127.0.0.1:9995 \
+CURSOR_TOOL_MATRIX_API_KEY="$YORHA_LITELLM_API_KEY" \
+npm run test:live-tools
+```
+
+`CURSOR_TOOL_MATRIX_RUNS`는 의도적인 smoke 또는 soak 실행에 맞춰 `1`부터 `100`까지
+설정할 수 있습니다. Reporter는 model 이름, run 번호, HTTP status class, error type만
+출력하며 credential, prompt, 생성 content, tool argument는 출력하지 않습니다.
 
 ## 사용법
 
@@ -172,6 +370,25 @@ CURSOR_BRIDGE_BACKEND=cursor-api npm start
 
 - **Client access.** `CURSOR_BRIDGE_AUTH`는 `on` 또는 `off`를 받습니다. 기본값은 `on`이며 `CURSOR_BRIDGE_API_KEY`가 설정된 경우입니다. key가 없으면 startup warning과 함께 `off`가 됩니다. `CURSOR_BRIDGE_AUTH=on`을 `CURSOR_BRIDGE_API_KEY` 없이 명시하면 startup에 실패합니다. 요청은 `Authorization: Bearer <key>` 또는 `x-api-key: <key>`를 사용할 수 있습니다.
 - **Cursor access.** `CURSOR_API_KEY`는 headless host용 Cursor Dashboard -> API Keys credential입니다. `/dashboard`에서 추가 credential을 만들고 weight를 지정하거나 enable, disable할 수 있으며 mode-0600 dashboard config에 저장됩니다. 인증 실패는 해당 credential만 cooldown에 넣고 사용 가능한 다른 credential로 한 번 retry합니다.
+
+Credential 선택과 실패 제외는 독립적인 설정입니다:
+
+| 변수                                   | 값                                              | 기본값                 | 동작                                                                                                                                                 |
+| -------------------------------------- | ----------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CURSOR_BRIDGE_CREDENTIAL_ROUTING`     | `weighted_round_robin`, `round_robin`           | `weighted_round_robin` | 가중치 모드는 dashboard weight를 사용합니다. 균등 round-robin은 weight를 무시하고 정상 credential에 분산합니다.                                      |
+| `CURSOR_BRIDGE_FAILOVER_ON`            | `auth`, `auth_or_quota`, `auth_or_quota_or_5xx` | `auth`                 | `auth`는 일반 401/403/unauthenticated 실패에 전환합니다. 확장 모드는 billing/quota, 이어서 429/5xx/typed provider `resource_exhausted`를 추가합니다. |
+| `CURSOR_BRIDGE_CREDENTIAL_COOLDOWN_MS` | 양의 밀리초                                     | `300000`               | 제외된 credential이 lazy recovery하기 전까지의 시간입니다.                                                                                           |
+
+보수적인 기본값은 기존 동작을 유지합니다. 더 넓은 policy를 선택하지 않으면 quota와
+일시적 provider 실패는 선택한 credential에 남습니다. 요청은 content 또는 tool output을
+client에 보내기 전에만 최대 한 번 failover합니다. 두 번째 credential도 활성화된 실패
+유형으로 실패하면 이후 요청을 위해 cooldown합니다.
+
+`CURSOR_BRIDGE_TRACE=1`에서 credential 전환은 `credential_failover` JSONL을
+기록합니다. Hash된 `excluded_credential_slot_id`, `next_credential_slot_id`와
+`credential_exclusion_reason`(`auth`, `billing`, `cooldown`)만 포함하며 원본 credential
+ID와 key는 기록하지 않습니다. 잘못된 routing 또는 failover 값은 허용 값 목록과 함께
+startup을 실패 처리합니다.
 
 ### 모델
 
@@ -300,8 +517,7 @@ docs/assets/banner.svg  README hero banner
 
 - **비공식 protocol.** Cursor가 reverse-engineered `agent.v1` service나 bundle을 바꿀 수 있습니다. `cursor-agent` update 뒤 또는 bridge update가 outdated descriptor snapshot을 보고할 때 `npm run extract-protos`를 다시 실행하거나 `CURSOR_BRIDGE_BACKEND=cursor-cli`를 강제하세요.
 - **로컬 network 경계.** 기본 bind는 `127.0.0.1`입니다. localhost 또는 신뢰하는 tailnet에 유지하고, private reverse proxy가 노출할 때는 client auth도 유지하세요.
-- **Tool streaming 경계.** Tool을 선언하면 marker를 안전하게 변환하기 위해 Cursor가 끝날 때까지 model text를 buffer합니다. Incremental content가 중요하면 tool을 선언하지 마세요.
-- **앞단 proxy의 `content: null`.** Sequential OpenAI client는 tool-call assistant를 `content: null`로 다시 보냅니다. 이 bridge는 그 형태를 받습니다. LiteLLM 등 ingress가 여전히 `messages[N].content`에서 400을 내면 proxy schema를 고치거나 거기서 `null`을 `""`로 정규화하세요.
+- **Tool streaming 경계.** Tool을 선언하면 marker를 안전하게 변환하기 위해 Cursor가 끝날 때까지 model text를 buffer합니다. Incremental content가 중요하면 tool을 선언하지 마세요. **앞단 proxy의 `content: null`.** Sequential OpenAI client는 tool-call assistant를 `content: null`로 다시 보냅니다. 이 bridge는 그 형태를 받습니다. LiteLLM 등 ingress가 여전히 `messages[N].content`에서 400을 내면 proxy schema를 고치거나 거기서 `null`을 `""`로 정규화하세요.
 - **Cursor 경계.** 두 real backend 모두 Cursor quota를 사용하며, `cursor-api`는 local 실행이어도 account 또는 약관 위험을 가질 수 있습니다. Quota를 계획하고 필요하면 CLI 경로를 선택하세요.
 
 ## 라이선스
