@@ -121,20 +121,20 @@ describe('zero-network script wiring', () => {
         'fixture.Root': {
           fields: [
             {
-              no: 2,
-              name: 'child',
-              localName: 'child',
-              kind: 'message',
-              repeated: false,
-              message: 'fixture.Child',
-            },
-            {
               no: 1,
               name: 'count',
               localName: 'count',
               kind: 'scalar',
               repeated: false,
               scalar: 5,
+            },
+            {
+              no: 2,
+              name: 'child',
+              localName: 'child',
+              kind: 'message',
+              repeated: false,
+              message: 'fixture.Child',
             },
           ],
         },

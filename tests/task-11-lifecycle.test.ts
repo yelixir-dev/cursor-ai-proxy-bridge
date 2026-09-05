@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { fixtureNativeContext } from './support/native-context-fixture.js';
 import { describe, expect, it, vi } from 'vitest';
 import { CursorAuthProvider } from '../src/backend/cursor-api/auth.js';
 import { encodeConnectFrame } from '../src/backend/cursor-api/connect-frame.js';
@@ -100,6 +101,7 @@ function backend(transport: CursorApiTransport): CursorApiBackend {
   const auth = new CursorAuthProvider({ environment: {} });
   vi.spyOn(auth, 'getToken').mockResolvedValue('task-11-credential');
   return new CursorApiBackend(config, {
+    loadNativeContext: fixtureNativeContext,
     auth,
     transport,
     environment: { CURSOR_BRIDGE_CURSOR_RETRY_BASE_MS: '1' },

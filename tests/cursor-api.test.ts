@@ -1734,7 +1734,7 @@ describe('Cursor API mapping and Run lifecycle', () => {
     });
   });
 
-  it('half-closes a stalled Run stream on abort', async () => {
+  it('ends and cancels a stalled Run stream on abort', async () => {
     const transport = new FakeTransport('stall');
     const backend = backendWith(transport);
     const controller = new AbortController();
@@ -1767,7 +1767,7 @@ describe('Cursor API mapping and Run lifecycle', () => {
     controller.abort();
     await expect(completion).rejects.toMatchObject({ name: 'AbortError' });
     expect(stream.writableEnded).toBe(true);
-    expect(stream.destroyed).toBe(false);
+    expect(stream.destroyed).toBe(true);
   });
 
   it('does not open a Run after the caller aborts during discovery', async () => {

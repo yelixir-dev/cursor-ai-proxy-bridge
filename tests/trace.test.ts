@@ -1,5 +1,6 @@
 // allow: SIZE_OK — end-to-end trace contract matrix shares one server and transport harness.
 import { EventEmitter } from 'node:events';
+import { fixtureNativeContext } from './support/native-context-fixture.js';
 import { request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
@@ -235,6 +236,7 @@ describe('bridge request tracing', () => {
       {
         auth,
         transport,
+        loadNativeContext: fixtureNativeContext,
         environment: {
           CURSOR_BRIDGE_CURSOR_AGENT_ENDPOINT: 'https://agent.test',
           CURSOR_BRIDGE_CURSOR_RETRY_BASE_MS: '1',
