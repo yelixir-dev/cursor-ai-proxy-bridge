@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { homedir, platform, release } from 'node:os';
-import { basename, join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import type { ChatCompletionRequest, Tool, ToolCall } from '../types.js';
 import { buildCursorHistory, type CursorHistory } from './history.js';
 import type { NativeContextPatch } from './native-context.js';
@@ -84,6 +85,16 @@ export function requestContextResult(
   const home = environment.HOME?.trim() || homedir();
   const dataDirectory = environment.CURSOR_DATA_DIR?.trim() || join(home, '.cursor');
   const projectFolder = join(dataDirectory, 'projects', projectName);
+  // Native getSuggestedShell prefers recognized SHELL hints, then its PATH lookup order.
+  const shells = ['zsh', 'bash', 'pwsh', 'powershell'];
+  const selectedShell =
+    shells.find((shell) => environment.SHELL?.includes(shell)) ??
+    shells.find((shell) =>
+      [cwd, ...(environment.PATH ?? '').split(delimiter)].some((directory) =>
+        existsSync(join(directory, shell)),
+      ),
+    );
+  const shell = selectedShell === 'pwsh' ? 'powershell' : (selectedShell ?? 'naive');
   return {
     result: {
       case: 'success',
@@ -93,7 +104,7 @@ export function requestContextResult(
           env: {
             osVersion: `${platform()} ${release()}`,
             workspacePaths: [cwd],
-            shell: basename(environment.SHELL || '/bin/zsh'),
+            shell,
             terminalsFolder: join(projectFolder, 'terminals'),
             agentSharedNotesFolder: join(projectFolder, 'agent-notes', 'shared'),
             agentConversationNotesFolder: join(projectFolder, 'agent-notes', conversationId),
