@@ -75,7 +75,7 @@ export interface SkillMetadata {
   readonly description: string;
   readonly environments: readonly string[];
   readonly disabledEnvironments: readonly string[];
-  readonly disableModelInvocation: boolean;
+  readonly disableModelInvocation?: boolean;
   readonly globs?: readonly string[];
   readonly scopedTo?: readonly string[];
 }
@@ -166,15 +166,16 @@ export function managedFacts(input: z.infer<typeof managedSchema>): ManagedFact[
           metadata: {
             description: description.slice(0, 1536),
             ...environments,
-            disableModelInvocation:
-              data['disable-model-invocation'] === true || skill.disableModelInvocation,
+            ...(data['disable-model-invocation'] === true || skill.disableModelInvocation
+              ? { disableModelInvocation: true }
+              : {}),
             ...(globs.length ? { globs } : {}),
             ...(scopedTo.length ? { scopedTo } : {}),
           },
         },
       ];
     })
-    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    .sort((a, b) => (a.id + '/SKILL.md').localeCompare(b.id + '/SKILL.md'));
 }
 
 export async function pluginFacts(
@@ -240,7 +241,9 @@ export async function pluginFacts(
               metadata: {
                 description: description.slice(0, 1536),
                 ...environments,
-                disableModelInvocation: data['disable-model-invocation'] === true,
+                ...(data['disable-model-invocation'] === true
+                  ? { disableModelInvocation: true }
+                  : {}),
               },
             },
           ];
