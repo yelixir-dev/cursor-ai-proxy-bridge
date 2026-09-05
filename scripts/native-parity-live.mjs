@@ -8,6 +8,7 @@ import { runLive } from './native-parity/driver.mjs';
 
 export { parseArgs, promptFor, validateCase } from './native-parity/cases.mjs';
 export { nativeText, runNative } from './native-parity/native.mjs';
+export { runPreparedNative } from './native-parity/worker.mjs';
 export { createSseParser, runBridgeTurn } from './native-parity/bridge-http.mjs';
 export { bounded, stopChild } from './native-parity/processes.mjs';
 export { lifecycleMonitor } from './native-parity/lifecycle.mjs';

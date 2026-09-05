@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createCaptureProxy } from '../wire-capture/proxy.mjs';
 import { bounded } from './processes.mjs';
 import { lifecycleMonitor } from './lifecycle.mjs';
-import { runNative } from './native.mjs';
+import { runPreparedNative } from './worker.mjs';
 import { runBridge } from './bridge.mjs';
 
 export async function captureLane(options) {
@@ -34,7 +34,10 @@ export async function captureLane(options) {
       const address = await bounded(proxy.listen(), 5000, 'proxy_listen_timeout', options.signal);
       options[name === 'api2' ? 'api' : 'agent'] = `https://127.0.0.1:${address.port}`;
     }
-    const result = await (lane === 'native' ? runNative : runBridge)({ ...options, monitor });
+    const result = await (lane === 'native' ? runPreparedNative : runBridge)({
+      ...options,
+      monitor,
+    });
     result.lifecycle = monitor.entries;
     return result;
   } finally {
