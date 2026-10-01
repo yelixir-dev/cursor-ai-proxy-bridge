@@ -10,6 +10,15 @@ function dict(value: unknown): Dict | undefined {
     : undefined;
 }
 
+export function attemptedToolName(update: Dict): string {
+  const toolCall = dict(update.toolCall);
+  const tool = dict(toolCall?.tool);
+  if (tool?.case !== 'mcpToolCall') return '';
+  const args = dict(dict(tool.value)?.args);
+  const name = args?.name || args?.toolName;
+  return typeof name === 'string' ? name : '';
+}
+
 export function mcpArgsToToolCall(args: Dict): ToolCall {
   const decoded = Object.fromEntries(
     Object.entries(dict(args.args) ?? {}).map(([key, value]) => [

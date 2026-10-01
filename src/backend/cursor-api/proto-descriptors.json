@@ -2049,6 +2049,54 @@
         }
       ]
     },
+    "agent.v1.GetMcpToolsArgs": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "server",
+          "localName": "server",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 2,
+          "name": "tool_name",
+          "localName": "toolName",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 3,
+          "name": "pattern",
+          "localName": "pattern",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        },
+        {
+          "no": 4,
+          "name": "tool_call_id",
+          "localName": "toolCallId",
+          "kind": "scalar",
+          "repeated": false,
+          "scalar": 9
+        }
+      ]
+    },
+    "agent.v1.GetMcpToolsToolCall": {
+      "fields": [
+        {
+          "no": 1,
+          "name": "args",
+          "localName": "args",
+          "kind": "message",
+          "repeated": false,
+          "message": "agent.v1.GetMcpToolsArgs"
+        }
+      ]
+    },
     "agent.v1.GrepToolCall": {
       "fields": [
         {
@@ -4626,6 +4674,15 @@
           "repeated": false,
           "oneof": "tool",
           "message": "agent.v1.McpToolCall"
+        },
+        {
+          "no": 44,
+          "name": "get_mcp_tools_tool_call",
+          "localName": "getMcpToolsToolCall",
+          "kind": "message",
+          "repeated": false,
+          "oneof": "tool",
+          "message": "agent.v1.GetMcpToolsToolCall"
         },
         {
           "no": 57,

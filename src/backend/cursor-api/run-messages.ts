@@ -8,7 +8,8 @@ import {
   CursorBuiltinToolCallError,
   logBuiltinToolRouting,
 } from './builtin-tool-promotion.js';
-import { type HeldToolExec, handleExecResponse } from './exec-responses.js';
+import { handleExecResponse, type HeldToolExec } from './exec-responses.js';
+import { attemptedToolName } from './mcp-tool-call.js';
 import type { NativeConversationContext } from './native-context.js';
 import { nativeReadDisposition } from './native-context-read.js';
 import type { ProtoCodec } from './protobuf.js';
@@ -27,15 +28,6 @@ class CursorUndeclaredToolCallError extends CursorBackendError {
 }
 
 export { CursorBuiltinToolCallError } from './builtin-tool-promotion.js';
-
-function attemptedToolName(update: Dict): string {
-  const toolCall = dict(update.toolCall);
-  const tool = dict(toolCall?.tool);
-  if (tool?.case !== 'mcpToolCall') return '';
-  const args = dict(dict(tool.value)?.args);
-  const name = args?.name || args?.toolName;
-  return typeof name === 'string' ? name : '';
-}
 
 export interface CursorRunMessageOptions {
   readonly codec: ProtoCodec;
@@ -172,12 +164,16 @@ export class CursorRunMessages {
     }
     if (updateCase === 'toolCallStarted') {
       const tool = dict(dict(update.toolCall)?.tool);
+      // Native MCP schema discovery is serviced by mcpStateExecArgs, not
+      // external execution. It must not consume a tool slot or tool choice.
+      if (tool?.case === 'getMcpToolsToolCall') return false;
       if (
         tool?.case === 'readToolCall' &&
         this.options.nativeContext &&
         nativeReadDisposition(this.options.nativeContext, dict(tool.value)?.args).kind === 'owned'
-      )
+      ) {
         return false;
+      }
       const declared = allowedToolNamesForRequest(this.options.request);
       if (declared.size === 0 || this.options.request.tool_choice === 'none') {
         // No exec frame follows in this state (live capture: tool_decision
@@ -206,7 +202,9 @@ export class CursorRunMessages {
         if (!builtin.mappedOpenAiToolName) {
           this.options.finish(
             new CursorBuiltinToolCallError(
-              `Cursor selected builtin ${JSON.stringify(builtin.attemptedToolName)} but the request declares no matching external tool`,
+              `Cursor selected builtin ${JSON.stringify(
+                builtin.attemptedToolName,
+              )} but the request declares no matching external tool`,
             ),
           );
           return false;
@@ -219,12 +217,9 @@ export class CursorRunMessages {
         (this.options.request.tool_choice === 'required' ||
           typeof this.options.request.tool_choice === 'object')
       ) {
-        // toolCall is present but not a nameable mcpToolCall (live builtin
-        // attempts decode this way — the descriptor set keeps only
-        // mcpToolCall). It can never satisfy tool_choice: required, and the
-        // model stalls after it (live capture) until the run timeout. Bare
-        // announcements (no toolCall payload yet) pass through; their
-        // mcpArgs is guarded separately.
+        // An unrecognized announcement is not permission to execute a tool.
+        // Discovery has its own explicit case above; executable mcpArgs is
+        // guarded separately.
         this.options.finish(new CursorBuiltinToolCallError());
         return false;
       }
