@@ -1,7 +1,7 @@
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
-import Fastify, { LogController, type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, LogController } from 'fastify';
 import { ModelPolicy } from './model-policy.js';
 import { normalizedConfig } from './server/auth.js';
 import { registerChatRoutes } from './server/chat.js';
@@ -10,6 +10,7 @@ import { registerErrorHandlers, REQUEST_BODY_LIMIT_BYTES } from './server/errors
 import { BackendHealthCache } from './server/health.js';
 import { CompletionLimiter } from './server/lifecycle.js';
 import { registerManagementRoutes } from './server/management.js';
+import { CompletionMetrics } from './server/metrics.js';
 import type { BuildServerOptions, ServerContext } from './server/types.js';
 
 export { timingSafeKeyEqual } from './server/auth.js';
@@ -73,6 +74,7 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     backend: options.backend,
     modelPolicy,
     health: new BackendHealthCache(options.backend),
+    metrics: new CompletionMetrics(),
     limiter: new CompletionLimiter(
       config.maxConcurrency ?? positiveIntegerFromEnv('CURSOR_BRIDGE_MAX_CONCURRENCY', 16),
       config.maxConcurrencyPerKey ??

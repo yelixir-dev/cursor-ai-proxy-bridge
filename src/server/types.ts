@@ -5,6 +5,7 @@ import type { ModelPolicy } from '../model-policy.js';
 import type { ServerTraceOptions } from '../trace.js';
 import type { CompletionLimiter } from './lifecycle.js';
 import type { BackendHealthCache } from './health.js';
+import type { CompletionMetrics } from './metrics.js';
 
 export type BuildServerOptions = {
   readonly config: BridgeConfig;
@@ -18,6 +19,7 @@ export type ServerContext = {
   readonly backend: CursorBackend;
   readonly modelPolicy: ModelPolicy;
   readonly health: BackendHealthCache;
+  readonly metrics: CompletionMetrics;
   readonly limiter: CompletionLimiter;
   readonly startedAt: number;
   readonly trace?: ServerTraceOptions;

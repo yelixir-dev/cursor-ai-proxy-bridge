@@ -8,8 +8,8 @@ import { redactedConfig } from '../config.js';
 import { renderDashboard } from '../dashboard.js';
 import {
   type DashboardConfig,
-  type DashboardCredential,
   dashboardConfigPath,
+  type DashboardCredential,
   type EnvCredentialMetadata,
   redactedCredentials,
   writeDashboardConfigFile,
@@ -73,7 +73,9 @@ export function registerManagementRoutes(context: ServerContext): void {
               source: modelPolicy.source(model.id),
               ...(model.credential_requirement === undefined
                 ? {}
-                : { credentialRequirement: model.credential_requirement }),
+                : {
+                    credentialRequirement: model.credential_requirement,
+                  }),
               ...(model.context_window === undefined
                 ? {}
                 : { contextWindow: model.context_window }),
@@ -111,6 +113,11 @@ export function registerManagementRoutes(context: ServerContext): void {
   app.get('/admin/config', async (request, reply) => {
     if (!(await requireClientAuth(request, reply, config))) return reply;
     return adminConfigResponse();
+  });
+
+  app.get('/admin/metrics', async (request, reply) => {
+    if (!(await requireClientAuth(request, reply, config))) return reply;
+    return context.metrics.snapshot();
   });
 
   app.get('/admin/credentials/usage', async (request, reply) => {
@@ -192,7 +199,9 @@ export function registerManagementRoutes(context: ServerContext): void {
       else credentials.push(next);
     }
 
-    const modelOverrides = { ...(state.dashboardConfig.modelOverrides ?? {}) };
+    const modelOverrides = {
+      ...(state.dashboardConfig.modelOverrides ?? {}),
+    };
     for (const [id, enabled] of Object.entries(parsed.data.modelOverrides ?? {})) {
       if (enabled === null) delete modelOverrides[id];
       else modelOverrides[id] = enabled;

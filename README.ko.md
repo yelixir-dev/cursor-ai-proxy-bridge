@@ -32,6 +32,20 @@
 - **선별된 model family.** Composer 2.5, Cursor Grok 4.6, Claude 5 Opus, Sonnet, Fable, GPT-5.6 Sol, Terra, Luna, Kimi K3, GLM 5.2, `default`, `auto`를 policy로 활성화하며, dashboard override로 다른 discovered model을 노출하거나 숨길 수 있습니다.
 - **로컬 관리 console.** `/dashboard`에서 bridge와 backend status를 보고, 관리 credential CRUD를 수행하며, model family toggle을 bulk enable 또는 disable할 수 있습니다.
 
+### 오류 수정 검증 (2026-10-01)
+
+Native MCP schema 탐색(`getMcpToolsToolCall`, field 44)을 외부 실행과 구분해
+decode합니다. 탐색은 tool-call 슬롯을 소비하거나 `tool_choice`를 충족하지 않으며,
+미선언 도구 실행은 계속 거부합니다. Descriptor 추출기도 이 discriminator와
+인자 schema를 보존합니다.
+
+로컬 검증에서 **116개 파일 / 1,123개 테스트**와 typecheck, lint, formatting,
+strict check, build가 통과했습니다. 인증된 격리 서버의 `cursor-api`에서 required·named
+tool, sequential continuation, indexed SSE call, cancellation을 포함한
+**실제 E2E 24/24**가 통과했습니다. Fastify 5.12.5와 Vitest 4.1.11 기준
+`npm ci`와 `npm audit`의 취약점은 0건입니다. 운영 배포나 LiteLLM gateway
+경유 검증을 완료했다는 의미는 아닙니다.
+
 ### 설치된 CLI 검증 (2026-09-05)
 
 Linux 검증에서 설치된 원본 CLI `2026.09.02-c22c1a3`와 `composer-2.5`를 대상으로
@@ -425,6 +439,19 @@ startup을 실패 처리합니다.
 | `GET /v1/models`                               | Active backend의 curated model을 반환합니다.                                |
 | `POST /v1/chat/completions`                    | SSE streaming과 tool을 포함한 OpenAI-compatible completion입니다.           |
 | `GET /admin/config` 또는 `PATCH /admin/config` | Redacted setting, credential, model override를 조회하거나 hot-update합니다. |
+
+### Completion 지표
+
+`GET /admin/metrics`는 process별 completion 횟수와 latency를 공개 model ID,
+streaming 여부, 호출자가 제공한 `x-cursor-bridge-route: direct` 또는 `litellm`
+태그로 분류해 반환합니다. 태그가 없거나 유효하지 않으면 `unknown`이며,
+태그는 인증된 경로 식별자가 아닙니다.
+
+`/admin/config`와 같은 client 인증 정책을 사용하므로 client auth가 꺼져 있으면
+인증 없이 조회할 수 있습니다. 성공, backend 실패(SSE HTTP 200 이후 오류 포함),
+취소, 진행 중 요청, 동시성 제한 거절을 구분합니다. 재시작하면 초기화되며
+prompt나 credential은 보관하지 않습니다. 라벨 상한, 집계 대상, latency 의미는
+[Completion 지표](docs/runtime-metrics.md)를 참고하세요.
 
 ### Request examples
 

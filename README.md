@@ -32,6 +32,20 @@
 - **Curated model families.** Composer 2.5, Cursor Grok 4.6, Claude 5 Opus, Sonnet, and Fable, GPT-5.6 Sol, Terra, and Luna, Kimi K3, GLM 5.2, `default`, and `auto` are enabled by policy, while dashboard overrides can expose or hide other discovered models.
 - **A local management console.** `/dashboard` shows bridge and backend status, supports managed credential CRUD, and groups model family toggles with bulk enable and disable actions.
 
+### Remediation verification (2026-10-01)
+
+Native MCP schema discovery (`getMcpToolsToolCall`, field 44) is decoded separately
+from external execution. Discovery neither consumes a tool-call slot nor satisfies
+`tool_choice`; undeclared execution remains rejected. The descriptor extractor
+preserves this discriminator and its argument schema.
+
+Local verification passes **116 files / 1,123 tests**, typecheck, lint, formatting,
+strict checks, and build. An authenticated isolated server using `cursor-api`
+passes **24/24 live E2E scenarios**, including required and named tools, sequential
+continuation, indexed SSE calls, and cancellation. `npm ci` and `npm audit` report
+zero vulnerabilities with Fastify 5.12.5 and Vitest 4.1.11. These results do not
+claim a production deployment or verification through a LiteLLM gateway.
+
 ### Installed CLI verification (2026-09-05)
 
 The Linux campaign passes all four strict full-profile comparisons against installed,
@@ -417,6 +431,20 @@ Legacy Cursor slugs such as `claude-opus-5-thinking-max-fast`, `cursor-grok-4.6-
 | `GET /v1/models`                             | Curated models from the active backend.                                 |
 | `POST /v1/chat/completions`                  | OpenAI-compatible completion, including SSE streaming and tools.        |
 | `GET /admin/config` or `PATCH /admin/config` | Read or hot-update redacted settings, credentials, and model overrides. |
+
+### Completion metrics
+
+`GET /admin/metrics` returns per-process completion counts and latency, grouped by
+public model ID, streaming mode, and the caller-supplied
+`x-cursor-bridge-route: direct` or `litellm` tag. Missing or invalid tags become
+`unknown`; tags are not authenticated route identities.
+
+The endpoint uses the same client authentication policy as `/admin/config`,
+including unauthenticated access when client auth is off. Counters distinguish
+success, backend failure (including errors after SSE HTTP 200), cancellation,
+in-flight requests, and concurrency rejection. They reset on restart and retain
+neither prompts nor credentials. See [Completion metrics](docs/runtime-metrics.md)
+for label limits, admission boundaries, and latency semantics.
 
 ### Request examples
 

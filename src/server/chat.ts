@@ -29,7 +29,7 @@ import { streamChatCompletion } from './streaming.js';
 import type { ServerContext } from './types.js';
 
 export function registerChatRoutes(context: ServerContext): void {
-  const { app, config, backend, modelPolicy, limiter } = context;
+  const { app, config, backend, modelPolicy, limiter, metrics } = context;
 
   app.get('/v1/models', async (request, reply) => {
     if (!(await requireClientAuth(request, reply, config))) return reply;
@@ -73,6 +73,11 @@ export function registerChatRoutes(context: ServerContext): void {
       return reply.code(400).send(openAiError(configurationError));
     }
 
+    const finishMetrics = metrics.start(
+      unifiedModel,
+      request.headers['x-cursor-bridge-route'],
+      completionRequest.stream === true,
+    );
     const trace = createRequestTrace({
       environment: context.trace?.environment,
       requestId: String(request.id),
@@ -84,6 +89,7 @@ export function registerChatRoutes(context: ServerContext): void {
     traceStage(trace, 'accepted');
     const releaseCapacity = limiter.acquire(tokenFromRequest(request) ?? '');
     if (!releaseCapacity) {
+      finishMetrics('rate_limited');
       finishTrace(trace, 'rate_limited', { quiescent: true });
       reply.header('Retry-After', '1');
       return reply
@@ -143,6 +149,7 @@ export function registerChatRoutes(context: ServerContext): void {
       const finalTerminal = requestAbort.signal.aborted ? 'abort' : (terminal ?? 'error');
       requestAbort.cleanup();
       releaseCapacity();
+      finishMetrics(finalTerminal);
       finishTrace(trace, finalTerminal, { quiescent: true });
     }
   });
