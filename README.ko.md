@@ -516,6 +516,14 @@ Tool-call response는 내부 source `unknown`과 함께 usage 0을 반환할 수
 
 ### Dashboard
 
+CommandCode Bridge와 같은 kiro-lb 기반 운영 레이아웃과 yelixir.dev의 따뜻한
+다크·라이트 색상, 서체, 헤더, 탭 내비게이션을 사용합니다. 개요, 크리덴셜, 모델,
+설정, 안내를 탭으로 분리했습니다. 개요는 `/admin/metrics`의 실제 completion
+지표를 5초마다 읽으며 일시 정지, 수동 새로고침, 이전 데이터·오류 표시를 제공합니다.
+페이지가 숨겨지면 polling을 멈추고 탭 전환 시 credential 초안과 model 검색을 보존합니다.
+Routing, failover, Max Mode는 기존처럼 즉시 적용되며 별도 저장·재시작 절차를
+추가하지 않습니다. 서체는 `yelixir.dev`에서 불러오고 사용할 수 없으면 시스템 서체를 씁니다.
+
 실행 중인 bridge를 관리하려면 `http://127.0.0.1:9997/dashboard`를 여세요. Console에서 status, active backend, credential state, model state를 확인할 수 있습니다. 관리 credential의 add, update, weight, enable, disable, delete를 지원하며, model별 toggle과 model family bulk toggle도 제공합니다. 전체 API key는 console로 반환되지 않습니다.
 
 Dashboard에는 `/v1/models`가 사용하는 선별된 통합 모델 목록이 표시되며, 명시적인 override로 현재 비활성화된 row도 포함됩니다. 각 row는 모델이 default policy 또는 override로 활성화됐는지 보여주며, 관리자는 기존 Cursor slug를 쓰지 않고 해당 override를 변경할 수 있습니다.

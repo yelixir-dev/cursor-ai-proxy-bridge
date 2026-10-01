@@ -509,6 +509,15 @@ A tool-call response can report zero usage with internal source `unknown`: the u
 
 ### Dashboard
 
+The console shares CommandCode Bridge's kiro-lb-inspired operations layout and
+yelixir.dev warm dark/light palette, typography, header, and tab navigation.
+Overview, credentials, models, settings, and information are separate tabs.
+Overview reads real completion counters from `/admin/metrics` every five seconds,
+with pause, manual refresh, and explicit stale/error states. Hidden pages pause
+polling; switching tabs preserves credential drafts and model search. Routing,
+failover, and Max Mode remain hot-applied settings, not a new save/restart flow.
+Fonts load from `yelixir.dev` with system fallbacks when unavailable.
+
 Open `http://127.0.0.1:9997/dashboard` to manage the running bridge. The console shows status, active backend, credential state, and model state. It supports add, update, weight, enable, disable, and delete actions for managed credentials, plus per-model and bulk model family toggles. Full API keys are never returned to the console.
 
 The dashboard shows the curated unified model set used by `/v1/models`, including rows currently disabled by an explicit override. Each row reports whether the model is enabled by the default policy or an override, and lets administrators change that override without using a legacy Cursor slug.

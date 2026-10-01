@@ -1,3 +1,6 @@
+import { dashboardTheme } from './dashboard-theme.js';
+import { overviewMarkup, overviewScript } from './dashboard-overview.js';
+
 // allow: SIZE_OK — self-contained dashboard HTML/CSS/JS artifact served without runtime assets.
 function escapeHtml(value: unknown): string {
   return String(value)
@@ -14,96 +17,45 @@ function scriptJson(value: unknown): string {
 
 export function renderDashboard(version: string): string {
   return `<!doctype html>
-<html lang="ko">
+<html lang="ko" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Cursor AI Bridge 관리 콘솔</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --ink:#28231f; --muted:#6d665e; --paper:#fffdf8; --canvas:#f1ede5;
-      --rule:#d9d0c4; --rust:#9f4d2e; --teal:#1f6f78; --gold:#b57920;
-      --paper-2:#f7f1e8; --good:#1f6f78; --warn:#a96917; --bad:#9f4d2e;
-      --disabled:#8c857d; --shadow:0 14px 34px rgba(65,49,35,.10);
-      --serif:Georgia,"Times New Roman",serif;
-      --sans:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-      --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
-    }
-    *{box-sizing:border-box}html{background:var(--canvas)}body{margin:0;background:var(--canvas);color:var(--ink);font:15px/1.5 var(--serif)}.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-    button,input,select{font:inherit}button{min-height:38px;border:1px solid var(--ink);border-radius:0;background:var(--ink);color:var(--paper);padding:8px 12px;font:800 11px/1.2 var(--sans);letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
-    button.secondary{background:transparent;color:var(--ink);border-color:var(--rule)}button.secondary:hover{border-color:var(--teal);color:var(--teal)}button.danger{background:var(--rust);border-color:var(--rust)}button.link{min-height:auto;border:0;background:transparent;color:var(--rust);padding:2px;text-transform:none;letter-spacing:0}button:disabled{cursor:not-allowed;opacity:.5}
-    input,select{width:100%;min-height:40px;border:1px solid var(--rule);border-radius:0;background:var(--paper);color:var(--ink);padding:8px 10px}input[type=checkbox]{width:auto;min-height:0;accent-color:var(--teal)}
-    button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
-    .wrap{width:min(calc(100% - 20px),1120px);margin:0 auto;padding:10px 0 28px}.top{position:relative;display:flex;align-items:center;justify-content:space-between;gap:20px;background:var(--ink);color:var(--paper);box-shadow:var(--shadow);padding:clamp(28px,5vw,52px);margin-bottom:16px}.top::after{content:"";position:absolute;inset:9px;border:1px solid rgba(255,253,248,.28);pointer-events:none}.top>*{position:relative;z-index:1}.eyebrow{font:800 11px/1 var(--sans);letter-spacing:.15em;color:#e5b45b;text-transform:uppercase}.top h1{margin:10px 0 0;font-size:clamp(27px,4.5vw,48px);line-height:1;letter-spacing:-.04em}.top-status{text-align:right;font-family:var(--sans);font-size:11px;color:#e6ddd1}.health-pill{display:inline-flex;align-items:center;gap:7px;border-left:2px solid var(--rust);padding-left:9px}.dot{width:8px;height:8px;border-radius:50%;background:var(--disabled)}.dot.on{background:#64a9a2}.dot.off{background:#d07b59}.version{margin-top:6px;color:#cfc4b6}
-    .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--paper);border-top:3px solid var(--ink);box-shadow:var(--shadow);padding:10px 14px;margin-bottom:16px}.toolbar button{white-space:nowrap}.toolbar-note{font:700 11px/1.4 var(--sans);color:var(--muted);word-break:keep-all}
-    .page-state{border-left:4px solid var(--gold);background:var(--paper);box-shadow:var(--shadow);padding:11px 14px;margin-bottom:16px;font-family:var(--sans)}.page-state.error{border-left-color:var(--rust);color:var(--rust)}.page-state[hidden]{display:none}
-    .grid{display:grid;grid-template-columns:1fr;gap:16px}.card{min-width:0;background:var(--paper);border-top:3px solid var(--ink);box-shadow:var(--shadow);padding:clamp(16px,3vw,28px)}.card h2{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:0 0 16px;border-bottom:1px solid var(--rule);padding-bottom:9px;font-size:clamp(21px,2.5vw,29px);letter-spacing:-.025em}.sub{color:var(--muted);font:600 11px/1.3 var(--sans);letter-spacing:.04em;text-align:right}.status-grid{display:grid;grid-template-columns:1fr;gap:8px}.kv{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;border-bottom:1px solid var(--rule);padding:7px 0;font:12px/1.4 var(--sans)}.kv b{text-align:right;overflow-wrap:anywhere}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}.muted{color:var(--muted)}
-    .add-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:18px;padding:14px;background:var(--paper-2);border-left:3px solid var(--rust)}.field{display:grid;gap:5px;min-width:0}.field label{font:800 10px/1 var(--sans);letter-spacing:.09em;color:var(--muted);text-transform:uppercase}.field-wide{grid-column:1/-1}.capability-field{align-content:end}.capability-field label{display:flex;align-items:center;gap:7px;min-height:40px;color:var(--ink);letter-spacing:0;text-transform:none}.capability-field label:has(input:disabled){color:var(--disabled)}.add-actions{display:flex;align-items:end}.add-actions button{width:100%}
-    .policy-panel{display:grid;gap:13px;margin-bottom:14px;padding:14px;background:var(--paper-2);border-left:3px solid var(--teal);font-family:var(--sans)}.policy-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.policy-heading h3{margin:0;font:800 14px/1.3 var(--sans);letter-spacing:.01em}.policy-heading p{max-width:620px;margin:4px 0 0;color:var(--muted);font-size:11px}.policy-active{display:flex;align-items:center;flex-wrap:wrap;gap:6px;color:var(--muted);font-size:10px}.policy-active>span{font-weight:800;letter-spacing:.08em;text-transform:uppercase}.policy-active code{border:1px solid var(--rule);background:var(--paper);color:var(--teal);padding:3px 6px;font:700 10px/1.2 var(--mono)}.policy-grid{display:grid;grid-template-columns:1fr;gap:10px}.policy-field{display:grid;gap:5px;min-width:0}.policy-label{font:800 10px/1 var(--sans);letter-spacing:.09em;color:var(--muted);text-transform:uppercase}.policy-description{margin:0;color:var(--muted);font-size:10px;line-height:1.4}
-    .usage-section{margin-top:15px;padding-top:15px;border-top:1px solid var(--rule);font-family:var(--sans)}.usage-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:11px}.usage-heading h3{margin:0;font:800 14px/1.3 var(--sans)}.usage-heading p{margin:4px 0 0;color:var(--muted);font-size:11px;word-break:keep-all}.usage-heading button{white-space:nowrap}.usage-list{display:grid;gap:10px;min-height:310px}.usage-card{border:1px solid var(--rule);border-left:3px solid var(--ink);background:var(--paper-2);padding:13px}.usage-card.loading{opacity:.68}.usage-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:11px}.usage-account{display:grid;gap:3px;min-width:0}.usage-account strong{font:800 13px/1.3 var(--sans)}.usage-account code{color:var(--muted);font:10px/1.3 var(--mono)}.usage-meta{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:5px;text-align:right}.usage-chip{border:1px solid var(--rule);background:var(--paper);padding:3px 6px;color:var(--muted);font:800 9px/1.2 var(--sans);letter-spacing:.05em;text-transform:uppercase}.usage-chip.fresh{color:var(--good);border-color:var(--good)}.usage-chip.stale{color:var(--warn);border-color:var(--warn)}.usage-chip.unavailable{color:var(--bad);border-color:var(--bad)}.usage-grid{display:grid;grid-template-columns:1fr;gap:9px}.usage-pool{border:1px solid var(--rule);background:var(--paper);padding:11px}.usage-pool-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.usage-pool-name{display:grid;gap:2px}.usage-pool-name strong{font:800 11px/1.3 var(--sans)}.usage-pool-name span{color:var(--muted);font-size:9px}.usage-pool-value{font:800 15px/1 var(--mono);color:var(--teal);white-space:nowrap}.usage-pool.other .usage-pool-value{color:var(--rust)}.usage-track{height:9px;margin-top:9px;border:1px solid var(--rule);background:var(--canvas);overflow:hidden}.usage-bar{height:100%;background:var(--teal)}.usage-pool.other .usage-bar{background:var(--rust)}.usage-detail{margin-top:6px;color:var(--muted);font-size:9px}.usage-foot{display:flex;flex-wrap:wrap;gap:6px 13px;margin-top:10px;color:var(--muted);font-size:10px}.usage-foot strong{color:var(--ink)}.usage-error{margin-top:8px;color:var(--bad);font-size:10px}
-    .table-wrap{overflow-x:auto;border:1px solid var(--rule)}table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:12px}th,td{padding:10px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:middle;white-space:nowrap}th{background:var(--paper-2);color:var(--muted);font-size:10px;letter-spacing:.06em;text-transform:uppercase}tbody tr:last-child td{border-bottom:0}td code{font-family:var(--mono);font-size:11px}.weight-input{width:72px;min-height:34px}.plan-input{min-width:96px}.weight-policy-note{display:block;margin-top:3px;color:var(--rust);font-size:9px;letter-spacing:0;text-transform:none;white-space:normal}.weight-policy-note[hidden]{display:none}.weight-ignored{color:var(--muted);background:#ebe7df}.weight-ignored .weight-input{cursor:not-allowed;opacity:.55}.credential-secret-locked .weight-input:disabled{border-style:dashed;background:#ebe7df;color:var(--muted);cursor:not-allowed}.field.is-ignored{opacity:.55}.locked-note{display:block;max-width:180px;color:var(--muted);font-size:10px;white-space:normal;word-break:keep-all}.empty{border:1px dashed var(--rule);background:var(--paper-2);color:var(--muted);padding:13px;margin:0 0 12px;font-family:var(--sans);font-size:12px}
-    .switch{position:relative;display:inline-block;width:46px;height:25px}.switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}.switch input:disabled{cursor:not-allowed}.slider{position:absolute;inset:0;border:1px solid var(--rule);background:var(--disabled);pointer-events:none}.slider::before{content:"";position:absolute;width:19px;height:19px;left:2px;top:2px;background:var(--paper);transition:transform .15s}.switch input:checked+.slider{background:var(--teal)}.switch input:checked+.slider::before{transform:translateX(21px)}.switch input:disabled+.slider{border-style:dashed;background:#aaa39a;opacity:.62}.switch input:focus-visible+.slider{outline:3px solid var(--gold);outline-offset:3px}
-    .model-tools{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;margin-bottom:12px}.search{position:relative}.search input{padding-left:34px}.search::before{content:"⌕";position:absolute;left:11px;top:7px;color:var(--teal);font-size:20px}.model-total{font:800 12px/1.3 var(--sans);color:var(--teal);white-space:nowrap}.families{display:grid;gap:14px}.family{--family-accent:var(--rust);overflow:hidden;border:1px solid var(--rule);border-left:5px solid var(--family-accent);background:var(--paper);box-shadow:0 7px 18px rgba(65,49,35,.07);transition:opacity .15s,filter .15s}.family.is-disabled{opacity:.58;filter:saturate(.45);background:#ebe7df}.family summary{display:flex;align-items:center;gap:9px;padding:12px 14px;cursor:pointer;list-style:none;font-weight:700}.family summary::-webkit-details-marker{display:none}.family summary::before{content:"+";display:inline-grid;place-items:center;width:22px;height:22px;border:1px solid var(--family-accent);color:var(--family-accent);font:800 16px/1 var(--sans)}.family[open] summary::before{content:"−"}.family[open] summary{border-bottom:1px solid var(--rule)}.family-dot{width:9px;height:9px;border-radius:50%;background:var(--family-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--family-accent) 18%,transparent)}.family-name{font-size:17px;letter-spacing:-.01em}.family-count{margin-left:auto;border:1px solid var(--family-accent);background:var(--paper);color:var(--family-accent);padding:3px 7px;font:800 11px/1 var(--sans);white-space:nowrap}.family-actions{display:flex;justify-content:flex-end;gap:5px;padding:8px 12px;border-bottom:1px solid var(--rule)}.family-action{min-height:30px;padding:5px 8px;background:transparent;border-color:var(--rule);color:var(--ink);font-size:9px}.family-action:hover{border-color:var(--family-accent);color:var(--family-accent)}.model-list{display:grid;grid-template-columns:1fr;gap:9px;padding:12px}.model-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border-left:3px solid var(--family-accent);background:var(--paper-2);padding:10px 12px}.model-name{min-width:0}.model-name code{display:block;font:700 12px/1.4 var(--mono);overflow-wrap:anywhere}.model-meta{display:flex;align-items:center;gap:7px;margin-top:4px;font:10px/1.3 var(--sans)}.badge{display:inline-flex;border:1px solid var(--rule);background:var(--paper);padding:2px 6px;color:var(--muted)}.model-control{display:flex;align-items:center;gap:10px;flex:0 0 auto}
-    .guide{margin:0;color:var(--muted);font-family:var(--sans);word-break:keep-all}.guide strong{color:var(--ink)}
-    .toast{position:fixed;left:10px;right:10px;top:10px;z-index:50;pointer-events:none;transform:translateY(-150%);transition:transform .2s;background:var(--ink);color:var(--paper);border-left:4px solid var(--gold);box-shadow:var(--shadow);padding:12px 15px;font-family:var(--sans)}.toast.error{border-left-color:#d07b59}.toast.show{transform:translateY(0)}
-    dialog{width:min(calc(100% - 28px),430px);border:0;border-top:4px solid var(--rust);border-radius:0;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);padding:24px}dialog::backdrop{background:rgba(40,35,31,.48)}dialog h2{margin:0 0 8px;font-size:25px}dialog p{margin:0 0 18px;color:var(--muted);font-family:var(--sans);font-size:12px}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.auth-error{color:var(--bad);min-height:18px;margin-top:8px;font:700 11px/1.4 var(--sans)}
-    .busy [data-admin-control]{pointer-events:none;opacity:.55}
-    @media(min-width:760px){.wrap{padding:22px 0 38px}.grid{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}.status-grid{grid-template-columns:1fr 1fr}.policy-grid{grid-template-columns:1fr 1fr}.usage-list{min-height:190px}.usage-grid{grid-template-columns:1fr 1fr}.add-form{grid-template-columns:repeat(2,minmax(0,1fr))}.model-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
-    @media(min-width:1100px){.add-form{grid-template-columns:1fr 1.2fr 2fr 110px 110px 120px 110px}.field-wide{grid-column:auto}}
-    @media(max-width:620px){.top{align-items:flex-start;padding:26px 20px}.top h1{font-size:27px}.toolbar{align-items:flex-start}.card h2{align-items:flex-start;flex-direction:column;gap:6px}.sub{text-align:left}.policy-heading{display:grid}.policy-active{align-items:flex-start}.add-form{grid-template-columns:1fr}.field-wide{grid-column:auto}.model-tools{grid-template-columns:1fr}.family summary{align-items:flex-start;flex-wrap:wrap}.family-count{margin-left:0}.family-actions{justify-content:stretch}.family-action{flex:1}.model-row{align-items:flex-start}.model-control{flex-direction:column-reverse;align-items:flex-end}}
-    @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}}
-  </style>
+  <meta name="description" content="Cursor AI Bridge 운영 상태, 크리덴셜, 모델과 라우팅을 관리하는 콘솔" />
+  <link rel="icon" href="data:," />
+  <style>${dashboardTheme}</style>
 </head>
 <body>
-  <main id="app" class="wrap" aria-busy="true">
-    <header class="top">
-      <div><div class="eyebrow">Cursor AI Proxy Bridge</div><h1>관리 콘솔</h1></div>
-      <div class="top-status"><span class="health-pill"><i id="healthDot" class="dot"></i><span id="healthLabel">확인 중</span></span><div id="bridgeVersion" class="version">v${escapeHtml(version)}</div></div>
-    </header>
-
-    <div class="toolbar"><span class="toolbar-note">Cursor 업스트림, 모델 정책, 런타임 상태를 한곳에서 관리합니다.</span><button id="changeKey" class="secondary" type="button">API key 변경</button></div>
-    <div id="pageState" class="page-state" hidden>설정을 불러오는 중입니다.</div>
-
-    <section class="grid">
-      <section class="card wide" aria-labelledby="statusTitle">
+  <a class="skip-link" href="#app">본문으로 건너뛰기</a>
+  <header class="site-header"><div class="wrap header-row">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span><div><p class="brand-name">Cursor AI <em>Bridge</em></p><p class="kicker">YELIXIR-DEV / CURSOR-AI-PROXY-BRIDGE</p></div></div>
+    <div class="header-actions"><span class="health-pill"><i id="healthDot" class="dot" aria-hidden="true"></i><span id="healthLabel">확인 중</span><span id="bridgeVersion" class="version">v${escapeHtml(
+      version,
+    )}</span></span><button id="liveToggle" class="secondary" aria-pressed="true" type="button">실시간</button><button id="refreshOverview" class="secondary" type="button">새로고침</button><button id="themeToggle" class="secondary" aria-label="라이트 테마" aria-pressed="false" type="button">라이트</button><button id="changeKey" class="secondary" type="button">API key</button></div>
+  </div></header>
+  <main id="app" class="wrap main" aria-busy="true" tabindex="-1">
+    <div id="pageState" class="page-state" role="status" hidden>설정을 불러오는 중입니다.</div>
+    <div class="tabs" role="tablist" aria-label="관리 메뉴"><button id="tab-overview" class="tab" role="tab" type="button" data-tab="overview" aria-controls="panel-overview" aria-selected="true" tabindex="0"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>개요</span></button>
+<button id="tab-credentials" class="tab" role="tab" type="button" data-tab="credentials" aria-controls="panel-credentials" aria-selected="false" tabindex="-1"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="5"/><path d="m12 11 9-9m-4 4 3 3m-6 0 3 3"/></svg><span>크리덴셜</span></button>
+<button id="tab-models" class="tab" role="tab" type="button" data-tab="models" aria-controls="panel-models" aria-selected="false" tabindex="-1"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 5-10 5L2 8Zm-10 9 10 5 10-5M2 16l10 5 10-5"/></svg><span>모델</span></button>
+<button id="tab-settings" class="tab" role="tab" type="button" data-tab="settings" aria-controls="panel-settings" aria-selected="false" tabindex="-1"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v18M12 3v18M19 3v18M2 8h6m1 8h6m1-9h6"/></svg><span>설정</span></button>
+<button id="tab-info" class="tab" role="tab" type="button" data-tab="info" aria-controls="panel-info" aria-selected="false" tabindex="-1"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></svg><span>안내</span></button></div>
+    <section id="panel-overview" class="tab-panel" role="tabpanel" aria-labelledby="tab-overview">${overviewMarkup}      <section class="card wide" aria-labelledby="statusTitle">
         <h2 id="statusTitle">상태 <span class="sub">Bridge와 활성 백엔드</span></h2>
         <div class="status-grid">
           <div class="kv"><span>활성 백엔드</span><b id="activeBackend">—</b></div>
           <div class="kv"><span>서버</span><b id="serverAddress">—</b></div>
-          <div class="kv"><span>Bridge 버전</span><b id="statusVersion">v${escapeHtml(version)}</b></div>
+          <div class="kv"><span>Bridge 버전</span><b id="statusVersion">v${escapeHtml(
+            version,
+          )}</b></div>
           <div class="kv"><span>상태 요약</span><b id="healthSummary">확인 중</b></div>
         </div>
       </section>
 
-      <section class="card wide" aria-labelledby="credentialsTitle">
+</section>
+    <section id="panel-credentials" class="tab-panel" role="tabpanel" aria-labelledby="tab-credentials" hidden>      <section class="card wide" aria-labelledby="credentialsTitle">
         <h2 id="credentialsTitle">크리덴셜 <span class="sub">Upstream Cursor API keys</span></h2>
-        <div class="policy-panel" role="group" aria-labelledby="credentialPolicyTitle">
-          <div class="policy-heading">
-            <div><h3 id="credentialPolicyTitle">라우팅 및 failover 정책</h3><p>다음 요청부터 즉시 적용되며 dashboard에 저장됩니다.</p></div>
-            <div class="policy-active" aria-live="polite"><span>현재 적용</span><code id="activeCredentialRouting">—</code><code id="activeCredentialFailover">—</code></div>
-          </div>
-          <div class="policy-grid">
-            <label class="policy-field" for="credentialRoutingPolicy">
-              <span class="policy-label">Routing policy</span>
-              <select id="credentialRoutingPolicy" data-admin-control aria-describedby="credentialRoutingDescription">
-                <option value="weighted_round_robin">weighted_round_robin</option>
-                <option value="round_robin">round_robin</option>
-                <option value="ultra_last">ultra_last</option>
-              </select>
-              <span id="credentialRoutingDescription" class="policy-description"></span>
-            </label>
-            <label class="policy-field" for="credentialFailoverPolicy">
-              <span class="policy-label">Failover policy</span>
-              <select id="credentialFailoverPolicy" data-admin-control aria-describedby="credentialFailoverDescription">
-                <option value="auth">auth</option>
-                <option value="auth_or_quota">auth_or_quota</option>
-                <option value="auth_or_quota_or_5xx">auth_or_quota_or_5xx</option>
-              </select>
-              <span id="credentialFailoverDescription" class="policy-description"></span>
-            </label>
-          </div>
-        </div>
         <form id="addCredential" class="add-form" autocomplete="off">
           <div class="field"><label for="credentialId">ID</label><input id="credentialId" name="id" maxlength="100" required placeholder="team-primary" /></div>
           <div class="field"><label for="credentialLabel">라벨</label><input id="credentialLabel" name="label" maxlength="200" placeholder="운영 계정" /></div>
@@ -129,8 +81,40 @@ export function renderDashboard(version: string): string {
         </div>
       </section>
 
-      <section class="card wide" aria-labelledby="modelsTitle">
+</section>
+    <section id="panel-models" class="tab-panel" role="tabpanel" aria-labelledby="tab-models" hidden>      <section class="card wide" aria-labelledby="modelsTitle">
         <h2 id="modelsTitle">모델 <span id="modelHeadingCount" class="sub">활성 0 / 전체 0</span></h2>
+        <div class="model-tools"><label class="search"><span class="visually-hidden">모델 검색</span><input id="modelSearch" type="search" placeholder="모델 ID 검색" autocomplete="off" /></label><span id="modelTotal" class="model-total">활성 0 / 전체 0</span></div>
+        <div id="modelGroups" class="families"><div class="empty">불러오는 중</div></div>
+      </section>
+
+</section>
+    <section id="panel-settings" class="tab-panel" role="tabpanel" aria-labelledby="tab-settings" hidden><div class="section-intro"><div><h1>라우팅 설정</h1><p>변경은 저장 즉시 다음 요청부터 적용됩니다.</p></div></div>        <div class="policy-panel" role="group" aria-labelledby="credentialPolicyTitle">
+          <div class="policy-heading">
+            <div><h3 id="credentialPolicyTitle">라우팅 및 failover 정책</h3><p>다음 요청부터 즉시 적용되며 dashboard에 저장됩니다.</p></div>
+            <div class="policy-active" aria-live="polite"><span>현재 적용</span><code id="activeCredentialRouting">—</code><code id="activeCredentialFailover">—</code></div>
+          </div>
+          <div class="policy-grid">
+            <label class="policy-field" for="credentialRoutingPolicy">
+              <span class="policy-label">Routing policy</span>
+              <select id="credentialRoutingPolicy" data-admin-control aria-describedby="credentialRoutingDescription">
+                <option value="weighted_round_robin">weighted_round_robin</option>
+                <option value="round_robin">round_robin</option>
+                <option value="ultra_last">ultra_last</option>
+              </select>
+              <span id="credentialRoutingDescription" class="policy-description"></span>
+            </label>
+            <label class="policy-field" for="credentialFailoverPolicy">
+              <span class="policy-label">Failover policy</span>
+              <select id="credentialFailoverPolicy" data-admin-control aria-describedby="credentialFailoverDescription">
+                <option value="auth">auth</option>
+                <option value="auth_or_quota">auth_or_quota</option>
+                <option value="auth_or_quota_or_5xx">auth_or_quota_or_5xx</option>
+              </select>
+              <span id="credentialFailoverDescription" class="policy-description"></span>
+            </label>
+          </div>
+        </div>
         <div class="policy-panel" role="group" aria-labelledby="maxModeTitle">
           <div class="policy-heading">
             <div><h3 id="maxModeTitle">Max Mode 기본값</h3><p>Cursor가 max 변형을 게시한 모델에 한해 해당 변형을 선택합니다. max 변형이 없으면 표준 변형을 그대로 사용합니다.</p></div>
@@ -147,15 +131,12 @@ export function renderDashboard(version: string): string {
             </label>
           </div>
         </div>
-        <div class="model-tools"><label class="search"><span class="visually-hidden">모델 검색</span><input id="modelSearch" type="search" placeholder="모델 ID 검색" autocomplete="off" /></label><span id="modelTotal" class="model-total">활성 0 / 전체 0</span></div>
-        <div id="modelGroups" class="families"><div class="empty">불러오는 중</div></div>
-      </section>
-
       <section class="card wide" aria-labelledby="guideTitle">
         <h2 id="guideTitle">안내 <span class="sub">읽기 전용 서버 설정</span></h2>
         <p class="guide"><strong>Host와 port는 이 화면에서 변경되지 않습니다.</strong> 설정 파일 또는 환경 변수를 수정한 뒤 Bridge를 재시작해야 적용됩니다.</p>
       </section>
-    </section>
+</section>
+    <section id="panel-info" class="tab-panel" role="tabpanel" aria-labelledby="tab-info" hidden><section class="card"><h2>Cursor AI Bridge <span class="sub">OpenAI-compatible API</span></h2><p class="guide">Headless Cursor API와 CLI fallback을 제공하는 로컬 브릿지입니다. 관리 설정과 크리덴셜은 기존 서버 정책을 따릅니다.</p><div class="kv"><span>Chat completions</span><b><code>/v1/chat/completions</code></b></div><div class="kv"><span>모델 목록</span><b><code>/v1/models</code></b></div><div class="kv"><span>운영 지표</span><b><code>/admin/metrics</code></b></div><p class="footnote">지표는 프로세스 메모리에만 보관되며 재시작하면 초기화됩니다. API key는 브라우저의 localStorage에 저장됩니다.</p><p class="footnote"><a href="https://github.com/yelixir-dev/cursor-ai-proxy-bridge" target="_blank" rel="noopener noreferrer">문서와 소스 보기</a></p></section></section>
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -233,14 +214,17 @@ async function fetchJson(path,options={},authenticated=false){
 
 function showAuth(message=''){
   $('authError').textContent=message;
-  $('authKey').value='';
   const dialog=$('authDialog');
-  if(!dialog.open)dialog.showModal();
-  requestAnimationFrame(()=>$('authKey').focus());
+  if(!dialog.open){
+    $('authKey').value='';
+    dialog.showModal();
+    requestAnimationFrame(()=>$('authKey').focus());
+  }
 }
 
 function handleAdminError(error){
   if(error&&error.status===401){
+    dashboardData=null;
     storeKey('');
     showPageState('관리 API 인증이 필요합니다.','error');
     showAuth('API key가 올바르지 않습니다.');
@@ -291,7 +275,7 @@ function switchControl(checked,disabled,label,onChange){
   const wrap=make('label','switch');
   wrap.title=label;
   const input=make('input');
-  input.type='checkbox';input.checked=checked;input.disabled=disabled;input.dataset.adminControl='';
+  input.setAttribute('aria-label',label);input.type='checkbox';input.checked=checked;input.disabled=disabled;input.dataset.adminControl='';
   if(onChange)input.addEventListener('change',onChange);
   wrap.append(input,make('span','slider'));
   return wrap;
@@ -556,6 +540,7 @@ async function loadDashboard(){
   if(clientAuthEnabled&&!apiKey){
     showPageState('관리 API key를 입력하면 설정을 불러옵니다.');
     showAuth();
+    $('app').setAttribute('aria-busy','false');
     return;
   }
   try{
@@ -563,9 +548,12 @@ async function loadDashboard(){
     usageLoading=true;
     renderAll();
     hidePageState();
+    void loadCompletionMetrics();
     await loadCredentialUsage(false);
   }catch(error){
     handleAdminError(error);
+  }finally{
+    $('app').setAttribute('aria-busy','false');
   }
 }
 
@@ -600,6 +588,7 @@ $('addCredential').addEventListener('submit',async event=>{
 });
 $('credentialPlan').addEventListener('change',event=>{$('credentialFableCapability').checked=event.currentTarget.value==='ultra';$('credentialFableCapability').disabled=event.currentTarget.value!=='ultra';});
 document.addEventListener('keydown',event=>{if(event.key==='Escape')hideToast();});
+${overviewScript}
 setInterval(updateCredentialTimes,1000);
 loadDashboard();
 </script>
